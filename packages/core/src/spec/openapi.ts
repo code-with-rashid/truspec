@@ -15,6 +15,7 @@ export interface SpecOperation {
   /** Canonical key `${METHOD} ${path}`, e.g. "GET /pets/{id}". */
   key: string;
   parameters: SpecParam[];
+  requestBodyRequired: boolean;
 }
 
 export interface OpenApiSummary {
@@ -56,6 +57,12 @@ function extractParams(
   return [...collected.values()];
 }
 
+function isRequestBodyRequired(op: Record<string, unknown>, doc: Record<string, unknown>): boolean {
+  let rb = asRecord(op.requestBody);
+  if (rb && typeof rb.$ref === "string") rb = resolveRef(rb.$ref, doc);
+  return rb?.required === true;
+}
+
 /** Parse an OpenAPI 3 document (YAML or JSON) into a flat list of operations. */
 export function parseOpenApi(text: string): OpenApiSummary {
   const doc = asRecord(parseYaml(text));
@@ -76,6 +83,7 @@ export function parseOpenApi(text: string): OpenApiSummary {
         operationId: typeof op.operationId === "string" ? op.operationId : undefined,
         key: `${M} ${path}`,
         parameters: extractParams(item, op, doc),
+        requestBodyRequired: isRequestBodyRequired(op, doc),
       });
     }
   }

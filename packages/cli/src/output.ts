@@ -68,3 +68,38 @@ export function formatCoverage(report: CoverageReport): string {
   }
   return lines.join("\n");
 }
+
+const XML_ESCAPES: Record<string, string> = {
+  "<": "&lt;",
+  ">": "&gt;",
+  "&": "&amp;",
+  '"': "&quot;",
+  "'": "&apos;",
+};
+
+function escapeXml(s: string): string {
+  return s.replace(/[<>&"']/g, (c) => XML_ESCAPES[c] ?? c);
+}
+
+/** JUnit XML — one testcase per request — for CI test reporters. */
+export function formatJunit(result: WorkspaceRunResult, cwd: string): string {
+  const cases = result.results.map((r) => {
+    const name = escapeXml(r.name);
+    const classname = escapeXml(r.filePath ? relative(cwd, r.filePath) : r.name);
+    const time = ((r.response?.durationMs ?? 0) / 1000).toFixed(3);
+    if (r.ok) return `    <testcase name="${name}" classname="${classname}" time="${time}"/>`;
+    const reasons = [
+      ...(r.error ? [r.error] : []),
+      ...r.assertions.filter((a) => !a.ok).map((a) => a.message),
+    ].join("; ");
+    return `    <testcase name="${name}" classname="${classname}" time="${time}">\n      <failure message="${escapeXml(reasons || "failed")}"/>\n    </testcase>`;
+  });
+  return [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    `<testsuites tests="${result.results.length}" failures="${result.failed}">`,
+    `  <testsuite name="truspec" tests="${result.results.length}" failures="${result.failed}">`,
+    ...cases,
+    "  </testsuite>",
+    "</testsuites>",
+  ].join("\n");
+}

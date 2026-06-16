@@ -18,9 +18,10 @@ export async function mockCommand(argv: string[], deps: MockDeps = {}): Promise<
     spec: { type: "string", short: "s" },
     port: { type: "string", short: "p" },
     delay: { type: "string" },
+    validate: { type: "boolean" },
   } as const;
 
-  let values: { spec?: string; port?: string; delay?: string };
+  let values: { spec?: string; port?: string; delay?: string; validate?: boolean };
   try {
     values = parseArgs({ args: argv, allowPositionals: true, options }).values;
   } catch (e) {
@@ -38,6 +39,7 @@ export async function mockCommand(argv: string[], deps: MockDeps = {}): Promise<
     handle = await startMockServer(specText, {
       port: values.port ? Number(values.port) : 4000,
       delayMs: values.delay ? Number(values.delay) : undefined,
+      validate: values.validate,
     });
   } catch (e) {
     d.stderr(`Error: ${(e as Error).message}\n`);

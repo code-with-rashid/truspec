@@ -79,6 +79,22 @@ describe("truspec run", () => {
     expect(parsed.results[0].assertions.length).toBeGreaterThan(0);
   });
 
+  it("emits JUnit XML with --reporter junit", async () => {
+    const cap = capture();
+    let t = 0;
+    const code = await runCommand(["examples/petstore", "--env", "local", "--reporter", "junit"], {
+      cwd: repoRoot,
+      fetch: okFetch({ id: 1 }),
+      now: () => (t += 5),
+      processEnv: { token: "secret" },
+      stdout: cap.stdout,
+      stderr: cap.stderr,
+    });
+    expect(code).toBe(0);
+    expect(cap.out).toMatch(/<testsuites tests="1" failures="0">/);
+    expect(cap.out).toMatch(/<testcase name="Get pet by id"/);
+  });
+
   it("exits 2 when no path is given", async () => {
     const cap = capture();
     const code = await runCommand([], { stdout: cap.stdout, stderr: cap.stderr });

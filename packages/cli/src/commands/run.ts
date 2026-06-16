@@ -1,6 +1,6 @@
 import { parseArgs } from "node:util";
 import { runPath, type WorkspaceRunResult } from "@truspec/core/workspace";
-import { formatHuman, formatJson } from "../output";
+import { formatHuman, formatJson, formatJunit } from "../output";
 import { type CommandDeps, emit, resolveDeps } from "./deps";
 
 /** `truspec run <path>` — returns a process exit code (0 ok, 1 failures/error, 2 usage). */
@@ -10,11 +10,12 @@ export async function runCommand(argv: string[], deps: Partial<CommandDeps> = {}
   const options = {
     env: { type: "string", short: "e" },
     json: { type: "boolean" },
+    reporter: { type: "string" },
     output: { type: "string", short: "o" },
     timeout: { type: "string" },
   } as const;
 
-  let values: { env?: string; json?: boolean; output?: string; timeout?: string };
+  let values: { env?: string; json?: boolean; reporter?: string; output?: string; timeout?: string };
   let positionals: string[];
   try {
     const parsed = parseArgs({ args: argv, allowPositionals: true, options });
@@ -50,6 +51,13 @@ export async function runCommand(argv: string[], deps: Partial<CommandDeps> = {}
     d.stderr(`Warning: unresolved secrets (set as env vars): ${result.missingSecrets.join(", ")}\n`);
   }
 
-  emit(d, values.json ? formatJson(result) : formatHuman(result, d.cwd), values.output);
+  const reporter = values.reporter ?? (values.json ? "json" : "human");
+  const text =
+    reporter === "junit"
+      ? formatJunit(result, d.cwd)
+      : reporter === "json"
+        ? formatJson(result)
+        : formatHuman(result, d.cwd);
+  emit(d, text, values.output);
   return result.ok ? 0 : 1;
 }

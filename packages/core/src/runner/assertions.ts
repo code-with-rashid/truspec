@@ -11,7 +11,7 @@ export interface ResponseView {
 }
 
 export interface AssertionResult {
-  type: TruSpecAssertion["type"];
+  type: TruSpecAssertion["type"] | "script";
   ok: boolean;
   message: string;
 }

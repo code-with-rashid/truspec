@@ -1,4 +1,5 @@
 import { parse as parseYaml } from "yaml";
+import { parseOpenApi } from "../spec/openapi";
 
 const METHODS = ["get", "put", "post", "delete", "patch", "head", "options"] as const;
 
@@ -143,21 +144,57 @@ export function buildRoutes(doc: Record<string, unknown>): MockRoute[] {
   return routes;
 }
 
+export interface MockRequestInfo {
+  query?: Record<string, string>;
+  hasBody?: boolean;
+}
+
 export interface MockResponder {
   routes: MockRoute[];
-  respond(method: string, path: string): MockResponse | undefined;
+  respond(method: string, path: string, info?: MockRequestInfo): MockResponse | undefined;
+}
+
+export interface MockResponderOptions {
+  /** Validate incoming requests against the spec; respond 400 when they don't satisfy it. */
+  validate?: boolean;
 }
 
 /** Build a stateless mock responder from OpenAPI text (YAML or JSON). */
-export function createMockResponder(specText: string): MockResponder {
+export function createMockResponder(specText: string, opts: MockResponderOptions = {}): MockResponder {
   const doc = asRecord(parseYaml(specText)) ?? {};
   const routes = buildRoutes(doc);
+
+  const rules = new Map<string, { requiredQuery: string[]; bodyRequired: boolean }>();
+  if (opts.validate) {
+    for (const op of parseOpenApi(specText).operations) {
+      rules.set(op.key, {
+        requiredQuery: op.parameters.filter((p) => p.in === "query" && p.required).map((p) => p.name),
+        bodyRequired: op.requestBodyRequired,
+      });
+    }
+  }
+
   return {
     routes,
-    respond(method, path) {
+    respond(method, path, info) {
       const m = method.toUpperCase();
       const route = routes.find((r) => r.method === m && r.regex.test(path));
       if (!route) return undefined;
+
+      const rule = rules.get(`${route.method} ${route.pathTemplate}`);
+      if (rule) {
+        const missing: string[] = [];
+        for (const q of rule.requiredQuery) if (!info?.query?.[q]) missing.push(`query:${q}`);
+        if (rule.bodyRequired && !info?.hasBody) missing.push("body");
+        if (missing.length > 0) {
+          return {
+            status: 400,
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ error: "Request does not satisfy the spec", missing }),
+          };
+        }
+      }
+
       const headers: Record<string, string> = {};
       let body = "";
       if (route.body !== undefined) {

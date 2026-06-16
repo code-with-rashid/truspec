@@ -77,3 +77,27 @@ describe("startMockServer", () => {
     }
   });
 });
+
+describe("mock validation", () => {
+  const SPEC = `
+openapi: 3.0.3
+info: { title: T, version: "1.0.0" }
+paths:
+  /search:
+    get:
+      operationId: search
+      parameters: [ { name: q, in: query, required: true } ]
+      responses: { "200": { description: ok } }
+`.trim();
+
+  it("400s a request missing a required query param when validate is on", () => {
+    const responder = createMockResponder(SPEC, { validate: true });
+    expect(responder.respond("GET", "/search", { query: {} })?.status).toBe(400);
+    expect(responder.respond("GET", "/search", { query: { q: "x" } })?.status).toBe(200);
+  });
+
+  it("does not validate when validate is off", () => {
+    const responder = createMockResponder(SPEC);
+    expect(responder.respond("GET", "/search", { query: {} })?.status).toBe(200);
+  });
+});

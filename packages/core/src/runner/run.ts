@@ -3,6 +3,7 @@ import { type AssertionResult, evaluateAssertions, type ResponseView } from "./a
 import { evaluateCaptures } from "./capture";
 import type { VarValue, Vars } from "./interpolate";
 import { resolveRequest } from "./resolve";
+import { runPostScript } from "./script";
 
 export interface RunContext {
   folder?: TruSpecFolderConfig;
@@ -83,14 +84,24 @@ export async function runRequest(req: TruSpecRequest, ctx: RunContext = {}): Pro
 
   const view: ResponseView = { status: response.status, headers, bodyText, json, durationMs };
   const assertions = evaluateAssertions(req.assertions, view);
-  const ok = assertions.every((a) => a.ok);
   const captured = evaluateCaptures(req.capture, view);
+
+  let scriptError: string | undefined;
+  if (req.script?.post) {
+    const scripted = runPostScript(req.script.post, view, { ...(ctx.vars ?? {}), ...captured });
+    assertions.push(...scripted.assertions);
+    Object.assign(captured, scripted.captured);
+    scriptError = scripted.error;
+  }
+
+  const ok = assertions.every((a) => a.ok) && scriptError === undefined;
 
   return {
     ...head,
     ok,
     response: { status: response.status, statusText: response.statusText, durationMs, headers, bodyText },
     assertions,
+    ...(scriptError ? { error: `Script error: ${scriptError}` } : {}),
     ...(Object.keys(captured).length > 0 ? { captured } : {}),
   };
 }

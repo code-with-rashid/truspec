@@ -118,6 +118,8 @@ export const RequestSchema = z
     capture: z.record(z.string(), CaptureSource).optional(),
     /** Run order within a collection (lower first; default 0, then by path). */
     order: z.number().optional(),
+    /** Post-response script run in a Node vm context (see CLAUDE.md; not a security sandbox). */
+    script: z.object({ post: z.string().optional() }).strict().optional(),
     docs: z.string().optional(),
     spec: SpecLink.optional(),
   })

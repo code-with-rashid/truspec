@@ -46,6 +46,24 @@ describe("drift: changed (required params)", () => {
     ]);
     expect(computeDrift(ops, colOps).changed).toEqual([]);
   });
+
+  it("flags a matched op missing a required request body", () => {
+    const withBody = parseOpenApi(
+      [
+        "openapi: 3.0.3",
+        'info: { title: T, version: "1.0.0" }',
+        "paths:",
+        "  /pets:",
+        "    post:",
+        "      operationId: createPet",
+        "      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }",
+      ].join("\n"),
+    ).operations;
+    const colOps = collectionOperations([
+      { req: parse.request.parse("name: c\nmethod: POST\nurl: http://x/pets\nspec: { operationId: createPet }") },
+    ]);
+    expect(computeDrift(withBody, colOps).changed).toEqual(["POST /pets: missing required request body"]);
+  });
 });
 
 describe("drift: live probing", () => {

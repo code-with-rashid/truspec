@@ -394,6 +394,15 @@
         "order": {
           "type": "number"
         },
+        "script": {
+          "type": "object",
+          "properties": {
+            "post": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
         "docs": {
           "type": "string"
         },

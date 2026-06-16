@@ -132,12 +132,13 @@ export function createServer(ctx: ServerContext = {}): McpServer {
         spec: z.string().describe("Path to the OpenAPI spec."),
         port: z.number().optional().describe("Port (default: an ephemeral free port)."),
         delay: z.number().optional().describe("Response delay in milliseconds."),
+        validate: z.boolean().optional().describe("Validate requests against the spec (400 on mismatch)."),
       },
     },
-    async ({ spec, port, delay }) => {
+    async ({ spec, port, delay, validate }) => {
       if (mock) return json({ alreadyRunning: true, url: mock.url, routes: mock.routes });
       const specText = readFileSync(resolve(c.cwd, spec), "utf8");
-      mock = await startMockServer(specText, { port: port ?? 0, delayMs: delay });
+      mock = await startMockServer(specText, { port: port ?? 0, delayMs: delay, validate });
       return json({ started: true, url: mock.url, routes: mock.routes });
     },
   );

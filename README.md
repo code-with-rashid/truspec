@@ -129,8 +129,8 @@ The CLI ships as a Bun-compiled single binary for distribution; the dev loop run
 
 ## Status & roadmap
 
-**Shipped:** format + JSON Schema · runner (REST + GraphQL, auth, **request chaining/capture**) · CLI (`run`/`drift`/`coverage`/`gen`/`import`/`mock`) · OpenAPI drift (added/removed/**changed** + **`--live`** API probe) + coverage · **local mock server** (+ latency) · `.env` + secrets · Postman/Bruno import · MCP server (10 tools).
-**Next:** publish to npm · JS scripting sandbox · web + VS Code UIs sharing the core.
+**Shipped:** format + JSON Schema · runner (REST + GraphQL, auth, request chaining/capture, **post-response scripts**) · CLI (`run` [+ JUnit], `drift`, `coverage`, `gen`, `import`, `mock`) · OpenAPI drift (added/removed/**changed** + **`--live`** API probe) + coverage · **local mock server** (latency + **request validation**) · `.env` + secrets · Postman/Bruno import · MCP server (10 tools).
+**Next:** publish to npm · web + VS Code UIs sharing the core.
 
 Deferred by design (not bloat): hosted dashboards, visual flow builders, exotic protocols, mandatory cloud sync.
 

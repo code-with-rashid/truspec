@@ -8,6 +8,7 @@ export interface CollectionOp {
   hasAssertions: boolean;
   /** Query parameter names the request provides (from `query` and the URL). */
   queryParams: string[];
+  hasBody: boolean;
 }
 
 function requestQueryParams(req: TruSpecRequest): string[] {
@@ -36,6 +37,7 @@ export function collectionOperations(
       ref: { operationId: req.spec.operationId, operation: req.spec.operation },
       hasAssertions: req.assertions.length > 0,
       queryParams: requestQueryParams(req),
+      hasBody: req.body !== undefined && req.body.type !== "none",
     });
   }
   return out;

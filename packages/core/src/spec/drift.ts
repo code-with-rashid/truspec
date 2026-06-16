@@ -46,6 +46,9 @@ export function computeDrift(ops: SpecOperation[], colOps: CollectionOp[]): Drif
         changed.push(`${match.key}: missing required query param '${p.name}'`);
       }
     }
+    if (match.requestBodyRequired && !c.hasBody) {
+      changed.push(`${match.key}: missing required request body`);
+    }
   }
   const added = ops.filter((o) => !referenced.has(o.key)).map((o) => o.key);
   return {

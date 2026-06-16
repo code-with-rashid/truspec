@@ -11,18 +11,23 @@ export interface MockServerHandle {
 /** Start a local HTTP mock server from OpenAPI text. Port 0 picks a free port. */
 export async function startMockServer(
   specText: string,
-  opts: { port?: number; host?: string; delayMs?: number } = {},
+  opts: { port?: number; host?: string; delayMs?: number; validate?: boolean } = {},
 ): Promise<MockServerHandle> {
-  const responder = createMockResponder(specText);
+  const responder = createMockResponder(specText, { validate: opts.validate });
   const host = opts.host ?? "127.0.0.1";
   const delayMs = opts.delayMs ?? 0;
   const server = createServer((req, res) => {
-    const path = new URL(req.url ?? "/", "http://localhost").pathname;
-    const result = responder.respond(req.method ?? "GET", path);
+    const u = new URL(req.url ?? "/", "http://localhost");
+    const query: Record<string, string> = {};
+    u.searchParams.forEach((v, k) => {
+      query[k] = v;
+    });
+    const hasBody = Number(req.headers["content-length"] ?? 0) > 0;
+    const result = responder.respond(req.method ?? "GET", u.pathname, { query, hasBody });
     const send = (): void => {
       if (!result) {
         res.writeHead(404, { "content-type": "application/json" });
-        res.end(JSON.stringify({ error: `No mock for ${req.method} ${path}` }));
+        res.end(JSON.stringify({ error: `No mock for ${req.method} ${u.pathname}` }));
         return;
       }
       res.writeHead(result.status, result.headers);

@@ -103,6 +103,19 @@ Requests run in `order` (then path), so a login can capture a token the next req
 
 A capture source is a jsonpath string, or `{ jsonpath }` / `{ header }` / `{ status: true }`.
 
+### Post-response script (advanced)
+
+```yaml
+script:
+  post: |
+    tr.set("token", tr.response.json.access_token)
+    tr.expect(tr.response.status === 200, "logged in")
+```
+
+Runs in a Node vm context exposing `tr.response` ({ status, headers, bodyText, json }),
+`tr.set(name, value)`, `tr.expect(cond, msg)`, and `tr.vars`. **This is not a security
+sandbox** — scripts are authored in your collection; only run collections you trust.
+
 ### Environment (`environments/<name>.env.yaml`)
 
 ```yaml
