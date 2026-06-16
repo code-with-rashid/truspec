@@ -117,6 +117,27 @@ describe("runPath", () => {
     }
   });
 
+  it("does not leak a pre-request script's variable into the next request", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "truspec-iso-"));
+    try {
+      // A sets `leak` in its pre-script; B (runs after, no script) references {{leak}}.
+      writeFileSync(
+        join(dir, "a.tspec.yaml"),
+        'name: A\norder: 1\nurl: http://x/a\nscript: { pre: "tr.set(\\"leak\\", \\"FROM_A\\")" }',
+      );
+      writeFileSync(join(dir, "b.tspec.yaml"), 'name: B\norder: 2\nurl: "http://x/{{leak}}"');
+      const result = await runPath(dir, {
+        cwd: dir,
+        fetch: (async () => new Response("{}", { status: 200 })) as typeof fetch,
+      });
+      const b = result.results.find((r) => r.name === "B");
+      expect(b?.ok).toBe(false); // {{leak}} must be unresolved — A's pre-var stays scoped to A
+      expect(b?.error).toMatch(/Unresolved/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("applies a default request timeout that timeoutMs:0 disables", async () => {
     const dir = mkdtempSync(join(tmpdir(), "truspec-timeout-"));
     try {

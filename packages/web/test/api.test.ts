@@ -89,4 +89,15 @@ describe("web server api — save request (in-UI editing)", () => {
     expect(json.ok).toBe(false);
     expect(json.error).toMatch(/escapes/);
   });
+
+  it("handles concurrent saves to the same path without corrupting the file", async () => {
+    const writes = Array.from({ length: 30 }, (_, i) =>
+      handleApi("POST", "/api/request", noQuery, { path: "race.tspec.yaml", content: `name: Race${i}\nurl: http://x/y\n` }, wctx),
+    );
+    const results = await Promise.all(writes);
+    expect(results.every((r) => (r.json as { ok: boolean }).ok)).toBe(true);
+    // a complete write won — the file still parses (no interleaved/partial content)
+    const got = await handleApi("GET", "/api/request", new URLSearchParams({ path: "race.tspec.yaml" }), undefined, wctx);
+    expect((got.json as { name: string }).name).toMatch(/^Race\d+$/);
+  });
 });

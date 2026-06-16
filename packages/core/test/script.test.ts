@@ -83,6 +83,19 @@ describe("runRequest with a pre script", () => {
     expect(result.error).toMatch(/Pre-request script error.*preboom/);
     expect(called).toBe(false);
   });
+
+  it("times out an infinite-loop pre script instead of hanging (and never sends)", async () => {
+    let called = false;
+    const fetchSpy = (async () => {
+      called = true;
+      return new Response("{}", { status: 200 });
+    }) as typeof fetch;
+    const req = parse.request.parse('name: r\nurl: http://x\nscript: { pre: "while(true){}" }');
+    const result = await runRequest(req, { fetch: fetchSpy }); // vm caps it at 1s; test must not hang
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/Pre-request script error/);
+    expect(called).toBe(false);
+  });
 });
 
 describe("runRequest with a post script", () => {
