@@ -1,0 +1,8 @@
+tspec: "0.1"
+name: Petstore
+baseUrl: "{{baseUrl}}"
+headers:
+  Accept: application/json
+auth:
+  type: bearer
+  token: "{{token}}"

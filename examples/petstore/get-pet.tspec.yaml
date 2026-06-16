@@ -1,0 +1,14 @@
+tspec: "0.1"
+name: Get pet by id
+method: GET
+url: "{{baseUrl}}/pets/{{petId}}"
+query:
+  expand: owner
+assertions:
+  - { type: status, equals: 200 }
+  - { type: jsonpath, path: "$.id", exists: true }
+  - { type: duration, ltMs: 1000 }
+docs: Fetch a single pet by its id.
+spec:
+  operation: "GET /pets/{id}"
+  operationId: getPetById

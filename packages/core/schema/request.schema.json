@@ -1,0 +1,350 @@
+{
+  "$ref": "#/definitions/TruSpecRequest",
+  "definitions": {
+    "TruSpecRequest": {
+      "type": "object",
+      "properties": {
+        "tspec": {
+          "type": "string",
+          "default": "0.1"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "GET",
+            "POST",
+            "PUT",
+            "PATCH",
+            "DELETE",
+            "HEAD",
+            "OPTIONS"
+          ],
+          "default": "GET"
+        },
+        "url": {
+          "type": "string"
+        },
+        "headers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean"
+            ]
+          }
+        },
+        "query": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean"
+            ]
+          }
+        },
+        "body": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "none"
+                }
+              },
+              "required": [
+                "type"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "json"
+                },
+                "content": {}
+              },
+              "required": [
+                "type"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "text"
+                },
+                "content": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "content"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "form"
+                },
+                "content": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "type",
+                "content"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "auth": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "none"
+                }
+              },
+              "required": [
+                "type"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "bearer"
+                },
+                "token": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "token"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "basic"
+                },
+                "username": {
+                  "type": "string"
+                },
+                "password": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "username",
+                "password"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "apikey"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                },
+                "in": {
+                  "type": "string",
+                  "enum": [
+                    "header",
+                    "query"
+                  ],
+                  "default": "header"
+                }
+              },
+              "required": [
+                "type",
+                "name",
+                "value"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "assertions": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "status"
+                  },
+                  "equals": {
+                    "type": "integer"
+                  },
+                  "in": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer"
+                    }
+                  },
+                  "lt": {
+                    "type": "integer"
+                  },
+                  "gte": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "type"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "header"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "equals": {
+                    "type": "string"
+                  },
+                  "matches": {
+                    "type": "string"
+                  },
+                  "exists": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "type",
+                  "name"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "jsonpath"
+                  },
+                  "path": {
+                    "type": "string"
+                  },
+                  "equals": {},
+                  "exists": {
+                    "type": "boolean"
+                  },
+                  "matches": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "path"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "body"
+                  },
+                  "contains": {
+                    "type": "string"
+                  },
+                  "matches": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "duration"
+                  },
+                  "ltMs": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": [
+                  "type",
+                  "ltMs"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "default": []
+        },
+        "docs": {
+          "type": "string"
+        },
+        "spec": {
+          "type": "object",
+          "properties": {
+            "operationId": {
+              "type": "string"
+            },
+            "operation": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "name",
+        "url"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#"
+}

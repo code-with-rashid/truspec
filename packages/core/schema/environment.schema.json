@@ -1,0 +1,41 @@
+{
+  "$ref": "#/definitions/TruSpecEnvironment",
+  "definitions": {
+    "TruSpecEnvironment": {
+      "type": "object",
+      "properties": {
+        "tspec": {
+          "type": "string",
+          "default": "0.1"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "variables": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean"
+            ]
+          },
+          "default": {}
+        },
+        "secrets": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#"
+}

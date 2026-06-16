@@ -1,0 +1,25 @@
+{
+  "name": "truspec-monorepo",
+  "private": true,
+  "type": "module",
+  "description": "TruSpec — local-first, spec-synced, agent-native API client.",
+  "license": "MIT",
+  "packageManager": "pnpm@9.15.4",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "gen:schema": "pnpm --filter @truspec/core build && pnpm --filter @truspec/core gen:schema"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsup": "^8.3.5",
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
