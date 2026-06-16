@@ -196,7 +196,17 @@ export function importPostman(input: unknown): ImportResult {
   const files: ImportedFile[] = [];
   const stats = { requests: 0, folders: 0 };
 
-  const walk = (items: unknown[], dir: string): void => {
+  // Bound folder recursion so a hostile/malformed collection can't stack-overflow the import.
+  const MAX_FOLDER_DEPTH = 100;
+  let depthWarned = false;
+  const walk = (items: unknown[], dir: string, depth: number): void => {
+    if (depth > MAX_FOLDER_DEPTH) {
+      if (!depthWarned) {
+        warnings.push(`Skipped folders nested deeper than ${MAX_FOLDER_DEPTH} levels`);
+        depthWarned = true;
+      }
+      return;
+    }
     const used = new Map<string, number>();
     for (const raw of items) {
       const item = asRecord(raw);
@@ -204,7 +214,7 @@ export function importPostman(input: unknown): ImportResult {
       if (Array.isArray(item.item)) {
         stats.folders++;
         const folder = slug(String(item.name ?? "folder"));
-        walk(item.item, dir ? `${dir}/${folder}` : folder);
+        walk(item.item, dir ? `${dir}/${folder}` : folder, depth + 1);
       } else if (item.request) {
         const converted = convertRequest(item, warnings);
         if (!converted) continue;
@@ -217,7 +227,7 @@ export function importPostman(input: unknown): ImportResult {
       }
     }
   };
-  walk(root.item, "");
+  walk(root.item, "", 0);
 
   const collectionAuth = convertAuth(root.auth, warnings);
   if (collectionAuth) {

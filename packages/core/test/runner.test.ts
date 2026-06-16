@@ -39,6 +39,12 @@ describe("interpolate", () => {
     expect((r.value as Record<string, unknown>).a).toBe("1");
     expect((r.value as Record<string, unknown>).self).toBeDefined();
   });
+
+  it("throws a clear error on pathologically deep nesting (not a stack overflow)", () => {
+    let node: Record<string, unknown> = { v: "{{x}}" };
+    for (let i = 0; i < 300; i++) node = { a: node };
+    expect(() => interpolateDeep(node, { x: "1" })).toThrow(/too deeply/);
+  });
 });
 
 describe("jsonpath", () => {

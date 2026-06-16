@@ -53,6 +53,13 @@ describe("importPostman", () => {
     expect(result.stats.requests).toBe(2);
     expect(() => importPostman({ not: "a collection" })).toThrow(/Postman/);
   });
+
+  it("caps deeply nested folders instead of stack-overflowing", () => {
+    let node: Record<string, unknown> = { name: "leaf", request: "GET http://x" };
+    for (let i = 0; i < 500; i++) node = { name: `f${i}`, item: [node] };
+    const result = importPostman({ info: { name: "deep" }, item: [node] });
+    expect(result.warnings.some((w) => /nested deeper/.test(w))).toBe(true);
+  });
 });
 
 describe("Bruno .bru parsing", () => {
