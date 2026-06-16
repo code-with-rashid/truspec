@@ -55,6 +55,10 @@ describe("web server host guard (DNS-rebinding defense)", () => {
     expect((await get(handle.port, "attacker.example:80")).status).toBe(403);
   });
 
+  it("answers 400 on a malformed percent-encoded path instead of hanging/crashing", async () => {
+    expect((await get(handle.port, `localhost:${handle.port}`, "/%ZZ")).status).toBe(400);
+  });
+
   it("accepts a normal small POST body", async () => {
     expect((await post(handle.port, "/api/run", {})).status).toBe(200);
   });

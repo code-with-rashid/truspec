@@ -1,6 +1,7 @@
 import { parse } from "../format";
 import { SCHEMA_VERSION } from "../format/schema";
 import type { TruSpecAuth, TruSpecBody, TruSpecMethod, TruSpecRequest } from "../format/types";
+import { safeDecodeURIComponent } from "../util/uri";
 import { asRecord, type ImportedFile, type ImportResult, normalizeMethod, slug } from "./types";
 
 function kvFromArray(arr: unknown, key: string): string | undefined {
@@ -49,7 +50,7 @@ function splitQuery(raw: string): { url: string; query?: Record<string, string> 
     const eq = pair.indexOf("=");
     const k = eq === -1 ? pair : pair.slice(0, eq);
     const v = eq === -1 ? "" : pair.slice(eq + 1);
-    if (k) query[decodeURIComponent(k)] = decodeURIComponent(v);
+    if (k) query[safeDecodeURIComponent(k)] = safeDecodeURIComponent(v);
   }
   return { url: base, query: Object.keys(query).length > 0 ? query : undefined };
 }

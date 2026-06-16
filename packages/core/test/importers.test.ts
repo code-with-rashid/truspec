@@ -60,6 +60,15 @@ describe("importPostman", () => {
     const result = importPostman({ info: { name: "deep" }, item: [node] });
     expect(result.warnings.some((w) => /nested deeper/.test(w))).toBe(true);
   });
+
+  it("survives a malformed percent-escape in a query string (no URIError)", () => {
+    const result = importPostman({
+      info: { name: "x" },
+      item: [{ name: "r", request: { method: "GET", url: "http://x?a=%ZZ&b=2" } }],
+    });
+    expect(result.stats.requests).toBe(1);
+    expect(result.files[0]?.content).toBeTruthy();
+  });
 });
 
 describe("Bruno .bru parsing", () => {

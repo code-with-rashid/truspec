@@ -56,7 +56,14 @@ export interface WebServerHandle {
 }
 
 function serveStatic(clientDir: string, pathname: string, res: ServerResponse): void {
-  let rel = decodeURIComponent(pathname);
+  let rel: string;
+  try {
+    rel = decodeURIComponent(pathname); // throws URIError on a malformed %-escape
+  } catch {
+    res.writeHead(400, { "content-type": "text/plain" });
+    res.end("Bad request");
+    return;
+  }
   if (rel === "/" || rel === "") rel = "/index.html";
   let filePath = normalize(join(clientDir, rel));
   if (filePath !== clientDir && !filePath.startsWith(clientDir + sep)) {
@@ -91,7 +98,17 @@ export async function startWebServer(opts: WebServerOptions = {}): Promise<WebSe
         res.end("Forbidden: unexpected Host header");
         return;
       }
-      const url = new URL(req.url ?? "/", "http://localhost");
+      // A malformed request URL (e.g. a bad %-escape) makes `new URL`/decodeURIComponent
+      // throw; without this guard the throw becomes an unhandledRejection that hangs the
+      // socket and crashes the process. Answer with 400 instead.
+      let url: URL;
+      try {
+        url = new URL(req.url ?? "/", "http://localhost");
+      } catch {
+        res.writeHead(400, { "content-type": "text/plain" });
+        res.end("Bad request URL");
+        return;
+      }
       if (url.pathname.startsWith("/api/")) {
         let body: unknown;
         if (req.method === "POST") {

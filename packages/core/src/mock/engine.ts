@@ -1,5 +1,6 @@
 import { parse as parseYaml } from "yaml";
 import { parseOpenApi } from "../spec/openapi";
+import { safeDecodeURIComponent } from "../util/uri";
 
 const METHODS = ["get", "put", "post", "delete", "patch", "head", "options"] as const;
 
@@ -29,7 +30,7 @@ function resolveRef(ref: string, doc: Record<string, unknown>): Record<string, u
   for (const segment of ref.slice(2).split("/")) {
     const rec = asRecord(node);
     if (!rec) return undefined;
-    node = rec[decodeURIComponent(segment)];
+    node = rec[safeDecodeURIComponent(segment)];
   }
   return asRecord(node);
 }
