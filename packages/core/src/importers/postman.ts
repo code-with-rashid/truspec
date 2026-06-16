@@ -140,8 +140,26 @@ function convertBody(raw: unknown, warnings: string[], name: string): TruSpecBod
 }
 
 function convertRequest(item: Record<string, unknown>, warnings: string[]): TruSpecRequest | undefined {
-  const req = asRecord(item.request);
   const name = String(item.name ?? "Request");
+
+  // Postman shorthand: `request` may be a bare string ("GET http://…" or "http://…").
+  if (typeof item.request === "string") {
+    const match = item.request.trim().match(/^([A-Za-z]+)\s+(\S.*)$/);
+    const url = (match?.[2] ?? item.request).trim();
+    if (!url) {
+      warnings.push(`Skipped "${name}": empty request`);
+      return undefined;
+    }
+    return {
+      tspec: SCHEMA_VERSION,
+      name,
+      method: normalizeMethod(match?.[1] ?? "GET", name, warnings) as TruSpecMethod,
+      url,
+      assertions: [],
+    };
+  }
+
+  const req = asRecord(item.request);
   if (!req) return undefined;
 
   const { url, query } = convertUrl(req.url);

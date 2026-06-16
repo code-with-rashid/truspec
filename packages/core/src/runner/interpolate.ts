@@ -25,17 +25,21 @@ export function interpolate(input: string, vars: Vars): Interpolated {
 /** Recursively interpolate every string in an object/array, collecting missing names. */
 export function interpolateDeep<T>(input: T, vars: Vars): { value: T; missing: string[] } {
   const missing: string[] = [];
+  const seen = new WeakSet<object>();
   const walk = (node: unknown): unknown => {
     if (typeof node === "string") {
       const r = interpolate(node, vars);
       missing.push(...r.missing);
       return r.value;
     }
-    if (Array.isArray(node)) return node.map(walk);
     if (node && typeof node === "object") {
-      const out: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(node)) out[k] = walk(v);
-      return out;
+      if (seen.has(node)) return node; // break reference cycles (e.g. YAML self-anchors)
+      seen.add(node);
+      const result = Array.isArray(node)
+        ? node.map(walk)
+        : Object.fromEntries(Object.entries(node).map(([k, v]) => [k, walk(v)]));
+      seen.delete(node);
+      return result;
     }
     return node;
   };

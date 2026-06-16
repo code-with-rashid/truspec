@@ -42,7 +42,19 @@ function looksLikeJson(text: string): boolean {
 export async function runRequest(req: TruSpecRequest, ctx: RunContext = {}): Promise<RunResult> {
   const doFetch = ctx.fetch ?? globalThis.fetch;
   const now = ctx.now ?? (() => Date.now());
-  const eff = resolveRequest(req, { folder: ctx.folder, vars: ctx.vars });
+
+  let eff: ReturnType<typeof resolveRequest>;
+  try {
+    eff = resolveRequest(req, { folder: ctx.folder, vars: ctx.vars });
+  } catch (e) {
+    return {
+      name: req.name,
+      request: { method: req.method, url: req.url },
+      ok: false,
+      error: `Could not resolve request: ${(e as Error).message}`,
+      assertions: [],
+    };
+  }
   const head = { name: req.name, request: { method: eff.method, url: eff.url } };
 
   if (eff.missing.length > 0) {

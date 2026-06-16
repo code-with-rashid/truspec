@@ -23,6 +23,14 @@ describe("interpolate", () => {
     const r = interpolateDeep({ a: "{{x}}", b: ["{{y}}"] }, { x: "1", y: "2" });
     expect(r.value).toEqual({ a: "1", b: ["2"] });
   });
+
+  it("breaks reference cycles instead of overflowing the stack", () => {
+    const obj: Record<string, unknown> = { a: "{{x}}" };
+    obj.self = obj;
+    const r = interpolateDeep(obj, { x: "1" });
+    expect((r.value as Record<string, unknown>).a).toBe("1");
+    expect((r.value as Record<string, unknown>).self).toBeDefined();
+  });
 });
 
 describe("jsonpath", () => {
@@ -171,5 +179,16 @@ describe("runRequest (injected fetch)", () => {
     const result = await runRequest(parse.request.parse("name: r\nurl: http://x"), { fetch: fakeFetch });
     expect(result.ok).toBe(false);
     expect(result.error).toMatch(/ECONNREFUSED/);
+  });
+
+  it("fails gracefully on a circular request body instead of crashing", async () => {
+    const req = parse.request.parse("name: x\nurl: http://x\nbody: { type: json, content: { a: 1 } }");
+    const content = (req.body as { content: Record<string, unknown> }).content;
+    content.self = content; // inject a reference cycle
+    const result = await runRequest(req, {
+      fetch: (async () => new Response("{}", { status: 200 })) as typeof fetch,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/resolve|circular/i);
   });
 });
