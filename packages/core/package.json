@@ -13,6 +13,14 @@
       "types": "./dist/format/index.d.ts",
       "import": "./dist/format/index.js"
     },
+    "./runner": {
+      "types": "./dist/runner/index.d.ts",
+      "import": "./dist/runner/index.js"
+    },
+    "./workspace": {
+      "types": "./dist/workspace/index.d.ts",
+      "import": "./dist/workspace/index.js"
+    },
     "./schema/*": "./schema/*"
   },
   "files": ["dist", "schema"],

@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "baseUrl": ".",
+    "paths": {
+      "@truspec/core": ["../core/src/index.ts"],
+      "@truspec/core/format": ["../core/src/format/index.ts"],
+      "@truspec/core/runner": ["../core/src/runner/index.ts"],
+      "@truspec/core/workspace": ["../core/src/workspace/index.ts"]
+    }
+  },
+  "include": ["src", "test"],
+  "exclude": ["dist", "node_modules"]
+}

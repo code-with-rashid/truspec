@@ -1,7 +1,12 @@
 import { defineConfig } from "tsup";
 
 export default defineConfig({
-  entry: ["src/index.ts", "src/format/index.ts", "src/runner/index.ts"],
+  entry: [
+    "src/index.ts",
+    "src/format/index.ts",
+    "src/runner/index.ts",
+    "src/workspace/index.ts",
+  ],
   format: ["esm"],
   dts: true,
   clean: true,
