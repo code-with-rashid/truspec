@@ -2,7 +2,7 @@
   "name": "truspec-vscode",
   "displayName": "TruSpec",
   "description": "Run .tspec.yaml requests and check OpenAPI drift & coverage right in your editor.",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "publisher": "code-with-rashid",
   "private": true,
   "license": "MIT",
