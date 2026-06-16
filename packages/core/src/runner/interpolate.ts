@@ -1,0 +1,43 @@
+export type VarValue = string | number | boolean;
+export type Vars = Record<string, VarValue>;
+
+const VAR_RE = /\{\{\s*([\w.-]+)\s*\}\}/g;
+
+export interface Interpolated {
+  value: string;
+  missing: string[];
+}
+
+/** Replace `{{name}}` templates in a string; report any names not found in `vars`. */
+export function interpolate(input: string, vars: Vars): Interpolated {
+  const missing: string[] = [];
+  const value = input.replace(VAR_RE, (_match, name: string) => {
+    const v = vars[name];
+    if (v === undefined) {
+      missing.push(name);
+      return "";
+    }
+    return String(v);
+  });
+  return { value, missing };
+}
+
+/** Recursively interpolate every string in an object/array, collecting missing names. */
+export function interpolateDeep<T>(input: T, vars: Vars): { value: T; missing: string[] } {
+  const missing: string[] = [];
+  const walk = (node: unknown): unknown => {
+    if (typeof node === "string") {
+      const r = interpolate(node, vars);
+      missing.push(...r.missing);
+      return r.value;
+    }
+    if (Array.isArray(node)) return node.map(walk);
+    if (node && typeof node === "object") {
+      const out: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(node)) out[k] = walk(v);
+      return out;
+    }
+    return node;
+  };
+  return { value: walk(input) as T, missing: Array.from(new Set(missing)) };
+}
