@@ -19,6 +19,14 @@ describe("interpolate", () => {
     expect(r.value).toBe("1-");
     expect(r.missing).toEqual(["missing"]);
   });
+  it("treats Object.prototype names as missing, not inherited members", () => {
+    // {{toString}} / {{constructor}} / {{__proto__}} must not resolve to native code.
+    for (const name of ["toString", "constructor", "hasOwnProperty", "__proto__"]) {
+      const r = interpolate(`x/{{${name}}}/y`, { a: "1" });
+      expect(r.value).toBe("x//y");
+      expect(r.missing).toEqual([name]);
+    }
+  });
   it("interpolates deeply", () => {
     const r = interpolateDeep({ a: "{{x}}", b: ["{{y}}"] }, { x: "1", y: "2" });
     expect(r.value).toEqual({ a: "1", b: ["2"] });

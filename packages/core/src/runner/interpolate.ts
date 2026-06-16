@@ -12,7 +12,9 @@ export interface Interpolated {
 export function interpolate(input: string, vars: Vars): Interpolated {
   const missing: string[] = [];
   const value = input.replace(VAR_RE, (_match, name: string) => {
-    const v = vars[name];
+    // Own-property only: `{{toString}}`, `{{constructor}}`, `{{__proto__}}` etc. must
+    // be treated as missing, not resolve to inherited Object.prototype members.
+    const v = Object.prototype.hasOwnProperty.call(vars, name) ? vars[name] : undefined;
     if (v === undefined) {
       missing.push(name);
       return "";

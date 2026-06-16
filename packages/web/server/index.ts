@@ -1,8 +1,33 @@
 import { createReadStream, existsSync, statSync } from "node:fs";
 import { createServer, type ServerResponse } from "node:http";
-import { extname, join, normalize, resolve } from "node:path";
+import { extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type ApiContext, handleApi } from "./api";
+
+/** Cap request bodies so a runaway/hostile client can't exhaust memory. */
+const MAX_BODY_BYTES = 5 * 1024 * 1024;
+
+const LOOPBACK_BINDS = new Set(["127.0.0.1", "::1", "localhost"]);
+const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
+
+/**
+ * Defeat DNS rebinding against the local server: when bound to loopback (the
+ * default), only honor requests whose Host header is itself loopback. A rebound
+ * request from `evil.com` carries `Host: evil.com` and is refused. When the user
+ * explicitly binds a non-loopback host they've opted into network exposure, so
+ * the guard steps aside.
+ */
+function hostAllowed(hostHeader: string | undefined, bindHost: string): boolean {
+  if (!LOOPBACK_BINDS.has(bindHost)) return true;
+  if (!hostHeader) return false;
+  let hostname: string;
+  try {
+    hostname = new URL(`http://${hostHeader}`).hostname;
+  } catch {
+    return false;
+  }
+  return LOOPBACK_HOSTNAMES.has(hostname);
+}
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -34,7 +59,7 @@ function serveStatic(clientDir: string, pathname: string, res: ServerResponse): 
   let rel = decodeURIComponent(pathname);
   if (rel === "/" || rel === "") rel = "/index.html";
   let filePath = normalize(join(clientDir, rel));
-  if (!filePath.startsWith(clientDir)) {
+  if (filePath !== clientDir && !filePath.startsWith(clientDir + sep)) {
     res.writeHead(403);
     res.end();
     return;
@@ -61,12 +86,27 @@ export async function startWebServer(opts: WebServerOptions = {}): Promise<WebSe
 
   const server = createServer((req, res) => {
     void (async () => {
+      if (!hostAllowed(req.headers.host, host)) {
+        res.writeHead(403, { "content-type": "text/plain" });
+        res.end("Forbidden: unexpected Host header");
+        return;
+      }
       const url = new URL(req.url ?? "/", "http://localhost");
       if (url.pathname.startsWith("/api/")) {
         let body: unknown;
         if (req.method === "POST") {
           const chunks: Buffer[] = [];
-          for await (const c of req) chunks.push(c as Buffer);
+          let size = 0;
+          for await (const c of req) {
+            size += (c as Buffer).length;
+            if (size > MAX_BODY_BYTES) {
+              res.writeHead(413, { "content-type": "application/json" });
+              res.end(JSON.stringify({ error: "Request body too large" }));
+              req.destroy();
+              return;
+            }
+            chunks.push(c as Buffer);
+          }
           const raw = Buffer.concat(chunks).toString();
           try {
             body = raw ? JSON.parse(raw) : {};
