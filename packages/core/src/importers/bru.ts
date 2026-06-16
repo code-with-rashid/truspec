@@ -1,6 +1,6 @@
 import { SCHEMA_VERSION } from "../format/schema";
 import type { TruSpecAssertion, TruSpecAuth, TruSpecBody, TruSpecMethod, TruSpecRequest } from "../format/types";
-import { normalizeMethod } from "./types";
+import { normalizeMethod, portedScript } from "./types";
 
 interface Block {
   name: string;
@@ -122,6 +122,8 @@ export function bruToRequest(text: string): { request?: TruSpecRequest; warnings
   let gqlQuery: string | undefined;
   let gqlVars: Record<string, unknown> | undefined;
   let assertions: TruSpecAssertion[] = [];
+  let scriptPre: string | undefined;
+  let scriptPost: string | undefined;
 
   for (const block of blocks) {
     if (block.name === "meta") {
@@ -162,6 +164,17 @@ export function bruToRequest(text: string): { request?: TruSpecRequest; warnings
       }
     } else if (block.name === "assert") {
       assertions = convertAssert(block.body, warnings);
+    } else if (block.name === "script") {
+      // Bruno's bru/req API differs from TruSpec's tr — preserve the source commented, to port.
+      if (block.body.trim()) {
+        if (block.sub === "pre-request") {
+          scriptPre = portedScript(block.body, "Bruno");
+          warnings.push(`"${name}": Bruno pre-request script imported as comments — port to the tr API`);
+        } else if (block.sub === "post-response") {
+          scriptPost = portedScript(block.body, "Bruno");
+          warnings.push(`"${name}": Bruno post-response script imported as comments — port to the tr API`);
+        }
+      }
     }
   }
 
@@ -187,5 +200,8 @@ export function bruToRequest(text: string): { request?: TruSpecRequest; warnings
   if (query && Object.keys(query).length > 0) request.query = query;
   if (auth) request.auth = auth;
   if (body) request.body = body;
+  if (scriptPre || scriptPost) {
+    request.script = { ...(scriptPre ? { pre: scriptPre } : {}), ...(scriptPost ? { post: scriptPost } : {}) };
+  }
   return { request, warnings };
 }

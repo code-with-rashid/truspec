@@ -2,7 +2,22 @@ import { parse } from "../format";
 import { SCHEMA_VERSION } from "../format/schema";
 import type { TruSpecAuth, TruSpecBody, TruSpecMethod, TruSpecRequest } from "../format/types";
 import { safeDecodeURIComponent } from "../util/uri";
-import { asRecord, type ImportedFile, type ImportResult, normalizeMethod, slug } from "./types";
+import { asRecord, type ImportedFile, type ImportResult, normalizeMethod, portedScript, slug } from "./types";
+
+/** Pull Postman `prerequest`/`test` event scripts (preserved as comments to port to the tr API). */
+function postmanScripts(event: unknown): { pre?: string; post?: string } {
+  if (!Array.isArray(event)) return {};
+  const out: { pre?: string; post?: string } = {};
+  for (const e of event) {
+    const er = asRecord(e);
+    const exec = asRecord(er?.script)?.exec;
+    const code = Array.isArray(exec) ? exec.filter((l): l is string => typeof l === "string").join("\n") : "";
+    if (!code.trim()) continue;
+    if (er?.listen === "prerequest") out.pre = portedScript(code, "Postman");
+    else if (er?.listen === "test") out.post = portedScript(code, "Postman");
+  }
+  return out;
+}
 
 function kvFromArray(arr: unknown, key: string): string | undefined {
   if (!Array.isArray(arr)) return undefined;
@@ -168,7 +183,6 @@ function convertRequest(item: Record<string, unknown>, warnings: string[]): TruS
     warnings.push(`Skipped "${name}": no URL`);
     return undefined;
   }
-  if (item.event) warnings.push(`"${name}": pre-request/test scripts not imported (no JS sandbox in v0)`);
 
   const out: TruSpecRequest = {
     tspec: SCHEMA_VERSION,
@@ -184,6 +198,11 @@ function convertRequest(item: Record<string, unknown>, warnings: string[]): TruS
   if (auth) out.auth = auth;
   const body = convertBody(req.body, warnings, name);
   if (body) out.body = body;
+  const scripts = postmanScripts(item.event);
+  if (scripts.pre || scripts.post) {
+    out.script = { ...(scripts.pre ? { pre: scripts.pre } : {}), ...(scripts.post ? { post: scripts.post } : {}) };
+    warnings.push(`"${name}": Postman scripts imported as comments — port to the tr API`);
+  }
   return out;
 }
 

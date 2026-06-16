@@ -69,6 +69,23 @@ describe("importPostman", () => {
     expect(result.stats.requests).toBe(1);
     expect(result.files[0]?.content).toBeTruthy();
   });
+
+  it("preserves a Postman pre-request script as a commented script.pre (with a warning)", () => {
+    const result = importPostman({
+      info: { name: "x" },
+      item: [
+        {
+          name: "signed",
+          event: [{ listen: "prerequest", script: { exec: ['pm.environment.set("ts", Date.now())'] } }],
+          request: { method: "GET", url: "http://x/data" },
+        },
+      ],
+    });
+    const req = parse.request.parse(result.files[0]?.content ?? "");
+    expect(req.script?.pre).toContain("Ported from Postman");
+    expect(req.script?.pre).toContain("// pm.environment.set"); // original preserved, commented
+    expect(result.warnings.some((w) => /port to the tr API/.test(w))).toBe(true);
+  });
 });
 
 describe("Bruno .bru parsing", () => {
@@ -77,6 +94,17 @@ describe("Bruno .bru parsing", () => {
     expect(blocks.map((b) => b.name)).toEqual(["meta", "body"]);
     expect(blocks[1]?.sub).toBe("json");
     expect(blocks[1]?.body).toContain('"a": 1');
+  });
+
+  it("preserves a Bruno pre-request script as a commented script.pre (with a warning)", () => {
+    const text =
+      'meta {\n  name: signed\n}\nget {\n  url: http://x/data\n}\nscript:pre-request {\n  bru.setVar("ts", Date.now())\n}\n';
+    const { request, warnings } = bruToRequest(text);
+    expect(request?.script?.pre).toContain("Ported from Bruno");
+    expect(request?.script?.pre).toContain('// bru.setVar("ts"'); // original preserved, commented
+    expect(warnings.some((w) => /port to the tr API/.test(w))).toBe(true);
+    // and the imported request still serializes/parses (the commented script is a no-op)
+    if (request) parse.request.parse(parse.request.serialize(request));
   });
 
   it("converts a .bru request with auth, query, and asserts", () => {

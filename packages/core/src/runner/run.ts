@@ -3,7 +3,7 @@ import { type AssertionResult, evaluateAssertions, type ResponseView } from "./a
 import { evaluateCaptures } from "./capture";
 import type { VarValue, Vars } from "./interpolate";
 import { resolveRequest } from "./resolve";
-import { runPostScript } from "./script";
+import { runPostScript, runPreScript } from "./script";
 
 export interface RunContext {
   folder?: TruSpecFolderConfig;
@@ -81,9 +81,25 @@ export async function runRequest(req: TruSpecRequest, ctx: RunContext = {}): Pro
   const doFetch = ctx.fetch ?? globalThis.fetch;
   const now = ctx.now ?? (() => Date.now());
 
+  // Pre-request script runs first; the vars it sets feed the request's interpolation.
+  let vars: Vars = ctx.vars ?? {};
+  if (req.script?.pre) {
+    const pre = runPreScript(req.script.pre, vars);
+    if (pre.error) {
+      return {
+        name: req.name,
+        request: { method: req.method, url: req.url },
+        ok: false,
+        error: `Pre-request script error: ${pre.error}`,
+        assertions: [],
+      };
+    }
+    vars = { ...vars, ...pre.vars };
+  }
+
   let eff: ReturnType<typeof resolveRequest>;
   try {
-    eff = resolveRequest(req, { folder: ctx.folder, vars: ctx.vars });
+    eff = resolveRequest(req, { folder: ctx.folder, vars });
   } catch (e) {
     return {
       name: req.name,
@@ -143,7 +159,7 @@ export async function runRequest(req: TruSpecRequest, ctx: RunContext = {}): Pro
 
   let scriptError: string | undefined;
   if (req.script?.post) {
-    const scripted = runPostScript(req.script.post, view, { ...(ctx.vars ?? {}), ...captured });
+    const scripted = runPostScript(req.script.post, view, { ...vars, ...captured });
     assertions.push(...scripted.assertions);
     Object.assign(captured, scripted.captured);
     scriptError = scripted.error;

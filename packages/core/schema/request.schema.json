@@ -397,6 +397,9 @@
         "script": {
           "type": "object",
           "properties": {
+            "pre": {
+              "type": "string"
+            },
             "post": {
               "type": "string"
             }

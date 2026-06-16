@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parse } from "../src/format";
-import { runPostScript, runRequest } from "../src/runner";
+import { runPostScript, runPreScript, runRequest } from "../src/runner";
 
 const okJson = (body: unknown): typeof fetch =>
   (async () =>
@@ -30,6 +30,58 @@ describe("runPostScript", () => {
   it("captures runtime errors", () => {
     const r = runPostScript("throw new Error('boom')", res, {});
     expect(r.error).toMatch(/boom/);
+  });
+});
+
+describe("runPreScript", () => {
+  it("sets variables, reading from tr.vars", () => {
+    expect(runPreScript('tr.set("x", 5); tr.set("y", tr.vars.a)', { a: "1" }).vars).toEqual({ x: 5, y: "1" });
+  });
+
+  it("exposes uuid / base64 / hmac helpers", () => {
+    const r = runPreScript(
+      'tr.set("id", tr.uuid()); tr.set("b", tr.base64("hi")); tr.set("sig", tr.hmac("sha256", "k", "data")); tr.set("sig64", tr.hmac("sha256", "k", "data", "base64"))',
+      {},
+    );
+    expect(r.vars.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    expect(r.vars.b).toBe("aGk=");
+    expect(r.vars.sig).toMatch(/^[0-9a-f]{64}$/); // hex digest
+    expect(typeof r.vars.sig64).toBe("string");
+    expect(r.vars.sig64).not.toBe(r.vars.sig); // base64 differs from hex
+  });
+
+  it("captures runtime errors instead of throwing", () => {
+    const r = runPreScript('throw new Error("preboom")', {});
+    expect(r.error).toMatch(/preboom/);
+  });
+});
+
+describe("runRequest with a pre script", () => {
+  it("feeds a script-computed variable into the request URL", async () => {
+    const req = parse.request.parse(
+      'name: r\nurl: "http://x/{{token}}"\nscript: { pre: "tr.set(\\"token\\", tr.uuid())" }',
+    );
+    let calledUrl = "";
+    const fetchSpy = (async (url: string | URL | Request) => {
+      calledUrl = String(url);
+      return new Response("{}", { status: 200 });
+    }) as typeof fetch;
+    const result = await runRequest(req, { fetch: fetchSpy });
+    expect(result.ok).toBe(true);
+    expect(calledUrl).toMatch(/^http:\/\/x\/[0-9a-f-]{36}$/);
+  });
+
+  it("fails the run (without sending) when the pre script throws", async () => {
+    let called = false;
+    const fetchSpy = (async () => {
+      called = true;
+      return new Response("{}", { status: 200 });
+    }) as typeof fetch;
+    const req = parse.request.parse('name: r\nurl: http://x\nscript: { pre: "throw new Error(\\"preboom\\")" }');
+    const result = await runRequest(req, { fetch: fetchSpy });
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/Pre-request script error.*preboom/);
+    expect(called).toBe(false);
   });
 });
 
