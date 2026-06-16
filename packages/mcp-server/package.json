@@ -1,9 +1,19 @@
 {
   "name": "@truspec/mcp-server",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "TruSpec MCP server — exposes the engine to AI agents (Claude Code, etc.).",
   "type": "module",
   "license": "MIT",
+  "author": "Rashid Mahmood",
+  "homepage": "https://github.com/code-with-rashid/truspec#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/code-with-rashid/truspec.git",
+    "directory": "packages/mcp-server"
+  },
+  "bugs": "https://github.com/code-with-rashid/truspec/issues",
+  "keywords": ["mcp", "model-context-protocol", "api", "openapi", "ai-agent", "claude", "testing"],
+  "publishConfig": { "access": "public" },
   "bin": {
     "truspec-mcp": "./dist/index.js"
   },

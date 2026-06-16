@@ -1,9 +1,19 @@
 {
   "name": "truspec",
-  "version": "0.0.0",
-  "description": "Local-first, spec-synced, agent-native API client — CLI.",
+  "version": "0.1.0",
+  "description": "Local-first, spec-synced, agent-native API client — CLI (run, drift, coverage, mock, import).",
   "type": "module",
   "license": "MIT",
+  "author": "Rashid Mahmood",
+  "homepage": "https://github.com/code-with-rashid/truspec#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/code-with-rashid/truspec.git",
+    "directory": "packages/cli"
+  },
+  "bugs": "https://github.com/code-with-rashid/truspec/issues",
+  "keywords": ["api", "api-client", "openapi", "http", "testing", "cli", "postman", "bruno", "mock", "drift"],
+  "publishConfig": { "access": "public" },
   "bin": {
     "truspec": "./dist/index.js"
   },

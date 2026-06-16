@@ -1,9 +1,20 @@
 {
   "name": "@truspec/core",
-  "version": "0.0.0",
-  "description": "TruSpec engine: collection format, request runner, OpenAPI drift & coverage, importers.",
+  "version": "0.1.0",
+  "description": "TruSpec engine: collection format, request runner, OpenAPI drift & coverage, importers, mock.",
   "type": "module",
   "license": "MIT",
+  "author": "Rashid Mahmood",
+  "homepage": "https://github.com/code-with-rashid/truspec#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/code-with-rashid/truspec.git",
+    "directory": "packages/core"
+  },
+  "bugs": "https://github.com/code-with-rashid/truspec/issues",
+  "keywords": ["api", "openapi", "http", "testing", "local-first", "drift", "coverage", "mock", "agent"],
+  "publishConfig": { "access": "public" },
+  "sideEffects": false,
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
