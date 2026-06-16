@@ -5,6 +5,38 @@ import { type RunResult, runRequest, type Vars } from "../runner";
 import { buildVars, loadDotenv, loadEnvironment, loadFolderChain } from "./context";
 import { discoverRequests, findUp } from "./discover";
 
+/** Default per-request timeout so a stuck server can't hang a run forever. Pass `timeoutMs: 0` to disable. */
+const DEFAULT_TIMEOUT_MS = 30_000;
+
+/**
+ * Replace declared-secret values with `***` wherever they surface in a reported result — most
+ * importantly the URL of an `apikey: { in: query }` request, but also an echoed header/body or a
+ * captured value — so `truspec run --json` and CI logs don't leak the secret. Short values
+ * (< 6 chars) are skipped to avoid masking ubiquitous substrings.
+ */
+function redactSecrets(result: RunResult, secrets: string[]): void {
+  if (secrets.length === 0) return;
+  const mask = (s: string): string => {
+    let out = s;
+    for (const sec of secrets) out = out.split(sec).join("***");
+    return out;
+  };
+  result.request.url = mask(result.request.url);
+  if (result.error) result.error = mask(result.error);
+  for (const a of result.assertions) a.message = mask(a.message);
+  if (result.response) {
+    result.response.bodyText = mask(result.response.bodyText);
+    for (const [k, v] of Object.entries(result.response.headers)) {
+      result.response.headers[k] = mask(v);
+    }
+  }
+  if (result.captured) {
+    for (const [k, v] of Object.entries(result.captured)) {
+      if (typeof v === "string") result.captured[k] = mask(v);
+    }
+  }
+}
+
 export interface WorkspaceRunOptions {
   env?: string;
   /** Extra variables, applied over the environment's. */
@@ -60,6 +92,11 @@ export async function runPath(target: string, opts: WorkspaceRunOptions = {}): P
     .map((file) => ({ file, req: parse.request.parse(readFileSync(file, "utf8")) }))
     .sort((a, b) => (a.req.order ?? 0) - (b.req.order ?? 0) || a.file.localeCompare(b.file));
 
+  // Resolved values of declared secrets, to scrub from reported output (skip short ones).
+  const secretValues = (env?.secrets ?? [])
+    .map((name) => built.vars[name])
+    .filter((v): v is string => typeof v === "string" && v.length >= 6);
+
   let vars: Vars = { ...built.vars, ...opts.vars };
   const results: RunResult[] = [];
   for (const { file, req } of requests) {
@@ -69,11 +106,12 @@ export async function runPath(target: string, opts: WorkspaceRunOptions = {}): P
       vars,
       fetch: opts.fetch,
       now: opts.now,
-      timeoutMs: opts.timeoutMs,
+      timeoutMs: opts.timeoutMs ?? DEFAULT_TIMEOUT_MS,
     });
     result.filePath = file;
     results.push(result);
-    if (result.captured) vars = { ...vars, ...result.captured };
+    if (result.captured) vars = { ...vars, ...result.captured }; // chain the real values forward…
+    redactSecrets(result, secretValues); // …then mask declared secrets in the reported result
   }
 
   const passed = results.filter((r) => r.ok).length;

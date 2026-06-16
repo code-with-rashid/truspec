@@ -110,7 +110,7 @@ export async function runRequest(req: TruSpecRequest, ctx: RunContext = {}): Pro
   try {
     const init: RequestInit = { method: eff.method, headers: eff.headers };
     if (eff.body !== undefined) init.body = eff.body;
-    if (ctx.timeoutMs !== undefined) init.signal = AbortSignal.timeout(ctx.timeoutMs);
+    if (ctx.timeoutMs !== undefined && ctx.timeoutMs > 0) init.signal = AbortSignal.timeout(ctx.timeoutMs);
     response = await doFetch(eff.url, init);
   } catch (e) {
     return { ...head, ok: false, error: `Request failed: ${(e as Error).message}`, assertions: [] };

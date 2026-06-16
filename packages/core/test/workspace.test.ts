@@ -87,4 +87,47 @@ describe("runPath", () => {
   it("throws on a missing environment", async () => {
     await expect(runPath("examples/petstore", { env: "nope", cwd: repoRoot })).rejects.toThrow(/not found/);
   });
+
+  it("redacts declared secret values from the reported result (e.g. apikey-in-query)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "truspec-redact-"));
+    try {
+      mkdirSync(join(dir, "environments"));
+      writeFileSync(
+        join(dir, "environments", "local.env.yaml"),
+        'tspec: "0.1"\nname: local\nvariables:\n  baseUrl: http://api.test\nsecrets: [API_SECRET]\n',
+      );
+      writeFileSync(
+        join(dir, "get.tspec.yaml"),
+        'name: get\nurl: "{{baseUrl}}/data"\nauth: { type: apikey, name: api_key, value: "{{API_SECRET}}", in: query }\n',
+      );
+      const result = await runPath(dir, {
+        env: "local",
+        cwd: dir,
+        processEnv: { API_SECRET: "SUPERSECRET123" },
+        fetch: (async () => new Response("{}", { status: 200 })) as typeof fetch,
+      });
+      expect(result.results[0]?.request.url).toContain("api_key=***");
+      expect(JSON.stringify(result)).not.toContain("SUPERSECRET123");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("applies a default request timeout that timeoutMs:0 disables", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "truspec-timeout-"));
+    try {
+      writeFileSync(join(dir, "r.tspec.yaml"), "name: r\nurl: http://api.test/x\n");
+      let sawSignal: unknown;
+      const fetchSpy = (async (_url: unknown, init?: { signal?: unknown }) => {
+        sawSignal = init?.signal;
+        return new Response("{}", { status: 200 });
+      }) as unknown as typeof fetch;
+      await runPath(dir, { cwd: dir, fetch: fetchSpy });
+      expect(sawSignal).toBeInstanceOf(AbortSignal); // default timeout applied
+      await runPath(dir, { cwd: dir, fetch: fetchSpy, timeoutMs: 0 });
+      expect(sawSignal).toBeUndefined(); // explicit 0 disables it
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

@@ -195,6 +195,17 @@ describe("runRequest (injected fetch)", () => {
     expect(result.error).toMatch(/ECONNREFUSED/);
   });
 
+  it("fails an invalid-regex assertion instead of throwing out of the run", async () => {
+    const fakeFetch = (async () => new Response("body", { status: 200 })) as typeof fetch;
+    const result = await runRequest(
+      parse.request.parse('name: r\nurl: http://x\nassertions:\n  - { type: body, matches: "[" }'),
+      { fetch: fakeFetch },
+    );
+    expect(result.ok).toBe(false);
+    expect(result.assertions[0]?.ok).toBe(false);
+    expect(result.assertions[0]?.message).toMatch(/assertion error|regular expression/i);
+  });
+
   it("fails instead of OOMing when a response body exceeds the cap", async () => {
     const fakeFetch = (async () =>
       new Response("x".repeat(1024), { status: 200 })) as typeof fetch;
