@@ -1,7 +1,7 @@
 import { parseArgs } from "node:util";
 import { runPath, type WorkspaceRunResult } from "@truspec/core/workspace";
 import { formatHuman, formatJson, formatJunit } from "../output";
-import { type CommandDeps, emit, resolveDeps } from "./deps";
+import { type CommandDeps, emit, num, resolveDeps } from "./deps";
 
 /** `truspec run <path>` — returns a process exit code (0 ok, 1 failures/error, 2 usage). */
 export async function runCommand(argv: string[], deps: Partial<CommandDeps> = {}): Promise<number> {
@@ -40,7 +40,7 @@ export async function runCommand(argv: string[], deps: Partial<CommandDeps> = {}
       fetch: d.fetch,
       now: d.now,
       processEnv: d.processEnv,
-      timeoutMs: values.timeout ? Number(values.timeout) : undefined,
+      timeoutMs: num(values.timeout),
     });
   } catch (e) {
     d.stderr(`Error: ${(e as Error).message}\n`);
@@ -49,6 +49,9 @@ export async function runCommand(argv: string[], deps: Partial<CommandDeps> = {}
 
   if (result.missingSecrets.length > 0) {
     d.stderr(`Warning: unresolved secrets (set as env vars): ${result.missingSecrets.join(", ")}\n`);
+  }
+  if (result.results.length === 0) {
+    d.stderr(`Warning: no .tspec.yaml requests found under "${target}".\n`);
   }
 
   const reporter = values.reporter ?? (values.json ? "json" : "human");

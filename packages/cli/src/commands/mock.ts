@@ -1,8 +1,8 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { type MockServerHandle, startMockServer } from "@truspec/core/mock";
-import { type CommandDeps, resolveDeps } from "./deps";
+import { type CommandDeps, num, resolveDeps } from "./deps";
 
 export interface MockDeps extends Partial<CommandDeps> {
   /** Called once the server is listening (used by tests to grab the handle). */
@@ -33,12 +33,17 @@ export async function mockCommand(argv: string[], deps: MockDeps = {}): Promise<
     return 2;
   }
 
+  const specPath = resolve(d.cwd, values.spec);
+  if (!existsSync(specPath)) {
+    d.stderr(`Spec not found: ${values.spec}\n`);
+    return 1;
+  }
   let handle: MockServerHandle;
   try {
-    const specText = readFileSync(resolve(d.cwd, values.spec), "utf8");
+    const specText = readFileSync(specPath, "utf8");
     handle = await startMockServer(specText, {
-      port: values.port ? Number(values.port) : 4000,
-      delayMs: values.delay ? Number(values.delay) : undefined,
+      port: num(values.port) ?? 4000,
+      delayMs: num(values.delay),
       validate: values.validate,
     });
   } catch (e) {

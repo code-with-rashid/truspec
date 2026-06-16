@@ -37,6 +37,21 @@ describe("mcp tools", () => {
     }
   });
 
+  it("rejects paths that escape the workspace", () => {
+    const dir = mkdtempSync(join(tmpdir(), "truspec-esc-"));
+    try {
+      const ctx = { cwd: dir };
+      // writes outside the workspace are blocked
+      expect(() => createRequest(ctx, "../escape.tspec.yaml", { name: "X", url: "http://x" })).toThrow(/escapes/);
+      expect(() => updateRequest(ctx, "../../etc/x", {})).toThrow(/escapes/);
+      expect(() =>
+        scaffoldFromSpec(ctx, resolve(repoRoot, "examples/petstore/openapi.yaml"), "../out"),
+      ).toThrow(/escapes/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("reports drift and coverage", async () => {
     const ctx = { cwd: repoRoot };
     const drift = await driftTool(ctx, "examples/petstore", "examples/petstore/openapi.yaml");

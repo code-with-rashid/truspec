@@ -20,6 +20,13 @@ export function resolveDeps(deps: Partial<CommandDeps>): CommandDeps {
   };
 }
 
+/** Parse a numeric CLI flag; returns undefined for missing or non-finite values. */
+export function num(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : undefined;
+}
+
 /** Write newline-terminated `text` to a file (when `output` is set) or stdout. */
 export function emit(d: CommandDeps, text: string, output?: string): void {
   const withNl = text.endsWith("\n") ? text : `${text}\n`;

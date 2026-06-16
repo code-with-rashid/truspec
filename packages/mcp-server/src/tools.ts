@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, relative, resolve } from "node:path";
+import { dirname, relative, resolve, sep } from "node:path";
 import { parse } from "@truspec/core/format";
 import {
   coverageReport,
@@ -13,6 +13,15 @@ import { discoverRequests, runPath } from "@truspec/core/workspace";
 export interface ToolContext {
   cwd: string;
   fetch?: typeof globalThis.fetch;
+}
+
+/** Resolve `target` but confine it to the workspace (`cwd`); throws on escape. */
+function within(cwd: string, target: string): string {
+  const abs = resolve(cwd, target);
+  if (abs !== cwd && !abs.startsWith(cwd + sep)) {
+    throw new Error(`Path escapes the workspace: ${target}`);
+  }
+  return abs;
 }
 
 export function listCollections(ctx: ToolContext, dir = ".") {
@@ -43,14 +52,14 @@ export async function runCollectionTool(ctx: ToolContext, dir: string, env?: str
 export function createRequest(ctx: ToolContext, path: string, request: unknown) {
   const validation = parse.request.validate(request);
   if (!validation.ok || !validation.data) return { ok: false as const, error: validation.error };
-  const abs = resolve(ctx.cwd, path);
+  const abs = within(ctx.cwd, path);
   mkdirSync(dirname(abs), { recursive: true });
   writeFileSync(abs, parse.request.serialize(validation.data));
   return { ok: true as const, path: relative(ctx.cwd, abs) };
 }
 
 export function updateRequest(ctx: ToolContext, path: string, patch: Record<string, unknown>) {
-  const abs = resolve(ctx.cwd, path);
+  const abs = within(ctx.cwd, path);
   if (!existsSync(abs)) return { ok: false as const, error: `Not found: ${path}` };
   const current = parse.request.parse(readFileSync(abs, "utf8"));
   const validation = parse.request.validate({ ...current, ...patch });
@@ -73,7 +82,7 @@ export function coverageTool(ctx: ToolContext, dir: string, specPath: string, mi
 export function scaffoldFromSpec(ctx: ToolContext, specPath: string, outDir: string, baseUrlVar = "baseUrl") {
   const specText = readFileSync(resolve(ctx.cwd, specPath), "utf8");
   const result = coreScaffold(specText, { baseUrlVar });
-  const written = writeScaffold(result.files, resolve(ctx.cwd, outDir));
+  const written = writeScaffold(result.files, within(ctx.cwd, outDir));
   return {
     created: written.length,
     files: written.map((p) => relative(ctx.cwd, p)),
