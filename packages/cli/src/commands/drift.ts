@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { driftReport } from "@truspec/core/spec";
+import { driftReport, liveDriftReport } from "@truspec/core/spec";
 import { formatDrift } from "../output";
 import { type CommandDeps, emit, resolveDeps } from "./deps";
 
@@ -9,11 +9,13 @@ export async function driftCommand(argv: string[], deps: Partial<CommandDeps> = 
   const d = resolveDeps(deps);
   const options = {
     spec: { type: "string", short: "s" },
+    live: { type: "string" },
+    timeout: { type: "string" },
     json: { type: "boolean" },
     output: { type: "string", short: "o" },
   } as const;
 
-  let values: { spec?: string; json?: boolean; output?: string };
+  let values: { spec?: string; live?: string; timeout?: string; json?: boolean; output?: string };
   let positionals: string[];
   try {
     const parsed = parseArgs({ args: argv, allowPositionals: true, options });
@@ -25,13 +27,19 @@ export async function driftCommand(argv: string[], deps: Partial<CommandDeps> = 
   }
 
   if (!values.spec) {
-    d.stderr("Usage: truspec drift --spec <openapi> [<dir>] [--json]\n");
+    d.stderr("Usage: truspec drift --spec <openapi> [<dir>] [--live <baseUrl>] [--json]\n");
     return 2;
   }
 
   let report: ReturnType<typeof driftReport>;
   try {
-    report = driftReport(resolve(d.cwd, positionals[0] ?? "."), resolve(d.cwd, values.spec));
+    const dir = resolve(d.cwd, positionals[0] ?? ".");
+    const spec = resolve(d.cwd, values.spec);
+    report = values.live
+      ? await liveDriftReport(dir, spec, values.live, {
+          timeoutMs: values.timeout ? Number(values.timeout) : undefined,
+        })
+      : driftReport(dir, spec);
   } catch (e) {
     d.stderr(`Error: ${(e as Error).message}\n`);
     return 1;

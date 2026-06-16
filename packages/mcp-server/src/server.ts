@@ -89,10 +89,14 @@ export function createServer(ctx: ServerContext = {}): McpServer {
     {
       title: "Drift",
       description:
-        "Diff a collection against an OpenAPI spec; lists untracked (added) and stale (removed) operations.",
-      inputSchema: { dir: z.string(), spec: z.string().describe("Path to the OpenAPI spec.") },
+        "Diff a collection against an OpenAPI spec: untracked (added), stale (removed), changed (missing required params), and — with `live` — operations missing from a running API.",
+      inputSchema: {
+        dir: z.string(),
+        spec: z.string().describe("Path to the OpenAPI spec."),
+        live: z.string().optional().describe("Base URL of a running API to probe (GET/HEAD only)."),
+      },
     },
-    async ({ dir, spec }) => json(tools.driftTool(c, dir, spec)),
+    async ({ dir, spec, live }) => json(await tools.driftTool(c, dir, spec, live)),
   );
 
   server.registerTool(
@@ -127,12 +131,13 @@ export function createServer(ctx: ServerContext = {}): McpServer {
       inputSchema: {
         spec: z.string().describe("Path to the OpenAPI spec."),
         port: z.number().optional().describe("Port (default: an ephemeral free port)."),
+        delay: z.number().optional().describe("Response delay in milliseconds."),
       },
     },
-    async ({ spec, port }) => {
+    async ({ spec, port, delay }) => {
       if (mock) return json({ alreadyRunning: true, url: mock.url, routes: mock.routes });
       const specText = readFileSync(resolve(c.cwd, spec), "utf8");
-      mock = await startMockServer(specText, { port: port ?? 0 });
+      mock = await startMockServer(specText, { port: port ?? 0, delayMs: delay });
       return json({ started: true, url: mock.url, routes: mock.routes });
     },
   );

@@ -37,9 +37,10 @@ describe("mcp tools", () => {
     }
   });
 
-  it("reports drift and coverage", () => {
+  it("reports drift and coverage", async () => {
     const ctx = { cwd: repoRoot };
-    expect(driftTool(ctx, "examples/petstore", "examples/petstore/openapi.yaml").added).toContain("GET /pets");
+    const drift = await driftTool(ctx, "examples/petstore", "examples/petstore/openapi.yaml");
+    expect(drift.added).toContain("GET /pets");
     expect(coverageTool(ctx, "examples/petstore", "examples/petstore/openapi.yaml").percent).toBe(33);
   });
 

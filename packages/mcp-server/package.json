@@ -1,6 +1,6 @@
 {
   "name": "@truspec/mcp-server",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "TruSpec MCP server — exposes the engine to AI agents (Claude Code, etc.).",
   "type": "module",
   "license": "MIT",

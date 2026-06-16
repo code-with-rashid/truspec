@@ -1,6 +1,6 @@
 {
   "name": "truspec",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Local-first, spec-synced, agent-native API client — CLI (run, drift, coverage, mock, import).",
   "type": "module",
   "license": "MIT",

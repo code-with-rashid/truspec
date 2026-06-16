@@ -4,6 +4,7 @@ import { parse } from "@truspec/core/format";
 import {
   coverageReport,
   driftReport,
+  liveDriftReport,
   scaffoldFromSpec as coreScaffold,
   writeScaffold,
 } from "@truspec/core/spec";
@@ -58,8 +59,10 @@ export function updateRequest(ctx: ToolContext, path: string, patch: Record<stri
   return { ok: true as const, path: relative(ctx.cwd, abs) };
 }
 
-export function driftTool(ctx: ToolContext, dir: string, specPath: string) {
-  return driftReport(resolve(ctx.cwd, dir), resolve(ctx.cwd, specPath));
+export async function driftTool(ctx: ToolContext, dir: string, specPath: string, live?: string) {
+  const d = resolve(ctx.cwd, dir);
+  const s = resolve(ctx.cwd, specPath);
+  return live ? liveDriftReport(d, s, live, { fetch: ctx.fetch }) : driftReport(d, s);
 }
 
 export function coverageTool(ctx: ToolContext, dir: string, specPath: string, minPercent = 0) {

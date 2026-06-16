@@ -64,4 +64,16 @@ describe("startMockServer", () => {
       await handle.close();
     }
   });
+
+  it("applies a response delay", async () => {
+    const handle = await startMockServer(specText, { port: 0, delayMs: 30 });
+    try {
+      const start = Date.now();
+      const res = await fetch(`${handle.url}/pets/1`);
+      expect(res.status).toBe(200);
+      expect(Date.now() - start).toBeGreaterThanOrEqual(20);
+    } finally {
+      await handle.close();
+    }
+  });
 });

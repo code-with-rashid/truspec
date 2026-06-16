@@ -14,9 +14,13 @@ export interface MockDeps extends Partial<CommandDeps> {
 /** `truspec mock --spec <openapi> [--port <n>]` — serve generated responses from a spec. */
 export async function mockCommand(argv: string[], deps: MockDeps = {}): Promise<number> {
   const d = resolveDeps(deps);
-  const options = { spec: { type: "string", short: "s" }, port: { type: "string", short: "p" } } as const;
+  const options = {
+    spec: { type: "string", short: "s" },
+    port: { type: "string", short: "p" },
+    delay: { type: "string" },
+  } as const;
 
-  let values: { spec?: string; port?: string };
+  let values: { spec?: string; port?: string; delay?: string };
   try {
     values = parseArgs({ args: argv, allowPositionals: true, options }).values;
   } catch (e) {
@@ -31,7 +35,10 @@ export async function mockCommand(argv: string[], deps: MockDeps = {}): Promise<
   let handle: MockServerHandle;
   try {
     const specText = readFileSync(resolve(d.cwd, values.spec), "utf8");
-    handle = await startMockServer(specText, { port: values.port ? Number(values.port) : 4000 });
+    handle = await startMockServer(specText, {
+      port: values.port ? Number(values.port) : 4000,
+      delayMs: values.delay ? Number(values.delay) : undefined,
+    });
   } catch (e) {
     d.stderr(`Error: ${(e as Error).message}\n`);
     return 1;

@@ -36,12 +36,26 @@ export function formatDrift(report: DriftReport): string {
     lines.push("", `Stale — not in the spec (${report.removed.length}):`);
     for (const k of report.removed) lines.push(`  - ${k}`);
   }
+  if (report.changed.length > 0) {
+    lines.push("", `Changed (${report.changed.length}):`);
+    for (const k of report.changed) lines.push(`  ~ ${k}`);
+  }
+  if (report.liveMissing && report.liveMissing.length > 0) {
+    lines.push("", `Missing from live API (${report.liveMissing.length}):`);
+    for (const k of report.liveMissing) lines.push(`  x ${k}`);
+  }
   lines.push("");
-  lines.push(
-    report.ok
-      ? "No drift — collection matches the spec."
-      : `Drift detected: ${report.added.length} untracked, ${report.removed.length} stale.`,
-  );
+  if (report.ok) {
+    lines.push("No drift — collection matches the spec.");
+  } else {
+    const parts = [
+      `${report.added.length} untracked`,
+      `${report.removed.length} stale`,
+      `${report.changed.length} changed`,
+    ];
+    if (report.liveMissing) parts.push(`${report.liveMissing.length} missing live`);
+    lines.push(`Drift detected: ${parts.join(", ")}.`);
+  }
   return lines.join("\n");
 }
 

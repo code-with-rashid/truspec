@@ -11,20 +11,25 @@ export interface MockServerHandle {
 /** Start a local HTTP mock server from OpenAPI text. Port 0 picks a free port. */
 export async function startMockServer(
   specText: string,
-  opts: { port?: number; host?: string } = {},
+  opts: { port?: number; host?: string; delayMs?: number } = {},
 ): Promise<MockServerHandle> {
   const responder = createMockResponder(specText);
   const host = opts.host ?? "127.0.0.1";
+  const delayMs = opts.delayMs ?? 0;
   const server = createServer((req, res) => {
     const path = new URL(req.url ?? "/", "http://localhost").pathname;
     const result = responder.respond(req.method ?? "GET", path);
-    if (!result) {
-      res.writeHead(404, { "content-type": "application/json" });
-      res.end(JSON.stringify({ error: `No mock for ${req.method} ${path}` }));
-      return;
-    }
-    res.writeHead(result.status, result.headers);
-    res.end(result.body);
+    const send = (): void => {
+      if (!result) {
+        res.writeHead(404, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: `No mock for ${req.method} ${path}` }));
+        return;
+      }
+      res.writeHead(result.status, result.headers);
+      res.end(result.body);
+    };
+    if (delayMs > 0) setTimeout(send, delayMs);
+    else send();
   });
 
   await new Promise<void>((resolve, reject) => {
