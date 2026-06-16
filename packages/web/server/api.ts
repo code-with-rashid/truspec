@@ -1,5 +1,5 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { join, relative, sep } from "node:path";
 import { parse } from "@truspec/core/format";
 import { coverageReport, driftReport } from "@truspec/core/spec";
 import { confinePath, discoverRequests, runPath } from "@truspec/core/workspace";
@@ -24,11 +24,33 @@ function listEnvironments(dir: string): string[] {
 
 function listSpecs(dir: string): string[] {
   const out: string[] = [];
+  let root: string;
+  try {
+    root = realpathSync(dir);
+  } catch {
+    return out;
+  }
+  const visited = new Set<string>();
   const walk = (d: string): void => {
+    let real: string;
+    try {
+      real = realpathSync(d);
+    } catch {
+      return;
+    }
+    if (real !== root && !real.startsWith(root + sep)) return; // escaped the workspace
+    if (visited.has(real)) return; // symlink cycle / already seen
+    visited.add(real);
     for (const name of readdirSync(d).sort()) {
       if (name === "node_modules" || name === ".git" || name === "environments") continue;
       const full = join(d, name);
-      if (statSync(full).isDirectory()) {
+      let isDir: boolean;
+      try {
+        isDir = statSync(full).isDirectory();
+      } catch {
+        continue;
+      }
+      if (isDir) {
         walk(full);
       } else if (/\.(ya?ml|json)$/.test(name) && !name.endsWith(".tspec.yaml")) {
         try {

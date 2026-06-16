@@ -1,4 +1,6 @@
-import { resolve } from "node:path";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { buildVars, discoverRequests, mergeFolderConfigs, runPath } from "../src/workspace";
 
@@ -10,6 +12,33 @@ describe("workspace discovery", () => {
     const files = discoverRequests(petstore);
     expect(files.some((f) => f.endsWith("get-pet.tspec.yaml"))).toBe(true);
     expect(files.some((f) => f.endsWith("folder.tspec.yaml"))).toBe(false);
+  });
+
+  it("terminates on a symlink cycle instead of recursing forever", () => {
+    const dir = mkdtempSync(join(tmpdir(), "truspec-ws-"));
+    try {
+      mkdirSync(join(dir, "sub"));
+      writeFileSync(join(dir, "sub", "a.tspec.yaml"), "name: a\nurl: http://x");
+      symlinkSync(dir, join(dir, "sub", "loop")); // sub/loop -> dir  (cycle)
+      const files = discoverRequests(dir);
+      expect(files.filter((f) => f.endsWith("a.tspec.yaml")).length).toBe(1);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not follow a symlink that points outside the workspace", () => {
+    const dir = mkdtempSync(join(tmpdir(), "truspec-ws-"));
+    const outside = mkdtempSync(join(tmpdir(), "truspec-out-"));
+    try {
+      writeFileSync(join(outside, "foreign.tspec.yaml"), "name: x\nurl: http://x");
+      symlinkSync(outside, join(dir, "escape")); // dir/escape -> outside
+      const files = discoverRequests(dir);
+      expect(files.some((f) => f.endsWith("foreign.tspec.yaml"))).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(outside, { recursive: true, force: true });
+    }
   });
 });
 
