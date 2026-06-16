@@ -127,12 +127,12 @@ pnpm build
 pnpm gen:schema      # regenerate JSON Schema from the Zod source
 ```
 
-The CLI ships as a Bun-compiled single binary for distribution; the dev loop runs on Node ≥ 22.
+The CLI runs on Node ≥ 22. A Bun-compiled single binary for zero-install distribution is planned (it still needs the `serve` web-client assets embedded and version stamping wired into the compile step).
 
 ## Status & roadmap
 
-**Shipped:** format + JSON Schema · runner (REST + GraphQL, auth, request chaining/capture, **post-response scripts**) · CLI (`run` [+ JUnit], `drift`, `coverage`, `gen`, `import`, `mock`, `serve`) · OpenAPI drift (added/removed/**changed** + **`--live`** API probe) + coverage · **local mock server** (latency + **request validation**) · `.env` + secrets · Postman/Bruno import · MCP server (10 tools) · **web UI** (`truspec serve`) · **published to npm**.
-**Next:** VS Code extension (reuse the web UI in a webview) · in-UI request editing.
+**Shipped:** format + JSON Schema · runner (REST + GraphQL, auth, request chaining/capture, **post-response scripts**) · CLI (`run` [+ JUnit], `drift`, `coverage`, `gen`, `import`, `mock`, `serve`) · OpenAPI drift (added/removed/**changed** + **`--live`** API probe) + coverage · **local mock server** (latency + **request validation**) · `.env` + secrets (**masked in run output**) · Postman/Bruno import · MCP server (10 tools) · **web UI** (`truspec serve`) · **VS Code extension** (CodeLens + results view, pre-release).
+**Next:** publish v0.5.0 to npm + the extension to the Marketplace · **Bun single-binary** distribution · **in-UI request editing** · **pre-request scripting**.
 
 Deferred by design (not bloat): hosted dashboards, visual flow builders, exotic protocols, mandatory cloud sync.
 

@@ -721,3 +721,92 @@ select:focus {
   outline: 2px solid var(--lime);
   outline-offset: 1px;
 }
+
+/* ---- Editor (in-UI request editing) ---- */
+.newreq {
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid var(--line-2);
+  color: var(--dim);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 1px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease;
+}
+.newreq:hover {
+  color: var(--lime);
+  border-color: var(--lime);
+}
+.editor {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 14px 16px 16px;
+  gap: 10px;
+}
+.editor-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.editor-title {
+  font-size: 10.5px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--lime);
+}
+.editor-bar .grow {
+  flex: 1;
+}
+.path-input,
+.path-fixed {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 9px;
+  color: var(--text);
+}
+.path-input {
+  width: 280px;
+}
+.path-input:focus {
+  border-color: var(--lime);
+  outline: none;
+}
+.editor-text {
+  flex: 1;
+  min-height: 320px;
+  resize: none;
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.55;
+  tab-size: 2;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+.editor-text:focus {
+  border-color: var(--line-2);
+  outline: none;
+}
+.editor-err {
+  white-space: pre-wrap;
+  color: var(--red);
+  font-size: 12px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in oklab, var(--red) 40%, var(--line));
+  border-radius: 6px;
+  background: color-mix(in oklab, var(--red) 8%, transparent);
+}
+.editor-hint {
+  font-size: 11px;
+}

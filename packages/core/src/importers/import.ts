@@ -1,6 +1,7 @@
-import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { parse } from "../format";
+import { walkDirSafe } from "../workspace/walk";
 import { bruToRequest } from "./bru";
 import { importPostman } from "./postman";
 import type { ImportedFile, ImportResult } from "./types";
@@ -17,17 +18,9 @@ export function importPostmanFile(file: string): ImportResult {
 
 function findBruFiles(dir: string): string[] {
   const out: string[] = [];
-  const walk = (d: string): void => {
-    for (const name of readdirSync(d).sort()) {
-      if (name === "node_modules" || name === ".git") continue;
-      const full = join(d, name);
-      if (statSync(full).isDirectory()) walk(full);
-      else if (name.endsWith(".bru") && name !== "collection.bru" && name !== "folder.bru") {
-        out.push(full);
-      }
-    }
-  };
-  walk(dir);
+  walkDirSafe(dir, (full, name) => {
+    if (name.endsWith(".bru") && name !== "collection.bru" && name !== "folder.bru") out.push(full);
+  });
   return out;
 }
 

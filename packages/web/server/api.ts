@@ -1,8 +1,8 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { join, relative, resolve, sep } from "node:path";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join, relative } from "node:path";
 import { parse } from "@truspec/core/format";
 import { coverageReport, driftReport } from "@truspec/core/spec";
-import { discoverRequests, runPath } from "@truspec/core/workspace";
+import { confinePath, discoverRequests, runPath, walkDirSafe } from "@truspec/core/workspace";
 
 export interface ApiContext {
   dir: string;
@@ -11,13 +11,6 @@ export interface ApiContext {
 export interface ApiResult {
   status: number;
   json: unknown;
-}
-
-/** Confine a relative path to the served workspace. */
-function within(dir: string, target: string): string {
-  const abs = resolve(dir, target);
-  if (abs !== dir && !abs.startsWith(dir + sep)) throw new Error("Path escapes the workspace");
-  return abs;
 }
 
 function listEnvironments(dir: string): string[] {
@@ -31,23 +24,19 @@ function listEnvironments(dir: string): string[] {
 
 function listSpecs(dir: string): string[] {
   const out: string[] = [];
-  const walk = (d: string): void => {
-    for (const name of readdirSync(d).sort()) {
-      if (name === "node_modules" || name === ".git" || name === "environments") continue;
-      const full = join(d, name);
-      if (statSync(full).isDirectory()) {
-        walk(full);
-      } else if (/\.(ya?ml|json)$/.test(name) && !name.endsWith(".tspec.yaml")) {
-        try {
-          const text = readFileSync(full, "utf8");
-          if (name.includes("openapi") || /["']?openapi["']?\s*:/.test(text)) out.push(relative(dir, full));
-        } catch {
-          // ignore unreadable files
-        }
+  walkDirSafe(
+    dir,
+    (full, name) => {
+      if (!/\.(ya?ml|json)$/.test(name) || name.endsWith(".tspec.yaml")) return;
+      try {
+        const text = readFileSync(full, "utf8");
+        if (name.includes("openapi") || /["']?openapi["']?\s*:/.test(text)) out.push(relative(dir, full));
+      } catch {
+        // ignore unreadable files
       }
-    }
-  };
-  walk(dir);
+    },
+    { skip: ["environments"] },
+  );
   return out;
 }
 
@@ -84,22 +73,44 @@ export async function handleApi(
   if (method === "GET" && pathname === "/api/request") {
     const p = query.get("path");
     if (!p) return { status: 400, json: { error: "path required" } };
-    return { status: 200, json: parse.request.parse(readFileSync(within(ctx.dir, p), "utf8")) };
+    const text = readFileSync(confinePath(ctx.dir, p), "utf8");
+    // Parsed fields for display + the raw source so the editor round-trips exactly.
+    return { status: 200, json: { ...parse.request.parse(text), raw: text } };
+  }
+  if (method === "POST" && pathname === "/api/request") {
+    const b = (body ?? {}) as { path?: string; content?: string };
+    if (!b.path || typeof b.content !== "string") {
+      return { status: 400, json: { error: "path and content required" } };
+    }
+    if (!b.path.endsWith(".tspec.yaml") || b.path.endsWith("folder.tspec.yaml")) {
+      return { status: 200, json: { ok: false, error: "Path must be a request file ending in .tspec.yaml" } };
+    }
+    const validation = parse.request.safeParse(b.content);
+    if (!validation.ok) return { status: 200, json: { ok: false, error: validation.error } };
+    let abs: string;
+    try {
+      abs = confinePath(ctx.dir, b.path);
+    } catch (e) {
+      return { status: 200, json: { ok: false, error: (e as Error).message } };
+    }
+    mkdirSync(dirname(abs), { recursive: true });
+    writeFileSync(abs, b.content);
+    return { status: 200, json: { ok: true, path: relative(ctx.dir, abs) } };
   }
   if (method === "POST" && pathname === "/api/run") {
     const b = (body ?? {}) as { target?: string; env?: string };
-    const target = b.target ? within(ctx.dir, b.target) : ctx.dir;
+    const target = b.target ? confinePath(ctx.dir, b.target) : ctx.dir;
     return { status: 200, json: await runPath(target, { env: b.env || undefined, cwd: ctx.dir }) };
   }
   if (method === "POST" && pathname === "/api/drift") {
     const b = (body ?? {}) as { spec?: string };
     if (!b.spec) return { status: 400, json: { error: "spec required" } };
-    return { status: 200, json: driftReport(ctx.dir, within(ctx.dir, b.spec)) };
+    return { status: 200, json: driftReport(ctx.dir, confinePath(ctx.dir, b.spec)) };
   }
   if (method === "POST" && pathname === "/api/coverage") {
     const b = (body ?? {}) as { spec?: string };
     if (!b.spec) return { status: 400, json: { error: "spec required" } };
-    return { status: 200, json: coverageReport(ctx.dir, within(ctx.dir, b.spec)) };
+    return { status: 200, json: coverageReport(ctx.dir, confinePath(ctx.dir, b.spec)) };
   }
   return { status: 404, json: { error: "not found" } };
 }

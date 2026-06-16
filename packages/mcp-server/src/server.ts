@@ -5,6 +5,9 @@ import { type MockServerHandle, startMockServer } from "@truspec/core/mock";
 import { z } from "zod";
 import * as tools from "./tools";
 
+declare const __TRUSPEC_VERSION__: string | undefined;
+const VERSION = typeof __TRUSPEC_VERSION__ === "string" ? __TRUSPEC_VERSION__ : "0.0.0";
+
 export interface ServerContext {
   cwd?: string;
   fetch?: typeof globalThis.fetch;
@@ -17,7 +20,7 @@ const json = (data: unknown) => ({
 /** Build the TruSpec MCP server with all tools registered against the core engine. */
 export function createServer(ctx: ServerContext = {}): McpServer {
   const c: tools.ToolContext = { cwd: ctx.cwd ?? process.cwd(), fetch: ctx.fetch };
-  const server = new McpServer({ name: "truspec", version: "0.0.0" });
+  const server = new McpServer({ name: "truspec", version: VERSION });
   let mock: MockServerHandle | undefined;
 
   server.registerTool(

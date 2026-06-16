@@ -1,7 +1,23 @@
 import { parse } from "../format";
 import { SCHEMA_VERSION } from "../format/schema";
 import type { TruSpecAuth, TruSpecBody, TruSpecMethod, TruSpecRequest } from "../format/types";
-import { asRecord, type ImportedFile, type ImportResult, normalizeMethod, slug } from "./types";
+import { safeDecodeURIComponent } from "../util/uri";
+import { asRecord, type ImportedFile, type ImportResult, normalizeMethod, portedScript, slug } from "./types";
+
+/** Pull Postman `prerequest`/`test` event scripts (preserved as comments to port to the tr API). */
+function postmanScripts(event: unknown): { pre?: string; post?: string } {
+  if (!Array.isArray(event)) return {};
+  const out: { pre?: string; post?: string } = {};
+  for (const e of event) {
+    const er = asRecord(e);
+    const exec = asRecord(er?.script)?.exec;
+    const code = Array.isArray(exec) ? exec.filter((l): l is string => typeof l === "string").join("\n") : "";
+    if (!code.trim()) continue;
+    if (er?.listen === "prerequest") out.pre = portedScript(code, "Postman");
+    else if (er?.listen === "test") out.post = portedScript(code, "Postman");
+  }
+  return out;
+}
 
 function kvFromArray(arr: unknown, key: string): string | undefined {
   if (!Array.isArray(arr)) return undefined;
@@ -49,7 +65,7 @@ function splitQuery(raw: string): { url: string; query?: Record<string, string> 
     const eq = pair.indexOf("=");
     const k = eq === -1 ? pair : pair.slice(0, eq);
     const v = eq === -1 ? "" : pair.slice(eq + 1);
-    if (k) query[decodeURIComponent(k)] = decodeURIComponent(v);
+    if (k) query[safeDecodeURIComponent(k)] = safeDecodeURIComponent(v);
   }
   return { url: base, query: Object.keys(query).length > 0 ? query : undefined };
 }
@@ -140,8 +156,26 @@ function convertBody(raw: unknown, warnings: string[], name: string): TruSpecBod
 }
 
 function convertRequest(item: Record<string, unknown>, warnings: string[]): TruSpecRequest | undefined {
-  const req = asRecord(item.request);
   const name = String(item.name ?? "Request");
+
+  // Postman shorthand: `request` may be a bare string ("GET http://…" or "http://…").
+  if (typeof item.request === "string") {
+    const match = item.request.trim().match(/^([A-Za-z]+)\s+(\S.*)$/);
+    const url = (match?.[2] ?? item.request).trim();
+    if (!url) {
+      warnings.push(`Skipped "${name}": empty request`);
+      return undefined;
+    }
+    return {
+      tspec: SCHEMA_VERSION,
+      name,
+      method: normalizeMethod(match?.[1] ?? "GET", name, warnings) as TruSpecMethod,
+      url,
+      assertions: [],
+    };
+  }
+
+  const req = asRecord(item.request);
   if (!req) return undefined;
 
   const { url, query } = convertUrl(req.url);
@@ -149,7 +183,6 @@ function convertRequest(item: Record<string, unknown>, warnings: string[]): TruS
     warnings.push(`Skipped "${name}": no URL`);
     return undefined;
   }
-  if (item.event) warnings.push(`"${name}": pre-request/test scripts not imported (no JS sandbox in v0)`);
 
   const out: TruSpecRequest = {
     tspec: SCHEMA_VERSION,
@@ -165,6 +198,11 @@ function convertRequest(item: Record<string, unknown>, warnings: string[]): TruS
   if (auth) out.auth = auth;
   const body = convertBody(req.body, warnings, name);
   if (body) out.body = body;
+  const scripts = postmanScripts(item.event);
+  if (scripts.pre || scripts.post) {
+    out.script = { ...(scripts.pre ? { pre: scripts.pre } : {}), ...(scripts.post ? { post: scripts.post } : {}) };
+    warnings.push(`"${name}": Postman scripts imported as comments — port to the tr API`);
+  }
   return out;
 }
 
@@ -178,7 +216,17 @@ export function importPostman(input: unknown): ImportResult {
   const files: ImportedFile[] = [];
   const stats = { requests: 0, folders: 0 };
 
-  const walk = (items: unknown[], dir: string): void => {
+  // Bound folder recursion so a hostile/malformed collection can't stack-overflow the import.
+  const MAX_FOLDER_DEPTH = 100;
+  let depthWarned = false;
+  const walk = (items: unknown[], dir: string, depth: number): void => {
+    if (depth > MAX_FOLDER_DEPTH) {
+      if (!depthWarned) {
+        warnings.push(`Skipped folders nested deeper than ${MAX_FOLDER_DEPTH} levels`);
+        depthWarned = true;
+      }
+      return;
+    }
     const used = new Map<string, number>();
     for (const raw of items) {
       const item = asRecord(raw);
@@ -186,7 +234,7 @@ export function importPostman(input: unknown): ImportResult {
       if (Array.isArray(item.item)) {
         stats.folders++;
         const folder = slug(String(item.name ?? "folder"));
-        walk(item.item, dir ? `${dir}/${folder}` : folder);
+        walk(item.item, dir ? `${dir}/${folder}` : folder, depth + 1);
       } else if (item.request) {
         const converted = convertRequest(item, warnings);
         if (!converted) continue;
@@ -199,7 +247,7 @@ export function importPostman(input: unknown): ImportResult {
       }
     }
   };
-  walk(root.item, "");
+  walk(root.item, "", 0);
 
   const collectionAuth = convertAuth(root.auth, warnings);
   if (collectionAuth) {

@@ -31,3 +31,17 @@ export function slug(name: string): string {
     .replace(/^-+|-+$/g, "");
   return s || "request";
 }
+
+/**
+ * Preserve a foreign (Postman/Bruno) script on import by commenting it out: the original logic
+ * survives inline to port, but it's a no-op so the imported request still runs. Their `pm`/`bru`/`req`
+ * APIs differ from TruSpec's `tr`, so they can't be executed verbatim.
+ */
+export function portedScript(code: string, from: string): string {
+  const commented = code
+    .trim()
+    .split("\n")
+    .map((l) => `// ${l}`)
+    .join("\n");
+  return `// Ported from ${from} — rewrite using TruSpec's tr API (tr.set / tr.vars / tr.uuid / tr.hmac; see CLAUDE.md).\n${commented}\n`;
+}

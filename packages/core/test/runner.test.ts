@@ -19,9 +19,31 @@ describe("interpolate", () => {
     expect(r.value).toBe("1-");
     expect(r.missing).toEqual(["missing"]);
   });
+  it("treats Object.prototype names as missing, not inherited members", () => {
+    // {{toString}} / {{constructor}} / {{__proto__}} must not resolve to native code.
+    for (const name of ["toString", "constructor", "hasOwnProperty", "__proto__"]) {
+      const r = interpolate(`x/{{${name}}}/y`, { a: "1" });
+      expect(r.value).toBe("x//y");
+      expect(r.missing).toEqual([name]);
+    }
+  });
   it("interpolates deeply", () => {
     const r = interpolateDeep({ a: "{{x}}", b: ["{{y}}"] }, { x: "1", y: "2" });
     expect(r.value).toEqual({ a: "1", b: ["2"] });
+  });
+
+  it("breaks reference cycles instead of overflowing the stack", () => {
+    const obj: Record<string, unknown> = { a: "{{x}}" };
+    obj.self = obj;
+    const r = interpolateDeep(obj, { x: "1" });
+    expect((r.value as Record<string, unknown>).a).toBe("1");
+    expect((r.value as Record<string, unknown>).self).toBeDefined();
+  });
+
+  it("throws a clear error on pathologically deep nesting (not a stack overflow)", () => {
+    let node: Record<string, unknown> = { v: "{{x}}" };
+    for (let i = 0; i < 300; i++) node = { a: node };
+    expect(() => interpolateDeep(node, { x: "1" })).toThrow(/too deeply/);
   });
 });
 
@@ -171,5 +193,53 @@ describe("runRequest (injected fetch)", () => {
     const result = await runRequest(parse.request.parse("name: r\nurl: http://x"), { fetch: fakeFetch });
     expect(result.ok).toBe(false);
     expect(result.error).toMatch(/ECONNREFUSED/);
+  });
+
+  it("fails an invalid-regex assertion instead of throwing out of the run", async () => {
+    const fakeFetch = (async () => new Response("body", { status: 200 })) as typeof fetch;
+    const result = await runRequest(
+      parse.request.parse('name: r\nurl: http://x\nassertions:\n  - { type: body, matches: "[" }'),
+      { fetch: fakeFetch },
+    );
+    expect(result.ok).toBe(false);
+    expect(result.assertions[0]?.ok).toBe(false);
+    expect(result.assertions[0]?.message).toMatch(/assertion error|regular expression/i);
+  });
+
+  it("fails instead of OOMing when a response body exceeds the cap", async () => {
+    const fakeFetch = (async () =>
+      new Response("x".repeat(1024), { status: 200 })) as typeof fetch;
+    const result = await runRequest(parse.request.parse("name: r\nurl: http://x"), {
+      fetch: fakeFetch,
+      maxResponseBytes: 64, // tiny cap; the 1 KB body must trip it
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/exceeded/i);
+    expect(result.response).toBeUndefined();
+  });
+
+  it("reads a normal body fully under the cap", async () => {
+    const fakeFetch = (async () =>
+      new Response(JSON.stringify({ id: 7 }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      })) as typeof fetch;
+    const result = await runRequest(
+      parse.request.parse('name: r\nurl: http://x\nassertions:\n  - { type: jsonpath, path: "$.id", equals: 7 }'),
+      { fetch: fakeFetch },
+    );
+    expect(result.ok).toBe(true);
+    expect(result.response?.bodyText).toBe('{"id":7}');
+  });
+
+  it("fails gracefully on a circular request body instead of crashing", async () => {
+    const req = parse.request.parse("name: x\nurl: http://x\nbody: { type: json, content: { a: 1 } }");
+    const content = (req.body as { content: Record<string, unknown> }).content;
+    content.self = content; // inject a reference cycle
+    const result = await runRequest(req, {
+      fetch: (async () => new Response("{}", { status: 200 })) as typeof fetch,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/resolve|circular/i);
   });
 });

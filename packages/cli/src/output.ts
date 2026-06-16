@@ -77,8 +77,14 @@ const XML_ESCAPES: Record<string, string> = {
   "'": "&apos;",
 };
 
+// XML 1.0 forbids C0 control characters (except tab, LF, CR) outright — they are
+// illegal even as numeric entities. A hostile/buggy server's header value reaches
+// the JUnit report via an assertion message, so strip them or the report won't parse.
+// biome-ignore lint/suspicious/noControlCharactersInRegex: deliberately matching forbidden XML control chars
+const XML_INVALID = /[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g;
+
 function escapeXml(s: string): string {
-  return s.replace(/[<>&"']/g, (c) => XML_ESCAPES[c] ?? c);
+  return s.replace(XML_INVALID, "").replace(/[<>&"']/g, (c) => XML_ESCAPES[c] ?? c);
 }
 
 /** JUnit XML — one testcase per request — for CI test reporters. */

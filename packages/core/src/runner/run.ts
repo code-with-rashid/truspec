@@ -3,7 +3,7 @@ import { type AssertionResult, evaluateAssertions, type ResponseView } from "./a
 import { evaluateCaptures } from "./capture";
 import type { VarValue, Vars } from "./interpolate";
 import { resolveRequest } from "./resolve";
-import { runPostScript } from "./script";
+import { runPostScript, runPreScript } from "./script";
 
 export interface RunContext {
   folder?: TruSpecFolderConfig;
@@ -13,6 +13,8 @@ export interface RunContext {
   /** Injectable clock for deterministic durations; defaults to Date.now. */
   now?: () => number;
   timeoutMs?: number;
+  /** Cap on the response body in bytes; the request fails if a server exceeds it. */
+  maxResponseBytes?: number;
 }
 
 export interface RunResult {
@@ -38,11 +40,75 @@ function looksLikeJson(text: string): boolean {
   return t.startsWith("{") || t.startsWith("[");
 }
 
+/** Generous default ceiling on a response body so a hostile/buggy server can't OOM the runner. */
+const MAX_RESPONSE_BYTES = 50 * 1024 * 1024;
+
+class ResponseTooLargeError extends Error {}
+
+/**
+ * Read a response body as text, but stop and throw once `maxBytes` is exceeded
+ * (streaming, so we never buffer an unbounded body into memory). Falls back to
+ * `response.text()` when the body isn't a readable stream (empty/HEAD responses).
+ */
+async function readResponseText(response: Response, maxBytes: number): Promise<string> {
+  const body = response.body;
+  if (!body) return response.text();
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (!value) continue;
+    size += value.byteLength;
+    if (size > maxBytes) {
+      await reader.cancel().catch(() => {});
+      throw new ResponseTooLargeError(`Response body exceeded ${maxBytes} bytes`);
+    }
+    chunks.push(value);
+  }
+  const buf = Buffer.allocUnsafe(size);
+  let offset = 0;
+  for (const c of chunks) {
+    buf.set(c, offset);
+    offset += c.byteLength;
+  }
+  return buf.toString("utf8");
+}
+
 /** Execute one request and evaluate its assertions. Never throws — failures land in the result. */
 export async function runRequest(req: TruSpecRequest, ctx: RunContext = {}): Promise<RunResult> {
   const doFetch = ctx.fetch ?? globalThis.fetch;
   const now = ctx.now ?? (() => Date.now());
-  const eff = resolveRequest(req, { folder: ctx.folder, vars: ctx.vars });
+
+  // Pre-request script runs first; the vars it sets feed the request's interpolation.
+  let vars: Vars = ctx.vars ?? {};
+  if (req.script?.pre) {
+    const pre = runPreScript(req.script.pre, vars);
+    if (pre.error) {
+      return {
+        name: req.name,
+        request: { method: req.method, url: req.url },
+        ok: false,
+        error: `Pre-request script error: ${pre.error}`,
+        assertions: [],
+      };
+    }
+    vars = { ...vars, ...pre.vars };
+  }
+
+  let eff: ReturnType<typeof resolveRequest>;
+  try {
+    eff = resolveRequest(req, { folder: ctx.folder, vars });
+  } catch (e) {
+    return {
+      name: req.name,
+      request: { method: req.method, url: req.url },
+      ok: false,
+      error: `Could not resolve request: ${(e as Error).message}`,
+      assertions: [],
+    };
+  }
   const head = { name: req.name, request: { method: eff.method, url: eff.url } };
 
   if (eff.missing.length > 0) {
@@ -60,14 +126,19 @@ export async function runRequest(req: TruSpecRequest, ctx: RunContext = {}): Pro
   try {
     const init: RequestInit = { method: eff.method, headers: eff.headers };
     if (eff.body !== undefined) init.body = eff.body;
-    if (ctx.timeoutMs !== undefined) init.signal = AbortSignal.timeout(ctx.timeoutMs);
+    if (ctx.timeoutMs !== undefined && ctx.timeoutMs > 0) init.signal = AbortSignal.timeout(ctx.timeoutMs);
     response = await doFetch(eff.url, init);
   } catch (e) {
     return { ...head, ok: false, error: `Request failed: ${(e as Error).message}`, assertions: [] };
   }
 
   const durationMs = now() - start;
-  const bodyText = await response.text();
+  let bodyText: string;
+  try {
+    bodyText = await readResponseText(response, ctx.maxResponseBytes ?? MAX_RESPONSE_BYTES);
+  } catch (e) {
+    return { ...head, ok: false, error: `Request failed: ${(e as Error).message}`, assertions: [] };
+  }
   const headers: Record<string, string> = {};
   response.headers.forEach((value, key) => {
     headers[key.toLowerCase()] = value;
@@ -88,7 +159,7 @@ export async function runRequest(req: TruSpecRequest, ctx: RunContext = {}): Pro
 
   let scriptError: string | undefined;
   if (req.script?.post) {
-    const scripted = runPostScript(req.script.post, view, { ...(ctx.vars ?? {}), ...captured });
+    const scripted = runPostScript(req.script.post, view, { ...vars, ...captured });
     assertions.push(...scripted.assertions);
     Object.assign(captured, scripted.captured);
     scriptError = scripted.error;

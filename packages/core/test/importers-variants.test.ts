@@ -52,6 +52,16 @@ describe("postman auth + body variants", () => {
     expect(req.body).toEqual({ type: "graphql", query: "{ x }" });
   });
 
+  it("imports the Postman string-request shorthand", () => {
+    const result = importPostman({
+      info: { name: "C" },
+      item: [{ name: "x", request: "GET https://api.test/x" }],
+    });
+    const req = parse.request.parse(result.files[0]?.content ?? "");
+    expect(req.method).toBe("GET");
+    expect(req.url).toBe("https://api.test/x");
+  });
+
   it("invalid JSON raw body (template vars) falls back to text", () => {
     const req = firstRequest(
       wrap({

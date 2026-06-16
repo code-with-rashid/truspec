@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023"],
+    "types": ["node", "vscode"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@truspec/core/workspace": ["../core/src/workspace/index.ts"],
+      "@truspec/core/spec": ["../core/src/spec/index.ts"]
+    }
+  },
+  "include": ["src", "test"]
+}

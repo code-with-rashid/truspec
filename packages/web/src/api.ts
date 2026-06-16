@@ -73,6 +73,14 @@ export interface RequestDetail {
   auth?: { type: string };
   docs?: string;
   spec?: { operation?: string; operationId?: string };
+  /** Raw YAML source of the file, for the editor. */
+  raw?: string;
+}
+
+export interface SaveResult {
+  ok: boolean;
+  path?: string;
+  error?: string;
 }
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
@@ -90,3 +98,5 @@ export const drift = (spec: string) =>
   api<DriftReport>("/api/drift", { method: "POST", body: JSON.stringify({ spec }) });
 export const coverage = (spec: string) =>
   api<CoverageReport>("/api/coverage", { method: "POST", body: JSON.stringify({ spec }) });
+export const saveRequest = (path: string, content: string) =>
+  api<SaveResult>("/api/request", { method: "POST", body: JSON.stringify({ path, content }) });

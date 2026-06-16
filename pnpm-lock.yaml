@@ -60,6 +60,16 @@ importers:
         specifier: ^3.24.1
         version: 3.25.76
 
+  packages/vscode:
+    dependencies:
+      '@truspec/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      '@types/vscode':
+        specifier: ^1.85.0
+        version: 1.120.0
+
   packages/web:
     dependencies:
       '@fontsource/ibm-plex-mono':
@@ -869,6 +879,9 @@ packages:
 
   '@types/react@18.3.31':
     resolution: {integrity: sha512-vfEqpXTvwT91yhmwdfouStN2hSKwTvyRs8qpLfADyrq/kxDw0hZM7Wk9Ug1FELj8hIby+S/+kQCSRFF32nv2Qw==}
+
+  '@types/vscode@1.120.0':
+    resolution: {integrity: sha512-feaT4Rst+FkTch5zz/ZbNCxoIvo55YU80Be2kiL7OJcod4+CUYf2lUBPdIJzozNnSEMq1VRTGrWEcCGFB3fBmA==}
 
   '@vitejs/plugin-react@4.7.0':
     resolution: {integrity: sha512-gUu9hwfWvvEDBBmgtAowQCojwZmJ5mcLn3aufeCsitijs3+f2NsrPtlAWIR6OPiqljl96GVCUbLe0HyqIpVaoA==}
@@ -2432,6 +2445,8 @@ snapshots:
     dependencies:
       '@types/prop-types': 15.7.15
       csstype: 3.2.3
+
+  '@types/vscode@1.120.0': {}
 
   '@vitejs/plugin-react@4.7.0(vite@6.4.3(@types/node@22.19.21)(yaml@2.9.0))':
     dependencies:

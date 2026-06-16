@@ -107,5 +107,13 @@ export function evaluateAssertion(a: TruSpecAssertion, res: ResponseView): Asser
 }
 
 export function evaluateAssertions(list: TruSpecAssertion[], res: ResponseView): AssertionResult[] {
-  return list.map((a) => evaluateAssertion(a, res));
+  return list.map((a) => {
+    try {
+      return evaluateAssertion(a, res);
+    } catch (e) {
+      // e.g. an invalid user-supplied regex in a `matches` assertion — fail just this
+      // assertion instead of throwing out of the whole run.
+      return { type: a.type, ok: false, message: `assertion error: ${(e as Error).message}` };
+    }
+  });
 }

@@ -2,7 +2,7 @@ import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { coverageReport } from "@truspec/core/spec";
 import { formatCoverage } from "../output";
-import { type CommandDeps, emit, resolveDeps } from "./deps";
+import { type CommandDeps, emit, num, resolveDeps } from "./deps";
 
 /** `truspec coverage --spec <openapi> [<dir>] [--min <percent>]` — gates when below `--min`. */
 export async function coverageCommand(argv: string[], deps: Partial<CommandDeps> = {}): Promise<number> {
@@ -30,7 +30,7 @@ export async function coverageCommand(argv: string[], deps: Partial<CommandDeps>
     return 2;
   }
 
-  const min = values.min ? Number(values.min) : 0;
+  const min = num(values.min) ?? 0;
   let report: ReturnType<typeof coverageReport>;
   try {
     report = coverageReport(resolve(d.cwd, positionals[0] ?? "."), resolve(d.cwd, values.spec), min);

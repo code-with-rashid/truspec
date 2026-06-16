@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { parse } from "../format";
 import { discoverRequests } from "../workspace/discover";
 import { type CollectionOp, collectionOperations } from "./collection";
@@ -8,6 +8,7 @@ import { type LiveProbeOptions, probeLiveOperations } from "./live";
 import { type OpenApiSummary, parseOpenApi } from "./openapi";
 
 export function loadOpenApi(specPath: string): OpenApiSummary {
+  if (!existsSync(specPath)) throw new Error(`Spec not found: ${specPath}`);
   return parseOpenApi(readFileSync(specPath, "utf8"));
 }
 

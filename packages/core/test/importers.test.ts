@@ -1,5 +1,6 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse } from "../src/format";
 import {
@@ -52,6 +53,39 @@ describe("importPostman", () => {
     expect(result.stats.requests).toBe(2);
     expect(() => importPostman({ not: "a collection" })).toThrow(/Postman/);
   });
+
+  it("caps deeply nested folders instead of stack-overflowing", () => {
+    let node: Record<string, unknown> = { name: "leaf", request: "GET http://x" };
+    for (let i = 0; i < 500; i++) node = { name: `f${i}`, item: [node] };
+    const result = importPostman({ info: { name: "deep" }, item: [node] });
+    expect(result.warnings.some((w) => /nested deeper/.test(w))).toBe(true);
+  });
+
+  it("survives a malformed percent-escape in a query string (no URIError)", () => {
+    const result = importPostman({
+      info: { name: "x" },
+      item: [{ name: "r", request: { method: "GET", url: "http://x?a=%ZZ&b=2" } }],
+    });
+    expect(result.stats.requests).toBe(1);
+    expect(result.files[0]?.content).toBeTruthy();
+  });
+
+  it("preserves a Postman pre-request script as a commented script.pre (with a warning)", () => {
+    const result = importPostman({
+      info: { name: "x" },
+      item: [
+        {
+          name: "signed",
+          event: [{ listen: "prerequest", script: { exec: ['pm.environment.set("ts", Date.now())'] } }],
+          request: { method: "GET", url: "http://x/data" },
+        },
+      ],
+    });
+    const req = parse.request.parse(result.files[0]?.content ?? "");
+    expect(req.script?.pre).toContain("Ported from Postman");
+    expect(req.script?.pre).toContain("// pm.environment.set"); // original preserved, commented
+    expect(result.warnings.some((w) => /port to the tr API/.test(w))).toBe(true);
+  });
 });
 
 describe("Bruno .bru parsing", () => {
@@ -60,6 +94,17 @@ describe("Bruno .bru parsing", () => {
     expect(blocks.map((b) => b.name)).toEqual(["meta", "body"]);
     expect(blocks[1]?.sub).toBe("json");
     expect(blocks[1]?.body).toContain('"a": 1');
+  });
+
+  it("preserves a Bruno pre-request script as a commented script.pre (with a warning)", () => {
+    const text =
+      'meta {\n  name: signed\n}\nget {\n  url: http://x/data\n}\nscript:pre-request {\n  bru.setVar("ts", Date.now())\n}\n';
+    const { request, warnings } = bruToRequest(text);
+    expect(request?.script?.pre).toContain("Ported from Bruno");
+    expect(request?.script?.pre).toContain('// bru.setVar("ts"'); // original preserved, commented
+    expect(warnings.some((w) => /port to the tr API/.test(w))).toBe(true);
+    // and the imported request still serializes/parses (the commented script is a no-op)
+    if (request) parse.request.parse(parse.request.serialize(request));
   });
 
   it("converts a .bru request with auth, query, and asserts", () => {
@@ -86,5 +131,17 @@ describe("importBrunoDir", () => {
     expect(result.stats.requests).toBe(1);
     expect(result.files[0]?.path).toBe("get-user.tspec.yaml");
     parse.request.parse(result.files[0]?.content ?? "");
+  });
+
+  it("terminates on a symlink cycle in the source directory", () => {
+    const dir = mkdtempSync(join(tmpdir(), "truspec-bru-"));
+    try {
+      writeFileSync(join(dir, "r.bru"), "get {\n  url: http://x\n}\n");
+      symlinkSync(dir, join(dir, "loop")); // loop -> dir  (cycle)
+      const result = importBrunoDir(dir);
+      expect(result.stats.requests).toBe(1); // the one real .bru, discovered once
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

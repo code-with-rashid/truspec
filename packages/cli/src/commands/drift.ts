@@ -2,7 +2,7 @@ import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { driftReport, liveDriftReport } from "@truspec/core/spec";
 import { formatDrift } from "../output";
-import { type CommandDeps, emit, resolveDeps } from "./deps";
+import { type CommandDeps, emit, num, resolveDeps } from "./deps";
 
 /** `truspec drift --spec <openapi> [<dir>]` — exits non-zero when the collection has drifted. */
 export async function driftCommand(argv: string[], deps: Partial<CommandDeps> = {}): Promise<number> {
@@ -37,7 +37,7 @@ export async function driftCommand(argv: string[], deps: Partial<CommandDeps> = 
     const spec = resolve(d.cwd, values.spec);
     report = values.live
       ? await liveDriftReport(dir, spec, values.live, {
-          timeoutMs: values.timeout ? Number(values.timeout) : undefined,
+          timeoutMs: num(values.timeout),
         })
       : driftReport(dir, spec);
   } catch (e) {

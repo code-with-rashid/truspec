@@ -103,6 +103,29 @@ Requests run in `order` (then path), so a login can capture a token the next req
 
 A capture source is a jsonpath string, or `{ jsonpath }` / `{ header }` / `{ status: true }`.
 
+### Pre-request script (advanced)
+
+Runs **before** the request is resolved, to compute values it then interpolates (dynamic
+timestamps/nonces, request signing, derived headers). Prefer declarative fields; reach for a
+script only when substitution can't express it.
+
+```yaml
+script:
+  pre: |
+    tr.set("nonce", tr.uuid())
+    tr.set("ts", new Date().toISOString())
+    tr.set("sig", tr.hmac("sha256", tr.vars.apiSecret, tr.vars.ts + tr.vars.nonce))
+headers:
+  X-Nonce: "{{nonce}}"
+  X-Signature: "{{sig}}"
+```
+
+Node vm context with a `tr` API (no response yet): `tr.vars` (read), `tr.set(name, value)`
+(set a variable used by this request), `tr.uuid()`, `tr.base64(s)`,
+`tr.hmac(algo, key, data, enc?)` (`enc` = `"hex"` default | `"base64"`), `tr.env(name)`.
+A script error fails the request without sending it. It sets *variables* (not the request
+object directly), so build any computed body/header value as a variable and reference it.
+
 ### Post-response script (advanced)
 
 ```yaml
@@ -113,7 +136,7 @@ script:
 ```
 
 Runs in a Node vm context exposing `tr.response` ({ status, headers, bodyText, json }),
-`tr.set(name, value)`, `tr.expect(cond, msg)`, and `tr.vars`. **This is not a security
+`tr.set(name, value)`, `tr.expect(cond, msg)`, and `tr.vars`. **Neither script is a security
 sandbox** — scripts are authored in your collection; only run collections you trust.
 
 ### Environment (`environments/<name>.env.yaml`)

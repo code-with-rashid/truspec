@@ -36,6 +36,24 @@ describe("format: request", () => {
     expect(r2).toEqual(r);
   });
 
+  it("round-trips capture, order, script, and graphql bodies", () => {
+    const yaml = [
+      "name: Login",
+      "method: POST",
+      'url: "{{base}}/login"',
+      "order: 1",
+      'body: { type: graphql, query: "{ me }", variables: { id: "1" } }',
+      'capture: { token: "$.access_token", id: { jsonpath: "$.id" } }',
+      'script: { post: "tr.expect(true)" }',
+      "assertions: [ { type: status, equals: 200 } ]",
+    ].join("\n");
+    const r = parse.request.parse(yaml);
+    const r2 = parse.request.parse(parse.request.serialize(r));
+    expect(r2).toEqual(r);
+    expect(r2.body).toEqual({ type: "graphql", query: "{ me }", variables: { id: "1" } });
+    expect(r2.capture).toEqual({ token: "$.access_token", id: { jsonpath: "$.id" } });
+  });
+
   it("rejects an invalid method", () => {
     const res = parse.request.safeParse("name: x\nmethod: FETCH\nurl: http://a");
     expect(res.ok).toBe(false);

@@ -1,4 +1,6 @@
-import { resolve } from "node:path";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { runCommand } from "../src/commands/run";
 
@@ -111,5 +113,32 @@ describe("truspec run", () => {
     });
     expect(code).toBe(1);
     expect(cap.err).toMatch(/not found/);
+  });
+
+  it("ignores a non-numeric --timeout instead of breaking the run", async () => {
+    const cap = capture();
+    let t = 0;
+    const code = await runCommand(["examples/petstore", "--env", "local", "--timeout", "abc"], {
+      cwd: repoRoot,
+      fetch: okFetch({ id: 1 }),
+      now: () => (t += 5),
+      processEnv: { token: "secret" },
+      stdout: cap.stdout,
+      stderr: cap.stderr,
+    });
+    expect(code).toBe(0);
+    expect(cap.out).toMatch(/1 passed/);
+  });
+
+  it("warns and exits 0 when no requests are found", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "truspec-empty-"));
+    try {
+      const cap = capture();
+      const code = await runCommand([dir], { cwd: repoRoot, stdout: cap.stdout, stderr: cap.stderr });
+      expect(code).toBe(0);
+      expect(cap.err).toMatch(/no .tspec.yaml requests found/i);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

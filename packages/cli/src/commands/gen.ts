@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { scaffoldFromSpec, writeScaffold } from "@truspec/core/spec";
@@ -25,9 +25,14 @@ export async function genCommand(argv: string[], deps: Partial<CommandDeps> = {}
     return 2;
   }
 
+  const specPath = resolve(d.cwd, values.spec);
+  if (!existsSync(specPath)) {
+    d.stderr(`Spec not found: ${values.spec}\n`);
+    return 1;
+  }
   let result: ReturnType<typeof scaffoldFromSpec>;
   try {
-    const specText = readFileSync(resolve(d.cwd, values.spec), "utf8");
+    const specText = readFileSync(specPath, "utf8");
     result = scaffoldFromSpec(specText, { baseUrlVar: values["base-url-var"] });
   } catch (e) {
     d.stderr(`Error: ${(e as Error).message}\n`);

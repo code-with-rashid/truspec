@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { type CommandDeps, resolveDeps } from "./deps";
+import { type CommandDeps, num, resolveDeps } from "./deps";
 
 interface WebServerHandle {
   url: string;
@@ -41,7 +41,7 @@ export async function serveCommand(argv: string[], deps: ServeDeps = {}): Promis
   try {
     handle = await mod.startWebServer({
       dir: resolve(d.cwd, values.dir ?? "."),
-      port: values.port ? Number(values.port) : 4100,
+      port: num(values.port) ?? 4100,
     });
   } catch (e) {
     d.stderr(`Error: ${(e as Error).message}\n`);

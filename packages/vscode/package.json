@@ -1,0 +1,56 @@
+{
+  "name": "truspec-vscode",
+  "displayName": "TruSpec",
+  "description": "Run .tspec.yaml requests and check OpenAPI drift & coverage right in your editor.",
+  "version": "0.5.0",
+  "publisher": "code-with-rashid",
+  "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/code-with-rashid/truspec.git",
+    "directory": "packages/vscode"
+  },
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Testing", "Other"],
+  "main": "./dist/extension.js",
+  "activationEvents": ["onLanguage:yaml"],
+  "contributes": {
+    "commands": [
+      { "command": "truspec.runRequest", "title": "TruSpec: Run Request", "icon": "$(play)" },
+      { "command": "truspec.runCollection", "title": "TruSpec: Run Collection" },
+      { "command": "truspec.drift", "title": "TruSpec: Drift vs OpenAPI" },
+      { "command": "truspec.coverage", "title": "TruSpec: Coverage vs OpenAPI" }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "truspec.runRequest",
+          "when": "resourceFilename =~ /\\.tspec\\.yaml$/",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "TruSpec",
+      "properties": {
+        "truspec.environment": {
+          "type": "string",
+          "default": "",
+          "description": "Environment name to run with (blank prompts when several exist)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "package": "vsce package --no-dependencies -o truspec.vsix"
+  },
+  "dependencies": {
+    "@truspec/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0"
+  }
+}

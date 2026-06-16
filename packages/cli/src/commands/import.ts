@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { importBrunoDir, importPostmanFile, writeImport } from "@truspec/core/importers";
@@ -30,12 +31,15 @@ export async function importCommand(argv: string[], deps: Partial<CommandDeps> =
     return 2;
   }
 
+  const abs = resolve(d.cwd, input);
+  if (!existsSync(abs)) {
+    d.stderr(`Not found: ${input}\n`);
+    return 1;
+  }
+
   let result: ReturnType<typeof importPostmanFile>;
   try {
-    result =
-      source === "postman"
-        ? importPostmanFile(resolve(d.cwd, input))
-        : importBrunoDir(resolve(d.cwd, input));
+    result = source === "postman" ? importPostmanFile(abs) : importBrunoDir(abs);
   } catch (e) {
     d.stderr(`Error: ${(e as Error).message}\n`);
     return 1;

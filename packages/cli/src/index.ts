@@ -6,7 +6,8 @@ import { mockCommand } from "./commands/mock";
 import { runCommand } from "./commands/run";
 import { serveCommand } from "./commands/serve";
 
-const VERSION = "0.0.0";
+declare const __TRUSPEC_VERSION__: string | undefined;
+const VERSION = typeof __TRUSPEC_VERSION__ === "string" ? __TRUSPEC_VERSION__ : "0.0.0";
 
 const HELP = `truspec ${VERSION} — local-first, spec-synced, agent-native API client
 
