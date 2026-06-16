@@ -1,5 +1,6 @@
 import { coverageCommand } from "./commands/coverage";
 import { driftCommand } from "./commands/drift";
+import { importCommand } from "./commands/import";
 import { runCommand } from "./commands/run";
 
 const VERSION = "0.0.0";
@@ -10,6 +11,7 @@ Usage:
   truspec run <path> [--env <name>] [--json] [--output <file>] [--timeout <ms>]
   truspec drift --spec <openapi> [<dir>] [--json]
   truspec coverage --spec <openapi> [<dir>] [--min <percent>] [--json]
+  truspec import <postman|bruno> <path> [--out <dir>]
   truspec --help
   truspec --version
 
@@ -17,6 +19,7 @@ Commands:
   run        Run a request file or directory; non-zero exit on assertion failure.
   drift      Diff a collection against an OpenAPI spec; non-zero exit on drift.
   coverage   Report which spec operations have a tested request (--min to gate).
+  import     Convert a Postman collection or Bruno directory to .tspec.yaml files.
 `;
 
 export async function main(argv: string[]): Promise<number> {
@@ -38,6 +41,8 @@ export async function main(argv: string[]): Promise<number> {
       return driftCommand(rest);
     case "coverage":
       return coverageCommand(rest);
+    case "import":
+      return importCommand(rest);
     default:
       process.stderr.write(`Unknown command: ${command}\n\n${HELP}`);
       return 2;

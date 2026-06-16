@@ -1,0 +1,27 @@
+meta {
+  name: Get user
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/users/{{id}}
+  auth: bearer
+}
+
+headers {
+  Accept: application/json
+}
+
+query {
+  expand: profile
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+assert {
+  res.status: eq 200
+  res.body.id: isDefined
+}

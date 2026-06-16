@@ -7,6 +7,7 @@ export default defineConfig({
     "src/runner/index.ts",
     "src/workspace/index.ts",
     "src/spec/index.ts",
+    "src/importers/index.ts",
   ],
   format: ["esm"],
   dts: true,

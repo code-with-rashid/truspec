@@ -25,6 +25,10 @@
       "types": "./dist/spec/index.d.ts",
       "import": "./dist/spec/index.js"
     },
+    "./importers": {
+      "types": "./dist/importers/index.d.ts",
+      "import": "./dist/importers/index.js"
+    },
     "./schema/*": "./schema/*"
   },
   "files": ["dist", "schema"],
