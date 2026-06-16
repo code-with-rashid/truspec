@@ -1,0 +1,5 @@
+tspec: "0.1"
+name: Blog
+baseUrl: "{{baseUrl}}"
+headers:
+  Accept: application/json

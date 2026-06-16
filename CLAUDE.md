@@ -20,15 +20,16 @@ packages/
     src/workspace/   discovery, folder inheritance, env + secret resolution
     src/spec/        OpenAPI drift + coverage
     src/importers/   postman v2.1 + bruno -> .tspec.yaml
+    src/mock/        local mock server generated from a spec
     schema/          PUBLISHED JSON Schema (generated; do not hand-edit)
-  cli/           truspec — `run` / `drift` / `coverage` / `import`
-  mcp-server/    @truspec/mcp-server — 8 tools over the official MCP SDK
-examples/        sample collections + openapi.yaml used by tests + demos
+  cli/           truspec — `run` / `drift` / `coverage` / `import` / `mock`
+  mcp-server/    @truspec/mcp-server — 10 tools over the official MCP SDK
+examples/        petstore + blog sample collections (+ openapi.yaml) for tests + demos
 ```
 
 Core modules are imported via subpaths: `@truspec/core/format`, `/runner`, `/workspace`,
-`/spec`, `/importers`. The filesystem modules (`workspace`, `spec`, `importers`) are kept out
-of the browser-safe main entry on purpose.
+`/spec`, `/importers`, `/mock`. The filesystem/server modules (`workspace`, `spec`,
+`importers`, `mock`) are kept out of the browser-safe main entry on purpose.
 
 ## File format (v0, schema version `0.1`)
 

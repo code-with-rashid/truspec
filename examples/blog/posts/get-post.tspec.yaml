@@ -1,0 +1,10 @@
+tspec: "0.1"
+name: Get post
+method: GET
+url: "{{baseUrl}}/posts/{{postId}}"
+assertions:
+  - { type: status, equals: 200 }
+  - { type: jsonpath, path: "$.title", exists: true }
+spec:
+  operation: "GET /posts/{id}"
+  operationId: getPost

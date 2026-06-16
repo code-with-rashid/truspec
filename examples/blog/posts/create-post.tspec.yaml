@@ -1,0 +1,16 @@
+tspec: "0.1"
+name: Create post
+method: POST
+url: "{{baseUrl}}/posts"
+body:
+  type: json
+  content:
+    title: Hello world
+    body: First post.
+    userId: 1
+assertions:
+  - { type: status, equals: 201 }
+  - { type: jsonpath, path: "$.id", exists: true }
+spec:
+  operation: "POST /posts"
+  operationId: createPost

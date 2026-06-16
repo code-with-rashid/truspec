@@ -20,6 +20,7 @@ The API-client market runs from **local-and-minimal** (Bruno) to **cloud-and-eve
 | Open source (MIT) | ✗ | ✓ | ✓ |
 | OpenAPI **drift detection** (CI gate) | ✗ | basic | ✓ |
 | OpenAPI **coverage** report | ✗ | ✗ | ✓ |
+| Local **mock server** (no cloud) | cloud | ✗ | ✓ |
 | First-party **MCP server** for agents | bolted-on | community | ✓ |
 | Import from Postman + Bruno | — | partial | ✓ |
 
@@ -52,7 +53,17 @@ spec:
 truspec run ./api --env local              # run requests, assert, non-zero exit on failure
 truspec drift   --spec openapi.yaml ./api   # fail CI when collection ≠ spec
 truspec coverage --spec openapi.yaml ./api --min 80   # gate on tested-operation coverage
+truspec mock    --spec openapi.yaml --port 4000       # offline mock server from your spec
 truspec import postman ./postman.json --out ./api     # migrate existing collections
+```
+
+Two runnable examples live in [`examples/`](./examples): `petstore` and a fuller `blog` API. Try the whole loop offline — mock the spec, run the collection against it, then check drift and coverage:
+
+```bash
+truspec mock --spec examples/blog/openapi.yaml &      # serves generated responses
+truspec run examples/blog --env local                 # 3 requests PASS against the mock
+truspec drift    examples/blog --spec examples/blog/openapi.yaml   # GET /users/{id} untracked
+truspec coverage examples/blog --spec examples/blog/openapi.yaml   # 75% (3/4 operations)
 ```
 
 Every command speaks `--json` for machines, and exits non-zero on failure so it drops straight into CI.
@@ -76,7 +87,7 @@ Or add it to your MCP client config:
 }
 ```
 
-Tools exposed: `truspec_list_collections`, `truspec_run_request`, `truspec_run_collection`, `truspec_create_request`, `truspec_update_request`, `truspec_drift`, `truspec_coverage`, `truspec_scaffold_from_spec`. Create/update operations validate against the schema before writing.
+Tools exposed: `truspec_list_collections`, `truspec_run_request`, `truspec_run_collection`, `truspec_create_request`, `truspec_update_request`, `truspec_drift`, `truspec_coverage`, `truspec_scaffold_from_spec`, `truspec_mock_start`, `truspec_mock_stop`. Create/update operations validate against the schema before writing.
 
 ## How it fits together
 
@@ -86,9 +97,10 @@ Tools exposed: `truspec_list_collections`, `truspec_run_request`, `truspec_run_c
   ├─ runner      interpolation, auth, fetch, declarative assertions
   ├─ workspace   discovery, folder inheritance, env + secret resolution
   ├─ spec        OpenAPI drift + coverage
-  └─ importers   Postman v2.1 + Bruno → .tspec.yaml
-truspec              — the CLI (run / drift / coverage / import)
-@truspec/mcp-server  — the agent surface
+  ├─ importers   Postman v2.1 + Bruno → .tspec.yaml
+  └─ mock        local mock server generated from a spec
+truspec              — the CLI (run / drift / coverage / import / mock)
+@truspec/mcp-server  — the agent surface (10 MCP tools)
 ```
 
 ## File format
@@ -98,7 +110,7 @@ One request per file (`*.tspec.yaml`), folder config (`folder.tspec.yaml`) for s
 ## Development
 
 ```bash
-pnpm test            # vitest (85 tests)
+pnpm test            # vitest (95 tests)
 pnpm test:coverage   # v8 coverage
 pnpm typecheck
 pnpm build
@@ -109,8 +121,8 @@ The CLI ships as a Bun-compiled single binary for distribution; the dev loop run
 
 ## Status & roadmap
 
-**v0 (done):** format + JSON Schema · runner · `run` CLI · OpenAPI drift + coverage · Postman/Bruno import · MCP server.
-**Next:** local mock server (from spec) · publish to npm · GraphQL · JS scripting · web + VS Code UIs sharing the core.
+**Shipped:** format + JSON Schema · runner · CLI (`run`/`drift`/`coverage`/`import`/`mock`) · OpenAPI drift + coverage · **local mock server** · Postman/Bruno import · MCP server (10 tools).
+**Next:** publish to npm · GraphQL · JS scripting · web + VS Code UIs sharing the core.
 
 Deferred by design (not bloat): hosted dashboards, visual flow builders, exotic protocols, mandatory cloud sync.
 
