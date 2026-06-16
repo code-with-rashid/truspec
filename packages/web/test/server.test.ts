@@ -1,4 +1,5 @@
 import { request as httpRequest } from "node:http";
+import { connect } from "node:net";
 import { resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startWebServer, type WebServerHandle } from "../server/index";
@@ -61,5 +62,34 @@ describe("web server host guard (DNS-rebinding defense)", () => {
 
   it("accepts a normal small POST body", async () => {
     expect((await post(handle.port, "/api/run", {})).status).toBe(200);
+  });
+
+  it("survives a POST aborted mid-body without an unhandledRejection", async () => {
+    const seen: unknown[] = [];
+    const onRej = (e: unknown): void => {
+      seen.push(e);
+    };
+    process.on("unhandledRejection", onRej);
+    try {
+      await new Promise<void>((res) => {
+        const sock = connect(handle.port, "127.0.0.1", () => {
+          // Promise 1000 bytes, send a few, then yank the socket.
+          sock.write(
+            'POST /api/run HTTP/1.1\r\nHost: localhost\r\nContent-Length: 1000\r\nContent-Type: application/json\r\n\r\n{ "',
+          );
+          setTimeout(() => {
+            sock.destroy();
+            res();
+          }, 80);
+        });
+        sock.on("error", () => res());
+      });
+      await new Promise((r) => setTimeout(r, 300));
+      expect(seen).toHaveLength(0);
+      // server is still healthy
+      expect((await get(handle.port, `localhost:${handle.port}`)).status).toBe(200);
+    } finally {
+      process.off("unhandledRejection", onRej);
+    }
   });
 });

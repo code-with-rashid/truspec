@@ -142,7 +142,20 @@ export async function startWebServer(opts: WebServerOptions = {}): Promise<WebSe
         return;
       }
       serveStatic(clientDir, url.pathname, res);
-    })();
+    })().catch(() => {
+      // Last-resort net: any rejection (e.g. the request stream aborting mid-body)
+      // must not become an unhandledRejection that could crash the process.
+      try {
+        if (!res.headersSent && res.writable) {
+          res.writeHead(400, { "content-type": "text/plain" });
+          res.end("Bad request");
+        } else if (!res.writableEnded) {
+          res.end();
+        }
+      } catch {
+        // socket already gone — nothing more to do
+      }
+    });
   });
 
   await new Promise<void>((res2, rej) => {
