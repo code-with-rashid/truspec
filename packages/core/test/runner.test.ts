@@ -189,6 +189,32 @@ describe("runRequest (injected fetch)", () => {
     expect(result.error).toMatch(/ECONNREFUSED/);
   });
 
+  it("fails instead of OOMing when a response body exceeds the cap", async () => {
+    const fakeFetch = (async () =>
+      new Response("x".repeat(1024), { status: 200 })) as typeof fetch;
+    const result = await runRequest(parse.request.parse("name: r\nurl: http://x"), {
+      fetch: fakeFetch,
+      maxResponseBytes: 64, // tiny cap; the 1 KB body must trip it
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/exceeded/i);
+    expect(result.response).toBeUndefined();
+  });
+
+  it("reads a normal body fully under the cap", async () => {
+    const fakeFetch = (async () =>
+      new Response(JSON.stringify({ id: 7 }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      })) as typeof fetch;
+    const result = await runRequest(
+      parse.request.parse('name: r\nurl: http://x\nassertions:\n  - { type: jsonpath, path: "$.id", equals: 7 }'),
+      { fetch: fakeFetch },
+    );
+    expect(result.ok).toBe(true);
+    expect(result.response?.bodyText).toBe('{"id":7}');
+  });
+
   it("fails gracefully on a circular request body instead of crashing", async () => {
     const req = parse.request.parse("name: x\nurl: http://x\nbody: { type: json, content: { a: 1 } }");
     const content = (req.body as { content: Record<string, unknown> }).content;

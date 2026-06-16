@@ -13,6 +13,8 @@ export interface RunContext {
   /** Injectable clock for deterministic durations; defaults to Date.now. */
   now?: () => number;
   timeoutMs?: number;
+  /** Cap on the response body in bytes; the request fails if a server exceeds it. */
+  maxResponseBytes?: number;
 }
 
 export interface RunResult {
@@ -36,6 +38,42 @@ export interface RunResult {
 function looksLikeJson(text: string): boolean {
   const t = text.trimStart();
   return t.startsWith("{") || t.startsWith("[");
+}
+
+/** Generous default ceiling on a response body so a hostile/buggy server can't OOM the runner. */
+const MAX_RESPONSE_BYTES = 50 * 1024 * 1024;
+
+class ResponseTooLargeError extends Error {}
+
+/**
+ * Read a response body as text, but stop and throw once `maxBytes` is exceeded
+ * (streaming, so we never buffer an unbounded body into memory). Falls back to
+ * `response.text()` when the body isn't a readable stream (empty/HEAD responses).
+ */
+async function readResponseText(response: Response, maxBytes: number): Promise<string> {
+  const body = response.body;
+  if (!body) return response.text();
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (!value) continue;
+    size += value.byteLength;
+    if (size > maxBytes) {
+      await reader.cancel().catch(() => {});
+      throw new ResponseTooLargeError(`Response body exceeded ${maxBytes} bytes`);
+    }
+    chunks.push(value);
+  }
+  const buf = Buffer.allocUnsafe(size);
+  let offset = 0;
+  for (const c of chunks) {
+    buf.set(c, offset);
+    offset += c.byteLength;
+  }
+  return buf.toString("utf8");
 }
 
 /** Execute one request and evaluate its assertions. Never throws — failures land in the result. */
@@ -79,7 +117,12 @@ export async function runRequest(req: TruSpecRequest, ctx: RunContext = {}): Pro
   }
 
   const durationMs = now() - start;
-  const bodyText = await response.text();
+  let bodyText: string;
+  try {
+    bodyText = await readResponseText(response, ctx.maxResponseBytes ?? MAX_RESPONSE_BYTES);
+  } catch (e) {
+    return { ...head, ok: false, error: `Request failed: ${(e as Error).message}`, assertions: [] };
+  }
   const headers: Record<string, string> = {};
   response.headers.forEach((value, key) => {
     headers[key.toLowerCase()] = value;
