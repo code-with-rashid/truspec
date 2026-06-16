@@ -51,6 +51,7 @@ export function App() {
   const [covRep, setCovRep] = useState<CoverageReport | null>(null);
   const [view, setView] = useState<View>("request");
   const [theme, setTheme] = useState<Theme>("dark");
+  const [booted, setBooted] = useState(false);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -121,6 +122,16 @@ export function App() {
       setError(String(e));
     }
   }, [spec]);
+
+  // Deep-link boot actions (?run=all, ?view=spec, ?theme=light) — handy for demos/CI.
+  useEffect(() => {
+    if (!state || booted) return;
+    setBooted(true);
+    const p = new URLSearchParams(window.location.search);
+    if (p.get("theme") === "light") setTheme("light");
+    if (p.get("run") === "all") void doRun(undefined);
+    if (p.get("view") === "spec" && state.specs[0]) void doSpec();
+  }, [state, booted, doRun, doSpec]);
 
   const selectedResult = selected ? resultFor.get(state ? `${state.dir}/${selected}` : selected) : undefined;
 
