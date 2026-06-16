@@ -1,3 +1,5 @@
+import { coverageCommand } from "./commands/coverage";
+import { driftCommand } from "./commands/drift";
 import { runCommand } from "./commands/run";
 
 const VERSION = "0.0.0";
@@ -6,12 +8,15 @@ const HELP = `truspec ${VERSION} — local-first, spec-synced, agent-native API 
 
 Usage:
   truspec run <path> [--env <name>] [--json] [--output <file>] [--timeout <ms>]
+  truspec drift --spec <openapi> [<dir>] [--json]
+  truspec coverage --spec <openapi> [<dir>] [--min <percent>] [--json]
   truspec --help
   truspec --version
 
 Commands:
-  run    Run a request file or a directory of requests.
-         Exits non-zero when any assertion fails (use it as a CI gate).
+  run        Run a request file or directory; non-zero exit on assertion failure.
+  drift      Diff a collection against an OpenAPI spec; non-zero exit on drift.
+  coverage   Report which spec operations have a tested request (--min to gate).
 `;
 
 export async function main(argv: string[]): Promise<number> {
@@ -29,6 +34,10 @@ export async function main(argv: string[]): Promise<number> {
   switch (command) {
     case "run":
       return runCommand(rest);
+    case "drift":
+      return driftCommand(rest);
+    case "coverage":
+      return coverageCommand(rest);
     default:
       process.stderr.write(`Unknown command: ${command}\n\n${HELP}`);
       return 2;

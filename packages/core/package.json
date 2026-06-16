@@ -21,6 +21,10 @@
       "types": "./dist/workspace/index.d.ts",
       "import": "./dist/workspace/index.js"
     },
+    "./spec": {
+      "types": "./dist/spec/index.d.ts",
+      "import": "./dist/spec/index.js"
+    },
     "./schema/*": "./schema/*"
   },
   "files": ["dist", "schema"],

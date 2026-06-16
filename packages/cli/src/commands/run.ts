@@ -1,27 +1,7 @@
-import { writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { runPath, type WorkspaceRunResult } from "@truspec/core/workspace";
 import { formatHuman, formatJson } from "../output";
-
-export interface CommandDeps {
-  cwd: string;
-  fetch?: typeof globalThis.fetch;
-  now?: () => number;
-  processEnv: NodeJS.ProcessEnv;
-  stdout: (s: string) => void;
-  stderr: (s: string) => void;
-}
-
-function resolveDeps(deps: Partial<CommandDeps>): CommandDeps {
-  return {
-    cwd: deps.cwd ?? process.cwd(),
-    fetch: deps.fetch,
-    now: deps.now,
-    processEnv: deps.processEnv ?? process.env,
-    stdout: deps.stdout ?? ((s) => void process.stdout.write(s)),
-    stderr: deps.stderr ?? ((s) => void process.stderr.write(s)),
-  };
-}
+import { type CommandDeps, emit, resolveDeps } from "./deps";
 
 /** `truspec run <path>` — returns a process exit code (0 ok, 1 failures/error, 2 usage). */
 export async function runCommand(argv: string[], deps: Partial<CommandDeps> = {}): Promise<number> {
@@ -70,14 +50,6 @@ export async function runCommand(argv: string[], deps: Partial<CommandDeps> = {}
     d.stderr(`Warning: unresolved secrets (set as env vars): ${result.missingSecrets.join(", ")}\n`);
   }
 
-  const text = values.json ? formatJson(result) : formatHuman(result, d.cwd);
-  const withNl = text.endsWith("\n") ? text : `${text}\n`;
-  if (values.output) {
-    writeFileSync(values.output, withNl);
-    d.stdout(`Wrote results to ${values.output}\n`);
-  } else {
-    d.stdout(withNl);
-  }
-
+  emit(d, values.json ? formatJson(result) : formatHuman(result, d.cwd), values.output);
   return result.ok ? 0 : 1;
 }
