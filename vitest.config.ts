@@ -18,5 +18,11 @@ export default defineConfig({
   },
   test: {
     include: ["packages/*/test/**/*.test.ts", "packages/*/src/**/*.test.ts"],
+    coverage: {
+      provider: "v8",
+      include: ["packages/*/src/**/*.ts"],
+      exclude: ["**/index.ts"],
+      reporter: ["text-summary"],
+    },
   },
 });

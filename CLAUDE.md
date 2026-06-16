@@ -14,16 +14,21 @@ local-first, agent-native by design, refuse bloat.
 
 ```
 packages/
-  core/          @truspec/core — the engine (no platform deps)
-    src/format/  collection file parse / serialize / validate  ← START HERE
-    src/runner/  request execution + assertions          (coming)
-    src/spec/    OpenAPI drift + coverage                 (coming)
-    src/importers/ postman + bruno import                (coming)
-    schema/      PUBLISHED JSON Schema (generated; do not hand-edit)
-  cli/           @truspec/cli — `truspec` command         (coming)
-  mcp-server/    @truspec/mcp-server                      (coming)
-examples/        sample collections used by tests + demos
+  core/          @truspec/core — the engine (pure modules have no platform deps)
+    src/format/      collection parse / serialize / validate (+ JSON Schema)  ← START HERE
+    src/runner/      interpolation, auth, fetch, declarative assertions
+    src/workspace/   discovery, folder inheritance, env + secret resolution
+    src/spec/        OpenAPI drift + coverage
+    src/importers/   postman v2.1 + bruno -> .tspec.yaml
+    schema/          PUBLISHED JSON Schema (generated; do not hand-edit)
+  cli/           truspec — `run` / `drift` / `coverage` / `import`
+  mcp-server/    @truspec/mcp-server — 8 tools over the official MCP SDK
+examples/        sample collections + openapi.yaml used by tests + demos
 ```
+
+Core modules are imported via subpaths: `@truspec/core/format`, `/runner`, `/workspace`,
+`/spec`, `/importers`. The filesystem modules (`workspace`, `spec`, `importers`) are kept out
+of the browser-safe main entry on purpose.
 
 ## File format (v0, schema version `0.1`)
 
