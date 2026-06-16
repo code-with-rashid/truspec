@@ -56,6 +56,7 @@ truspec coverage --spec openapi.yaml ./api --min 80   # gate on tested-operation
 truspec gen     --spec openapi.yaml --out ./api       # scaffold a request per operation
 truspec mock    --spec openapi.yaml --port 4000       # offline mock server from your spec
 truspec import postman ./postman.json --out ./api     # migrate existing collections
+truspec serve   --dir ./api                           # open the local web UI (runs server-side)
 ```
 
 Two runnable examples live in [`examples/`](./examples): `petstore` and a fuller `blog` API. Try the whole loop offline — mock the spec, run the collection against it, then check drift and coverage:
@@ -107,8 +108,9 @@ Tools exposed: `truspec_list_collections`, `truspec_run_request`, `truspec_run_c
   ├─ spec        OpenAPI drift + coverage
   ├─ importers   Postman v2.1 + Bruno → .tspec.yaml
   └─ mock        local mock server generated from a spec
-truspec              — the CLI (run / drift / coverage / import / mock)
+truspec              — the CLI (run / drift / coverage / gen / import / mock / serve)
 @truspec/mcp-server  — the agent surface (10 MCP tools)
+@truspec/web         — the web UI + local server (truspec serve)
 ```
 
 ## File format
@@ -129,8 +131,8 @@ The CLI ships as a Bun-compiled single binary for distribution; the dev loop run
 
 ## Status & roadmap
 
-**Shipped:** format + JSON Schema · runner (REST + GraphQL, auth, request chaining/capture, **post-response scripts**) · CLI (`run` [+ JUnit], `drift`, `coverage`, `gen`, `import`, `mock`) · OpenAPI drift (added/removed/**changed** + **`--live`** API probe) + coverage · **local mock server** (latency + **request validation**) · `.env` + secrets · Postman/Bruno import · MCP server (10 tools).
-**Next:** publish to npm · web + VS Code UIs sharing the core.
+**Shipped:** format + JSON Schema · runner (REST + GraphQL, auth, request chaining/capture, **post-response scripts**) · CLI (`run` [+ JUnit], `drift`, `coverage`, `gen`, `import`, `mock`, `serve`) · OpenAPI drift (added/removed/**changed** + **`--live`** API probe) + coverage · **local mock server** (latency + **request validation**) · `.env` + secrets · Postman/Bruno import · MCP server (10 tools) · **web UI** (`truspec serve`) · **published to npm**.
+**Next:** VS Code extension (reuse the web UI in a webview) · in-UI request editing.
 
 Deferred by design (not bloat): hosted dashboards, visual flow builders, exotic protocols, mandatory cloud sync.
 

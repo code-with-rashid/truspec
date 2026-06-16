@@ -1,6 +1,6 @@
 # Releasing
 
-Published packages (versioned in lockstep): `@truspec/core`, `truspec` (CLI), `@truspec/mcp-server`.
+Published packages (versioned in lockstep): `@truspec/core`, `truspec` (CLI), `@truspec/mcp-server`, `@truspec/web`.
 
 1. Clean tree on `main`, CI green.
 2. `pnpm install && pnpm build`

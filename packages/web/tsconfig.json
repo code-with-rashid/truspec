@@ -1,0 +1,19 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    "jsx": "react-jsx",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@truspec/core/format": ["../core/src/format/index.ts"],
+      "@truspec/core/runner": ["../core/src/runner/index.ts"],
+      "@truspec/core/workspace": ["../core/src/workspace/index.ts"],
+      "@truspec/core/spec": ["../core/src/spec/index.ts"]
+    }
+  },
+  "include": ["src", "server", "vite.config.ts", "tsup.config.ts"]
+}

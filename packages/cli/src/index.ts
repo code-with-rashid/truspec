@@ -4,6 +4,7 @@ import { genCommand } from "./commands/gen";
 import { importCommand } from "./commands/import";
 import { mockCommand } from "./commands/mock";
 import { runCommand } from "./commands/run";
+import { serveCommand } from "./commands/serve";
 
 const VERSION = "0.0.0";
 
@@ -16,6 +17,7 @@ Usage:
   truspec gen --spec <openapi> --out <dir> [--base-url-var <name>]
   truspec import <postman|bruno> <path> [--out <dir>]
   truspec mock --spec <openapi> [--port <n>] [--delay <ms>]
+  truspec serve [--dir <collection>] [--port <n>]
   truspec --help
   truspec --version
 
@@ -26,6 +28,7 @@ Commands:
   gen        Scaffold a request stub per operation from an OpenAPI spec.
   import     Convert a Postman collection or Bruno directory to .tspec.yaml files.
   mock       Serve generated responses from an OpenAPI spec (local, offline).
+  serve      Open the local web UI for a collection (executes requests server-side).
 `;
 
 export async function main(argv: string[]): Promise<number> {
@@ -53,6 +56,8 @@ export async function main(argv: string[]): Promise<number> {
       return importCommand(rest);
     case "mock":
       return mockCommand(rest);
+    case "serve":
+      return serveCommand(rest);
     default:
       process.stderr.write(`Unknown command: ${command}\n\n${HELP}`);
       return 2;
