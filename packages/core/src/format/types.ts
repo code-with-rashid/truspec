@@ -3,6 +3,7 @@ import {
   Assertion,
   Auth,
   Body,
+  CaptureSource,
   EnvironmentSchema,
   FolderConfigSchema,
   HttpMethod,
@@ -16,3 +17,4 @@ export type TruSpecAssertion = z.infer<typeof Assertion>;
 export type TruSpecAuth = z.infer<typeof Auth>;
 export type TruSpecBody = z.infer<typeof Body>;
 export type TruSpecMethod = z.infer<typeof HttpMethod>;
+export type TruSpecCaptureSource = z.infer<typeof CaptureSource>;

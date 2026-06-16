@@ -22,7 +22,7 @@ packages/
     src/importers/   postman v2.1 + bruno -> .tspec.yaml
     src/mock/        local mock server generated from a spec
     schema/          PUBLISHED JSON Schema (generated; do not hand-edit)
-  cli/           truspec — `run` / `drift` / `coverage` / `import` / `mock`
+  cli/           truspec — `run` / `drift` / `coverage` / `gen` / `import` / `mock`
   mcp-server/    @truspec/mcp-server — 10 tools over the official MCP SDK
 examples/        petstore + blog sample collections (+ openapi.yaml) for tests + demos
 ```
@@ -54,7 +54,7 @@ headers:
 query:
   expand: owner
 body:
-  type: json                       # none | json | text | form
+  type: json                       # none | json | text | form | graphql
   content: { name: "Rex" }
 auth:                              # optional; can inherit from folder.tspec.yaml
   type: bearer                     # none | bearer | basic | apikey
@@ -63,6 +63,9 @@ assertions:                        # declarative + machine-checkable (power CI +
   - { type: status, equals: 200 }
   - { type: jsonpath, path: "$.id", exists: true }
   - { type: duration, ltMs: 1000 }
+capture:                           # save response values into vars for later requests
+  token: "$.access_token"          # jsonpath shorthand; or { header: "X-Id" } / { status: true }
+order: 1                           # run order within a collection (lower first; default 0)
 docs: "Fetch a single pet by its id."
 spec:                              # links request → OpenAPI operation (drift/coverage)
   operation: "GET /pets/{id}"
@@ -77,6 +80,29 @@ spec:                              # links request → OpenAPI operation (drift/
 - `body` — `contains` | `matches` regex
 - `duration` — `ltMs`
 
+### GraphQL body
+
+```yaml
+body:
+  type: graphql
+  query: "query($id: ID!) { user(id: $id) { name } }"
+  variables: { id: "{{userId}}" }
+```
+
+Sent as a POST with a JSON `{ query, variables }` body.
+
+### Capture & chaining
+
+`capture` saves response values into variables for *later* requests in the same run.
+Requests run in `order` (then path), so a login can capture a token the next request uses:
+
+```yaml
+# 01-login.tspec.yaml  →  order: 1,  capture: { token: "$.access_token" }
+# 02-call.tspec.yaml   →  order: 2,  auth: { type: bearer, token: "{{token}}" }
+```
+
+A capture source is a jsonpath string, or `{ jsonpath }` / `{ header }` / `{ status: true }`.
+
 ### Environment (`environments/<name>.env.yaml`)
 
 ```yaml
@@ -85,9 +111,11 @@ name: local
 variables:
   baseUrl: "http://localhost:4000"
   petId: "1"
-secrets:                # NAMES only — values come from OS/.env, never stored here
+secrets:                # NAMES only — values come from OS env or a project .env, never stored here
   - token
 ```
+
+A `.env` file at the workspace root is also loaded for secret resolution (real OS env vars win).
 
 ## Conventions (hard rules)
 

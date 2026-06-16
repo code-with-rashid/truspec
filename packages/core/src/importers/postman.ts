@@ -117,9 +117,23 @@ function convertBody(raw: unknown, warnings: string[], name: string): TruSpecBod
       }
       return { type: "form", content };
     }
-    case "graphql":
-      warnings.push(`"${name}": GraphQL body not supported in v0`);
-      return undefined;
+    case "graphql": {
+      const gql = asRecord(obj.graphql);
+      const query = typeof gql?.query === "string" ? gql.query : "";
+      let variables: Record<string, unknown> | undefined;
+      if (typeof gql?.variables === "string") {
+        try {
+          const parsed: unknown = JSON.parse(gql.variables);
+          if (parsed && typeof parsed === "object") variables = parsed as Record<string, unknown>;
+        } catch {
+          // ignore unparseable variables
+        }
+      } else {
+        const v = asRecord(gql?.variables);
+        if (v) variables = v;
+      }
+      return variables ? { type: "graphql", query, variables } : { type: "graphql", query };
+    }
     default:
       return undefined;
   }

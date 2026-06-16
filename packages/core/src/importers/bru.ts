@@ -119,6 +119,8 @@ export function bruToRequest(text: string): { request?: TruSpecRequest; warnings
   let query: Record<string, string> | undefined;
   let auth: TruSpecAuth | undefined;
   let body: TruSpecBody | undefined;
+  let gqlQuery: string | undefined;
+  let gqlVars: Record<string, unknown> | undefined;
   let assertions: TruSpecAssertion[] = [];
 
   for (const block of blocks) {
@@ -146,12 +148,27 @@ export function bruToRequest(text: string): { request?: TruSpecRequest; warnings
         }
       } else if (block.sub === "text" || block.sub === undefined) {
         body = { type: "text", content: raw };
+      } else if (block.sub === "graphql") {
+        gqlQuery = raw;
+      } else if (block.sub === "graphql:vars") {
+        try {
+          const v: unknown = JSON.parse(raw);
+          if (v && typeof v === "object") gqlVars = v as Record<string, unknown>;
+        } catch {
+          // ignore unparseable graphql variables
+        }
       } else {
         warnings.push(`"${name}": body type "${block.sub}" not supported`);
       }
     } else if (block.name === "assert") {
       assertions = convertAssert(block.body, warnings);
     }
+  }
+
+  if (gqlQuery !== undefined) {
+    body = gqlVars
+      ? { type: "graphql", query: gqlQuery, variables: gqlVars }
+      : { type: "graphql", query: gqlQuery };
   }
 
   if (!url) {

@@ -2,7 +2,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { parse } from "../format";
 import { type RunResult, runRequest, type Vars } from "../runner";
-import { buildVars, loadEnvironment, loadFolderChain } from "./context";
+import { buildVars, loadDotenv, loadEnvironment, loadFolderChain } from "./context";
 import { discoverRequests, findUp } from "./discover";
 
 export interface WorkspaceRunOptions {
@@ -51,12 +51,18 @@ export async function runPath(target: string, opts: WorkspaceRunOptions = {}): P
       `Environment "${opts.env}" not found (looked for environments/${opts.env}.env.yaml)`,
     );
   }
-  const built = buildVars(env, opts.processEnv);
-  const vars: Vars = { ...built.vars, ...opts.vars };
+  // A `.env` at the workspace root fills in secrets; real environment variables win.
+  const processEnv = { ...loadDotenv(root), ...(opts.processEnv ?? process.env) };
+  const built = buildVars(env, processEnv);
 
+  // Parse, then run in `order` (then path) so captured values chain forward.
+  const requests = files
+    .map((file) => ({ file, req: parse.request.parse(readFileSync(file, "utf8")) }))
+    .sort((a, b) => (a.req.order ?? 0) - (b.req.order ?? 0) || a.file.localeCompare(b.file));
+
+  let vars: Vars = { ...built.vars, ...opts.vars };
   const results: RunResult[] = [];
-  for (const file of files) {
-    const req = parse.request.parse(readFileSync(file, "utf8"));
+  for (const { file, req } of requests) {
     const folder = loadFolderChain(dirname(file), root);
     const result = await runRequest(req, {
       folder,
@@ -67,6 +73,7 @@ export async function runPath(target: string, opts: WorkspaceRunOptions = {}): P
     });
     result.filePath = file;
     results.push(result);
+    if (result.captured) vars = { ...vars, ...result.captured };
   }
 
   const passed = results.filter((r) => r.ok).length;

@@ -45,11 +45,11 @@ describe("postman auth + body variants", () => {
     expect(result.warnings.some((w) => /formdata/.test(w))).toBe(true);
   });
 
-  it("graphql body warns", () => {
-    const result = importPostman(
+  it("graphql body without variables imports cleanly", () => {
+    const req = firstRequest(
       wrap({ method: "POST", url: { raw: "http://x" }, body: { mode: "graphql", graphql: { query: "{ x }" } } }),
     );
-    expect(result.warnings.some((w) => /GraphQL/.test(w))).toBe(true);
+    expect(req.body).toEqual({ type: "graphql", query: "{ x }" });
   });
 
   it("invalid JSON raw body (template vars) falls back to text", () => {
@@ -61,6 +61,17 @@ describe("postman auth + body variants", () => {
       }),
     );
     expect(req.body?.type).toBe("text");
+  });
+
+  it("graphql body with stringified variables", () => {
+    const req = firstRequest(
+      wrap({
+        method: "POST",
+        url: { raw: "http://x/graphql" },
+        body: { mode: "graphql", graphql: { query: "{ me }", variables: '{"a":1}' } },
+      }),
+    );
+    expect(req.body).toEqual({ type: "graphql", query: "{ me }", variables: { a: 1 } });
   });
 });
 
@@ -93,5 +104,25 @@ describe("bruno variants", () => {
     const { request, warnings } = bruToRequest("meta {\n  name: NoUrl\n}");
     expect(request).toBeUndefined();
     expect(warnings.some((w) => /no URL/.test(w))).toBe(true);
+  });
+
+  it("graphql body with vars", () => {
+    const text = [
+      "meta {",
+      "  name: GQL",
+      "}",
+      "post {",
+      "  url: http://x/graphql",
+      "  body: graphql",
+      "}",
+      "body:graphql {",
+      "  { me }",
+      "}",
+      "body:graphql:vars {",
+      '  { "a": 1 }',
+      "}",
+    ].join("\n");
+    const { request } = bruToRequest(text);
+    expect(request?.body).toEqual({ type: "graphql", query: "{ me }", variables: { a: 1 } });
   });
 });

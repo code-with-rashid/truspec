@@ -113,7 +113,7 @@ export function resolveRequest(req: TruSpecRequest, opts: ResolveOptions = {}): 
       missing.push(...r.missing);
       body = r.value;
       if (!hasHeader(headers, "content-type")) headers["Content-Type"] = "text/plain";
-    } else {
+    } else if (req.body.type === "form") {
       const r = interpolateDeep(req.body.content, vars);
       missing.push(...r.missing);
       const form = new URLSearchParams();
@@ -122,6 +122,17 @@ export function resolveRequest(req: TruSpecRequest, opts: ResolveOptions = {}): 
       if (!hasHeader(headers, "content-type")) {
         headers["Content-Type"] = "application/x-www-form-urlencoded";
       }
+    } else if (req.body.type === "graphql") {
+      const q = interpolate(req.body.query, vars);
+      missing.push(...q.missing);
+      let variables: Record<string, unknown> | undefined;
+      if (req.body.variables) {
+        const r = interpolateDeep(req.body.variables, vars);
+        missing.push(...r.missing);
+        variables = r.value;
+      }
+      body = JSON.stringify(variables ? { query: q.value, variables } : { query: q.value });
+      if (!hasHeader(headers, "content-type")) headers["Content-Type"] = "application/json";
     }
   }
 

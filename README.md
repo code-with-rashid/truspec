@@ -53,6 +53,7 @@ spec:
 truspec run ./api --env local              # run requests, assert, non-zero exit on failure
 truspec drift   --spec openapi.yaml ./api   # fail CI when collection ≠ spec
 truspec coverage --spec openapi.yaml ./api --min 80   # gate on tested-operation coverage
+truspec gen     --spec openapi.yaml --out ./api       # scaffold a request per operation
 truspec mock    --spec openapi.yaml --port 4000       # offline mock server from your spec
 truspec import postman ./postman.json --out ./api     # migrate existing collections
 ```
@@ -64,6 +65,13 @@ truspec mock --spec examples/blog/openapi.yaml &      # serves generated respons
 truspec run examples/blog --env local                 # 3 requests PASS against the mock
 truspec drift    examples/blog --spec examples/blog/openapi.yaml   # GET /users/{id} untracked
 truspec coverage examples/blog --spec examples/blog/openapi.yaml   # 75% (3/4 operations)
+```
+
+**Chaining:** a request can `capture` a value for later requests in the same run (ordered by `order`) — e.g. log in, capture the token, use it downstream. No scripting required:
+
+```yaml
+# 01-login.tspec.yaml →  order: 1,  capture: { token: "$.access_token" }
+# 02-me.tspec.yaml    →  order: 2,  auth: { type: bearer, token: "{{token}}" }
 ```
 
 Every command speaks `--json` for machines, and exits non-zero on failure so it drops straight into CI.
@@ -110,7 +118,7 @@ One request per file (`*.tspec.yaml`), folder config (`folder.tspec.yaml`) for s
 ## Development
 
 ```bash
-pnpm test            # vitest (95 tests)
+pnpm test            # vitest (105 tests)
 pnpm test:coverage   # v8 coverage
 pnpm typecheck
 pnpm build
@@ -121,8 +129,8 @@ The CLI ships as a Bun-compiled single binary for distribution; the dev loop run
 
 ## Status & roadmap
 
-**Shipped:** format + JSON Schema · runner · CLI (`run`/`drift`/`coverage`/`import`/`mock`) · OpenAPI drift + coverage · **local mock server** · Postman/Bruno import · MCP server (10 tools).
-**Next:** publish to npm · GraphQL · JS scripting · web + VS Code UIs sharing the core.
+**Shipped:** format + JSON Schema · runner (REST + GraphQL, auth, **request chaining/capture**) · CLI (`run`/`drift`/`coverage`/`gen`/`import`/`mock`) · OpenAPI drift + coverage · **local mock server** · `.env` + secrets · Postman/Bruno import · MCP server (10 tools).
+**Next:** publish to npm · JS scripting sandbox · web + VS Code UIs sharing the core.
 
 Deferred by design (not bloat): hosted dashboards, visual flow builders, exotic protocols, mandatory cloud sync.
 

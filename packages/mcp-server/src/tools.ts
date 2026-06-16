@@ -1,16 +1,18 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
-import { parse, type TruSpecMethod, type TruSpecRequest } from "@truspec/core/format";
-import { slug } from "@truspec/core/importers";
-import { coverageReport, driftReport, loadOpenApi } from "@truspec/core/spec";
+import { parse } from "@truspec/core/format";
+import {
+  coverageReport,
+  driftReport,
+  scaffoldFromSpec as coreScaffold,
+  writeScaffold,
+} from "@truspec/core/spec";
 import { discoverRequests, runPath } from "@truspec/core/workspace";
 
 export interface ToolContext {
   cwd: string;
   fetch?: typeof globalThis.fetch;
 }
-
-const VALID_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]);
 
 export function listCollections(ctx: ToolContext, dir = ".") {
   const root = resolve(ctx.cwd, dir);
@@ -66,26 +68,12 @@ export function coverageTool(ctx: ToolContext, dir: string, specPath: string, mi
 
 /** Scaffold a request stub for every operation in an OpenAPI spec (closes drift's "added" gap). */
 export function scaffoldFromSpec(ctx: ToolContext, specPath: string, outDir: string, baseUrlVar = "baseUrl") {
-  const summary = loadOpenApi(resolve(ctx.cwd, specPath));
-  const files: string[] = [];
-  const skipped: string[] = [];
-  for (const op of summary.operations) {
-    if (!VALID_METHODS.has(op.method)) {
-      skipped.push(op.key);
-      continue;
-    }
-    const request: TruSpecRequest = {
-      tspec: "0.1",
-      name: op.operationId ?? op.key,
-      method: op.method as TruSpecMethod,
-      url: `{{${baseUrlVar}}}${op.path.replace(/\{([^}]+)\}/g, "{{$1}}")}`,
-      assertions: [{ type: "status", equals: 200 }],
-      spec: { operation: op.key, operationId: op.operationId },
-    };
-    const abs = resolve(ctx.cwd, outDir, `${slug(op.operationId ?? op.key)}.tspec.yaml`);
-    mkdirSync(dirname(abs), { recursive: true });
-    writeFileSync(abs, parse.request.serialize(request));
-    files.push(relative(ctx.cwd, abs));
-  }
-  return { created: files.length, files, skipped };
+  const specText = readFileSync(resolve(ctx.cwd, specPath), "utf8");
+  const result = coreScaffold(specText, { baseUrlVar });
+  const written = writeScaffold(result.files, resolve(ctx.cwd, outDir));
+  return {
+    created: written.length,
+    files: written.map((p) => relative(ctx.cwd, p)),
+    skipped: result.skipped,
+  };
 }

@@ -33,6 +33,11 @@ export const Body = z.discriminatedUnion("type", [
   z.object({ type: z.literal("json"), content: z.unknown() }),
   z.object({ type: z.literal("text"), content: z.string() }),
   z.object({ type: z.literal("form"), content: z.record(z.string(), z.string()) }),
+  z.object({
+    type: z.literal("graphql"),
+    query: z.string(),
+    variables: z.record(z.string(), z.unknown()).optional(),
+  }),
 ]);
 
 /** Auth, optionally inherited from folder config. Secrets are referenced by name. */
@@ -89,6 +94,14 @@ const SpecLink = z.object({
   operation: z.string().optional(),
 });
 
+/** Source for a captured variable: a jsonpath shorthand, or an explicit source. */
+export const CaptureSource = z.union([
+  z.string(),
+  z.object({ jsonpath: z.string() }).strict(),
+  z.object({ header: z.string() }).strict(),
+  z.object({ status: z.literal(true) }).strict(),
+]);
+
 /** A single request. One request per file: `<name>.tspec.yaml`. */
 export const RequestSchema = z
   .object({
@@ -101,6 +114,10 @@ export const RequestSchema = z
     body: Body.optional(),
     auth: Auth.optional(),
     assertions: z.array(Assertion).default([]),
+    /** Capture response values into variables for later requests in the run. */
+    capture: z.record(z.string(), CaptureSource).optional(),
+    /** Run order within a collection (lower first; default 0, then by path). */
+    order: z.number().optional(),
     docs: z.string().optional(),
     spec: SpecLink.optional(),
   })

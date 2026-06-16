@@ -1,6 +1,7 @@
 import type { TruSpecFolderConfig, TruSpecRequest } from "../format/types";
 import { type AssertionResult, evaluateAssertions, type ResponseView } from "./assertions";
-import type { Vars } from "./interpolate";
+import { evaluateCaptures } from "./capture";
+import type { VarValue, Vars } from "./interpolate";
 import { resolveRequest } from "./resolve";
 
 export interface RunContext {
@@ -28,6 +29,7 @@ export interface RunResult {
     bodyText: string;
   };
   assertions: AssertionResult[];
+  captured?: Record<string, VarValue>;
 }
 
 function looksLikeJson(text: string): boolean {
@@ -82,11 +84,13 @@ export async function runRequest(req: TruSpecRequest, ctx: RunContext = {}): Pro
   const view: ResponseView = { status: response.status, headers, bodyText, json, durationMs };
   const assertions = evaluateAssertions(req.assertions, view);
   const ok = assertions.every((a) => a.ok);
+  const captured = evaluateCaptures(req.capture, view);
 
   return {
     ...head,
     ok,
     response: { status: response.status, statusText: response.statusText, durationMs, headers, bodyText },
     assertions,
+    ...(Object.keys(captured).length > 0 ? { captured } : {}),
   };
 }

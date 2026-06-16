@@ -39,6 +39,15 @@ describe("resolveRequest auth + body variants", () => {
     );
     expect(resolveRequest(r, {}).headers["Content-Type"]).toBe("application/vnd.api+json");
   });
+
+  it("graphql body posts query + variables as JSON", () => {
+    const r = parse.request.parse(
+      'name: r\nmethod: POST\nurl: http://x\nbody: { type: graphql, query: "{ me }", variables: { id: "{{id}}" } }',
+    );
+    const eff = resolveRequest(r, { vars: { id: "7" } });
+    expect(JSON.parse(eff.body ?? "")).toEqual({ query: "{ me }", variables: { id: "7" } });
+    expect(eff.headers["Content-Type"]).toBe("application/json");
+  });
 });
 
 describe("assertion variants", () => {
