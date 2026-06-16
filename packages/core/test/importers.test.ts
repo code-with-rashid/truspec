@@ -1,5 +1,6 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse } from "../src/format";
 import {
@@ -86,5 +87,17 @@ describe("importBrunoDir", () => {
     expect(result.stats.requests).toBe(1);
     expect(result.files[0]?.path).toBe("get-user.tspec.yaml");
     parse.request.parse(result.files[0]?.content ?? "");
+  });
+
+  it("terminates on a symlink cycle in the source directory", () => {
+    const dir = mkdtempSync(join(tmpdir(), "truspec-bru-"));
+    try {
+      writeFileSync(join(dir, "r.bru"), "get {\n  url: http://x\n}\n");
+      symlinkSync(dir, join(dir, "loop")); // loop -> dir  (cycle)
+      const result = importBrunoDir(dir);
+      expect(result.stats.requests).toBe(1); // the one real .bru, discovered once
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
