@@ -1,0 +1,20 @@
+{
+  "name": "@truspec/mcp-server",
+  "version": "0.0.0",
+  "description": "TruSpec MCP server — exposes the engine to AI agents (Claude Code, etc.).",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "truspec-mcp": "./dist/index.js"
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@truspec/core": "workspace:*",
+    "zod": "^3.24.1"
+  }
+}
