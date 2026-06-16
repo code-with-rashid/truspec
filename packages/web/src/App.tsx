@@ -5,6 +5,7 @@ import {
   getRequest,
   getState,
   run as apiRun,
+  saveRequest,
   type CoverageReport,
   type DriftReport,
   type RequestDetail,
@@ -16,6 +17,14 @@ import {
 
 type Theme = "dark" | "light";
 type View = "request" | "spec";
+type EditMode = "edit" | "new";
+
+const NEW_TEMPLATE = `name: New request
+method: GET
+url: "{{baseUrl}}/path"
+assertions:
+  - { type: status, equals: 200 }
+`;
 
 const folderOf = (path: string): string => {
   const i = path.lastIndexOf("/");
@@ -52,6 +61,11 @@ export function App() {
   const [view, setView] = useState<View>("request");
   const [theme, setTheme] = useState<Theme>("dark");
   const [booted, setBooted] = useState(false);
+  const [editing, setEditing] = useState<EditMode | null>(null);
+  const [editorPath, setEditorPath] = useState("");
+  const [editorText, setEditorText] = useState("");
+  const [editorErr, setEditorErr] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -123,7 +137,46 @@ export function App() {
     }
   }, [spec]);
 
-  // Deep-link boot actions (?run=all, ?view=spec, ?theme=light) — handy for demos/CI.
+  const openEdit = useCallback(() => {
+    if (!detail || !selected) return;
+    setEditorPath(selected);
+    setEditorText(detail.raw ?? "");
+    setEditorErr(null);
+    setEditing("edit");
+  }, [detail, selected]);
+
+  const openNew = useCallback(() => {
+    setEditorPath("new-request.tspec.yaml");
+    setEditorText(NEW_TEMPLATE);
+    setEditorErr(null);
+    setEditing("new");
+  }, []);
+
+  const doSave = useCallback(async () => {
+    const path = editorPath.trim();
+    if (!path) return;
+    setSaving(true);
+    setEditorErr(null);
+    try {
+      const res = await saveRequest(path, editorText);
+      if (!res.ok) {
+        setEditorErr(res.error ?? "save failed");
+        return;
+      }
+      const saved = res.path ?? path;
+      setState(await getState()); // refresh sidebar (picks up a new file)
+      setDetail(await getRequest(saved)); // refresh the open request
+      setSelected(saved);
+      setView("request");
+      setEditing(null);
+    } catch (e) {
+      setEditorErr(String(e));
+    } finally {
+      setSaving(false);
+    }
+  }, [editorPath, editorText]);
+
+  // Deep-link boot actions (?run=all, ?view=spec, ?theme=light, ?new=1) — handy for demos/CI.
   useEffect(() => {
     if (!state || booted) return;
     setBooted(true);
@@ -131,7 +184,8 @@ export function App() {
     if (p.get("theme") === "light") setTheme("light");
     if (p.get("run") === "all") void doRun(undefined);
     if (p.get("view") === "spec" && state.specs[0]) void doSpec();
-  }, [state, booted, doRun, doSpec]);
+    if (p.get("new") === "1") openNew();
+  }, [state, booted, doRun, doSpec, openNew]);
 
   const selectedResult = selected ? resultFor.get(state ? `${state.dir}/${selected}` : selected) : undefined;
 
@@ -170,6 +224,9 @@ export function App() {
         <aside className="sidebar">
           <div className="rail-head">
             collections <span className="count">{state?.requests.length ?? 0}</span>
+            <button className="newreq" onClick={openNew} title="new request">
+              + new
+            </button>
           </div>
           <div className="tree">
             {grouped.map(([folder, reqs]) => (
@@ -216,15 +273,39 @@ export function App() {
         </aside>
 
         <main className="main">
-          {view === "spec" ? (
+          {editing ? (
+            <Editor
+              mode={editing}
+              path={editorPath}
+              text={editorText}
+              err={editorErr}
+              saving={saving}
+              onPath={setEditorPath}
+              onText={setEditorText}
+              onSave={doSave}
+              onCancel={() => {
+                setEditing(null);
+                setEditorErr(null);
+              }}
+            />
+          ) : view === "spec" ? (
             <SpecView drift={driftRep} coverage={covRep} spec={spec} />
           ) : detail ? (
-            <RequestView detail={detail} result={selectedResult} onRun={() => selected && doRun(selected)} running={running} />
+            <RequestView
+              detail={detail}
+              result={selectedResult}
+              onRun={() => selected && doRun(selected)}
+              onEdit={openEdit}
+              running={running}
+            />
           ) : (
             <div className="empty">
               <div className="empty-mark">◢◤</div>
               <p>select a request, or run the whole collection.</p>
               <p className="muted">requests execute server-side via @truspec/core — no CORS, fully local.</p>
+              <button className="btn small" onClick={openNew}>
+                + new request
+              </button>
             </div>
           )}
         </main>
@@ -273,11 +354,13 @@ function RequestView({
   detail,
   result,
   onRun,
+  onEdit,
   running,
 }: {
   detail: RequestDetail;
   result?: RunResult;
   onRun: () => void;
+  onEdit: () => void;
   running: boolean;
 }) {
   return (
@@ -285,6 +368,9 @@ function RequestView({
       <div className="req-top">
         <span className={`m big m-${detail.method}`}>{detail.method}</span>
         <code className="url">{detail.url}</code>
+        <button className="btn ghost small" onClick={onEdit} title="edit YAML">
+          ✎ edit
+        </button>
         <button className="btn run" disabled={running} onClick={onRun}>
           {running ? "…" : "▶ run"}
         </button>
@@ -321,6 +407,66 @@ function RequestView({
           <Response r={result} />
         </Section>
       )}
+    </div>
+  );
+}
+
+function Editor({
+  mode,
+  path,
+  text,
+  err,
+  saving,
+  onPath,
+  onText,
+  onSave,
+  onCancel,
+}: {
+  mode: EditMode;
+  path: string;
+  text: string;
+  err: string | null;
+  saving: boolean;
+  onPath: (v: string) => void;
+  onText: (v: string) => void;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="editor">
+      <div className="editor-bar">
+        <span className="editor-title">{mode === "new" ? "new request" : "edit request"}</span>
+        {mode === "new" ? (
+          <input
+            className="path-input"
+            value={path}
+            spellCheck={false}
+            placeholder="folder/name.tspec.yaml"
+            onChange={(e) => onPath(e.target.value)}
+          />
+        ) : (
+          <code className="path-fixed">{path}</code>
+        )}
+        <span className="grow" />
+        <button className="btn ghost small" onClick={onCancel} disabled={saving}>
+          cancel
+        </button>
+        <button className="btn run small" onClick={onSave} disabled={saving || !path.trim()}>
+          {saving ? "saving…" : "save"}
+        </button>
+      </div>
+      <textarea
+        className="editor-text"
+        value={text}
+        spellCheck={false}
+        onChange={(e) => onText(e.target.value)}
+        // Cmd/Ctrl+Enter saves; Esc cancels.
+        onKeyDown={(e) => {
+          if ((e.metaKey || e.ctrlKey) && e.key === "Enter") onSave();
+          else if (e.key === "Escape") onCancel();
+        }}
+      />
+      {err ? <div className="editor-err">{err}</div> : <div className="editor-hint muted">validated against the schema on save · ⌘/Ctrl+Enter to save · Esc to cancel</div>}
     </div>
   );
 }

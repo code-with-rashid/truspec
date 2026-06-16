@@ -1,5 +1,5 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join, relative } from "node:path";
 import { parse } from "@truspec/core/format";
 import { coverageReport, driftReport } from "@truspec/core/spec";
 import { confinePath, discoverRequests, runPath, walkDirSafe } from "@truspec/core/workspace";
@@ -73,7 +73,29 @@ export async function handleApi(
   if (method === "GET" && pathname === "/api/request") {
     const p = query.get("path");
     if (!p) return { status: 400, json: { error: "path required" } };
-    return { status: 200, json: parse.request.parse(readFileSync(confinePath(ctx.dir, p), "utf8")) };
+    const text = readFileSync(confinePath(ctx.dir, p), "utf8");
+    // Parsed fields for display + the raw source so the editor round-trips exactly.
+    return { status: 200, json: { ...parse.request.parse(text), raw: text } };
+  }
+  if (method === "POST" && pathname === "/api/request") {
+    const b = (body ?? {}) as { path?: string; content?: string };
+    if (!b.path || typeof b.content !== "string") {
+      return { status: 400, json: { error: "path and content required" } };
+    }
+    if (!b.path.endsWith(".tspec.yaml") || b.path.endsWith("folder.tspec.yaml")) {
+      return { status: 200, json: { ok: false, error: "Path must be a request file ending in .tspec.yaml" } };
+    }
+    const validation = parse.request.safeParse(b.content);
+    if (!validation.ok) return { status: 200, json: { ok: false, error: validation.error } };
+    let abs: string;
+    try {
+      abs = confinePath(ctx.dir, b.path);
+    } catch (e) {
+      return { status: 200, json: { ok: false, error: (e as Error).message } };
+    }
+    mkdirSync(dirname(abs), { recursive: true });
+    writeFileSync(abs, b.content);
+    return { status: 200, json: { ok: true, path: relative(ctx.dir, abs) } };
   }
   if (method === "POST" && pathname === "/api/run") {
     const b = (body ?? {}) as { target?: string; env?: string };
