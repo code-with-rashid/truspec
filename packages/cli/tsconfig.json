@@ -7,7 +7,10 @@
       "@truspec/core": ["../core/src/index.ts"],
       "@truspec/core/format": ["../core/src/format/index.ts"],
       "@truspec/core/runner": ["../core/src/runner/index.ts"],
-      "@truspec/core/workspace": ["../core/src/workspace/index.ts"]
+      "@truspec/core/workspace": ["../core/src/workspace/index.ts"],
+      "@truspec/core/spec": ["../core/src/spec/index.ts"],
+      "@truspec/core/importers": ["../core/src/importers/index.ts"],
+      "@truspec/core/mock": ["../core/src/mock/index.ts"]
     }
   },
   "include": ["src", "test"],

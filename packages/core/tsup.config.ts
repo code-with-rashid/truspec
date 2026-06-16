@@ -8,6 +8,7 @@ export default defineConfig({
     "src/workspace/index.ts",
     "src/spec/index.ts",
     "src/importers/index.ts",
+    "src/mock/index.ts",
   ],
   format: ["esm"],
   dts: true,

@@ -11,6 +11,7 @@ export default defineConfig({
       { find: "@truspec/core/workspace", replacement: core("workspace/index.ts") },
       { find: "@truspec/core/spec", replacement: core("spec/index.ts") },
       { find: "@truspec/core/importers", replacement: core("importers/index.ts") },
+      { find: "@truspec/core/mock", replacement: core("mock/index.ts") },
       { find: "@truspec/core/runner", replacement: core("runner/index.ts") },
       { find: "@truspec/core/format", replacement: core("format/index.ts") },
       { find: "@truspec/core", replacement: core("index.ts") },

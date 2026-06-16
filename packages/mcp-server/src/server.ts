@@ -1,4 +1,7 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { type MockServerHandle, startMockServer } from "@truspec/core/mock";
 import { z } from "zod";
 import * as tools from "./tools";
 
@@ -15,6 +18,7 @@ const json = (data: unknown) => ({
 export function createServer(ctx: ServerContext = {}): McpServer {
   const c: tools.ToolContext = { cwd: ctx.cwd ?? process.cwd(), fetch: ctx.fetch };
   const server = new McpServer({ name: "truspec", version: "0.0.0" });
+  let mock: MockServerHandle | undefined;
 
   server.registerTool(
     "truspec_list_collections",
@@ -113,6 +117,36 @@ export function createServer(ctx: ServerContext = {}): McpServer {
       },
     },
     async ({ spec, out, baseUrlVar }) => json(tools.scaffoldFromSpec(c, spec, out, baseUrlVar ?? "baseUrl")),
+  );
+
+  server.registerTool(
+    "truspec_mock_start",
+    {
+      title: "Start mock server",
+      description: "Start a local mock server that serves generated responses from an OpenAPI spec.",
+      inputSchema: {
+        spec: z.string().describe("Path to the OpenAPI spec."),
+        port: z.number().optional().describe("Port (default: an ephemeral free port)."),
+      },
+    },
+    async ({ spec, port }) => {
+      if (mock) return json({ alreadyRunning: true, url: mock.url, routes: mock.routes });
+      const specText = readFileSync(resolve(c.cwd, spec), "utf8");
+      mock = await startMockServer(specText, { port: port ?? 0 });
+      return json({ started: true, url: mock.url, routes: mock.routes });
+    },
+  );
+
+  server.registerTool(
+    "truspec_mock_stop",
+    { title: "Stop mock server", description: "Stop the running mock server, if any." },
+    async () => {
+      if (!mock) return json({ running: false });
+      const url = mock.url;
+      await mock.close();
+      mock = undefined;
+      return json({ stopped: true, url });
+    },
   );
 
   return server;

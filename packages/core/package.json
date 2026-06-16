@@ -29,6 +29,10 @@
       "types": "./dist/importers/index.d.ts",
       "import": "./dist/importers/index.js"
     },
+    "./mock": {
+      "types": "./dist/mock/index.d.ts",
+      "import": "./dist/mock/index.js"
+    },
     "./schema/*": "./schema/*"
   },
   "files": ["dist", "schema"],

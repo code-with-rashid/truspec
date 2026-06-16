@@ -58,4 +58,21 @@ describe("MCP server (in-memory client ↔ server)", () => {
     expect(JSON.parse(textOf(res)).count).toBe(1);
     await client.close();
   });
+
+  it("starts and stops a mock server", async () => {
+    const client = await connect();
+    const startRes = await client.callTool({
+      name: "truspec_mock_start",
+      arguments: { spec: "examples/petstore/openapi.yaml" },
+    });
+    const started = JSON.parse(textOf(startRes));
+    expect(started.routes).toBe(3);
+
+    const probe = await fetch(`${started.url}/pets/1`);
+    expect(probe.status).toBe(200);
+
+    const stopRes = await client.callTool({ name: "truspec_mock_stop", arguments: {} });
+    expect(JSON.parse(textOf(stopRes)).stopped).toBe(true);
+    await client.close();
+  });
 });
