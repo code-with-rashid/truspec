@@ -18,7 +18,13 @@ function redactSecrets(result: RunResult, secrets: string[]): void {
   if (secrets.length === 0) return;
   const mask = (s: string): string => {
     let out = s;
-    for (const sec of secrets) out = out.split(sec).join("***");
+    for (const sec of secrets) {
+      out = out.split(sec).join("***");
+      // A secret in a query param is percent-encoded by URLSearchParams (base64 tokens
+      // contain +/=), so scrub the encoded form too or it would slip through in the URL.
+      const enc = encodeURIComponent(sec);
+      if (enc !== sec) out = out.split(enc).join("***");
+    }
     return out;
   };
   result.request.url = mask(result.request.url);

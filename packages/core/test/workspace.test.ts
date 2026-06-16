@@ -100,14 +100,18 @@ describe("runPath", () => {
         join(dir, "get.tspec.yaml"),
         'name: get\nurl: "{{baseUrl}}/data"\nauth: { type: apikey, name: api_key, value: "{{API_SECRET}}", in: query }\n',
       );
+      // base64-style value: URLSearchParams percent-encodes +/=, so both forms must be scrubbed.
+      const secret = "aB3+x/Yz=token9876";
       const result = await runPath(dir, {
         env: "local",
         cwd: dir,
-        processEnv: { API_SECRET: "SUPERSECRET123" },
+        processEnv: { API_SECRET: secret },
         fetch: (async () => new Response("{}", { status: 200 })) as typeof fetch,
       });
       expect(result.results[0]?.request.url).toContain("api_key=***");
-      expect(JSON.stringify(result)).not.toContain("SUPERSECRET123");
+      const json = JSON.stringify(result);
+      expect(json).not.toContain(secret); // raw form
+      expect(json).not.toContain(encodeURIComponent(secret)); // percent-encoded form
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
