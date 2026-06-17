@@ -26,14 +26,14 @@ The API-client market runs from **local-and-minimal** (Bruno) to **cloud-and-eve
 
 ## Quickstart
 
-> Pre-publish: run from source. Requires Node ≥ 22 and pnpm.
+Install the CLI (Node ≥ 22):
 
 ```bash
-git clone https://github.com/code-with-rashid/truspec
-cd truspec
-pnpm install && pnpm build
-node packages/cli/dist/index.js --help
+npm i -g truspec        # global `truspec` command — or run any command with `npx truspec …`
+truspec --help
 ```
+
+> **Hacking on TruSpec itself?** Run from source instead: `git clone https://github.com/code-with-rashid/truspec && cd truspec`, then `pnpm install && pnpm build` — now `node packages/cli/dist/index.js` is the `truspec` binary.
 
 A collection is a folder of plain-text YAML files that diff cleanly and live in your repo:
 
@@ -62,6 +62,7 @@ truspec serve   --dir ./api                           # open the local web UI (r
 Two runnable examples live in [`examples/`](./examples): `petstore` and a fuller `blog` API. Try the whole loop offline — mock the spec, run the collection against it, then check drift and coverage:
 
 ```bash
+git clone https://github.com/code-with-rashid/truspec && cd truspec   # for the example files
 truspec mock --spec examples/blog/openapi.yaml &      # serves generated responses
 truspec run examples/blog --env local                 # 3 requests PASS against the mock
 truspec drift    examples/blog --spec examples/blog/openapi.yaml   # GET /users/{id} untracked
@@ -82,7 +83,10 @@ Every command speaks `--json` for machines, and exits non-zero on failure so it 
 TruSpec ships a first-party [MCP](https://modelcontextprotocol.io) server so agents like Claude Code can author, run, and sync collections directly.
 
 ```bash
-# from the repo root, after `pnpm build`:
+# published (recommended):
+claude mcp add truspec -- npx -y @truspec/mcp-server
+
+# or from a source checkout, after `pnpm build`:
 claude mcp add truspec -- node ./packages/mcp-server/dist/index.js
 ```
 
@@ -91,7 +95,7 @@ Or add it to your MCP client config:
 ```json
 {
   "mcpServers": {
-    "truspec": { "command": "node", "args": ["./packages/mcp-server/dist/index.js"] }
+    "truspec": { "command": "npx", "args": ["-y", "@truspec/mcp-server"] }
   }
 }
 ```
@@ -120,7 +124,7 @@ One request per file (`*.tspec.yaml`), folder config (`folder.tspec.yaml`) for s
 ## Development
 
 ```bash
-pnpm test            # vitest (111 tests)
+pnpm test            # vitest
 pnpm test:coverage   # v8 coverage
 pnpm typecheck
 pnpm build
