@@ -49,25 +49,28 @@ spec:
   operation: "GET /pets/{id}"   # links back to your OpenAPI spec
 ```
 
-```bash
-truspec run ./api --env local              # run requests, assert, non-zero exit on failure
-truspec drift   --spec openapi.yaml ./api --live https://api   # fail CI on drift (vs spec + live API)
-truspec coverage --spec openapi.yaml ./api --min 80   # gate on tested-operation coverage
-truspec gen     --spec openapi.yaml --out ./api       # scaffold a request per operation
-truspec mock    --spec openapi.yaml --port 4000       # offline mock server from your spec
-truspec import postman ./postman.json --out ./api     # migrate existing collections
-truspec serve   --dir ./api                           # open the local web UI (runs server-side)
-```
-
-Two runnable examples live in [`examples/`](./examples): `petstore` and a fuller `blog` API. Try the whole loop offline — mock the spec, run the collection against it, then check drift and coverage:
+**Try it now** — clone the repo for a ready-made collection + OpenAPI spec and run the whole loop offline. These commands work as-is (no placeholders to fill in):
 
 ```bash
-git clone https://github.com/code-with-rashid/truspec && cd truspec   # for the example files
-truspec mock --spec examples/blog/openapi.yaml &      # serves generated responses
-truspec run examples/blog --env local                 # 3 requests PASS against the mock
-truspec drift    examples/blog --spec examples/blog/openapi.yaml   # GET /users/{id} untracked
-truspec coverage examples/blog --spec examples/blog/openapi.yaml   # 75% (3/4 operations)
+git clone https://github.com/code-with-rashid/truspec
+cd truspec
+truspec mock --spec examples/blog/openapi.yaml &
+truspec run examples/blog --env local
+truspec drift examples/blog --spec examples/blog/openapi.yaml
+truspec coverage examples/blog --spec examples/blog/openapi.yaml
 ```
+
+You should see `run` report **3 passing** requests against the mock, `drift` flag **`GET /users/{id}`** as untracked, and `coverage` show **75% (3/4)**. (Two examples ship in [`examples/`](./examples): `petstore` and a fuller `blog`.)
+
+Point the same commands at **your own** collection — a folder of `.tspec.yaml` files — plus your OpenAPI spec. Replace the `<…>` placeholders:
+
+- `truspec run <dir> --env <name>` — run requests + assertions; non-zero exit on failure
+- `truspec drift --spec <openapi.yaml> <dir> [--live <baseUrl>]` — fail CI on drift vs the spec (and a live API)
+- `truspec coverage --spec <openapi.yaml> <dir> --min 80` — gate on tested-operation coverage
+- `truspec gen --spec <openapi.yaml> --out <dir>` — scaffold a request stub per operation
+- `truspec mock --spec <openapi.yaml> --port 4000` — offline mock server from your spec
+- `truspec import postman <file.json> --out <dir>` — migrate existing collections (or `truspec import bruno <dir>`)
+- `truspec serve --dir <dir>` — open the local web UI
 
 **Chaining:** a request can `capture` a value for later requests in the same run (ordered by `order`) — e.g. log in, capture the token, use it downstream. No scripting required:
 
