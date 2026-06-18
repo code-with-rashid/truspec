@@ -62,6 +62,7 @@ export function App() {
   const [theme, setTheme] = useState<Theme>("dark");
   const [booted, setBooted] = useState(false);
   const [editing, setEditing] = useState<EditMode | null>(null);
+  const [editorKey, setEditorKey] = useState(0); // bump to remount Editor with a fresh draft
   const [editorPath, setEditorPath] = useState("");
   const [editorText, setEditorText] = useState("");
   const [editorErr, setEditorErr] = useState<string | null>(null);
@@ -86,9 +87,17 @@ export function App() {
       setDetail(null);
       return;
     }
+    let ignore = false;
     getRequest(selected)
-      .then(setDetail)
-      .catch(() => setDetail(null));
+      .then((d) => {
+        if (!ignore) setDetail(d);
+      })
+      .catch(() => {
+        if (!ignore) setDetail(null);
+      });
+    return () => {
+      ignore = true;
+    };
   }, [selected]);
 
   const grouped = useMemo(() => {
@@ -142,6 +151,7 @@ export function App() {
     setEditorPath(selected);
     setEditorText(detail.raw ?? "");
     setEditorErr(null);
+    setEditorKey((k) => k + 1);
     setEditing("edit");
   }, [detail, selected]);
 
@@ -149,16 +159,15 @@ export function App() {
     setEditorPath("new-request.tspec.yaml");
     setEditorText(NEW_TEMPLATE);
     setEditorErr(null);
+    setEditorKey((k) => k + 1);
     setEditing("new");
   }, []);
 
-  const doSave = useCallback(async () => {
-    const path = editorPath.trim();
-    if (!path) return;
+  const doSave = useCallback(async (path: string, text: string) => {
     setSaving(true);
     setEditorErr(null);
     try {
-      const res = await saveRequest(path, editorText);
+      const res = await saveRequest(path, text);
       if (!res.ok) {
         setEditorErr(res.error ?? "save failed");
         return;
@@ -174,7 +183,7 @@ export function App() {
     } finally {
       setSaving(false);
     }
-  }, [editorPath, editorText]);
+  }, []);
 
   // Deep-link boot actions (?run=all, ?view=spec, ?theme=light, ?new=1) — handy for demos/CI.
   useEffect(() => {
@@ -233,7 +242,7 @@ export function App() {
               <div className="group" key={folder}>
                 <div className="group-name">{folder}</div>
                 {reqs.map((r, i) => {
-                  const res = result?.results.find((x) => x.filePath?.endsWith(r.path));
+                  const res = state ? resultFor.get(`${state.dir}/${r.path}`) : undefined;
                   return (
                     <button
                       key={r.path}
@@ -275,13 +284,12 @@ export function App() {
         <main className="main">
           {editing ? (
             <Editor
+              key={editorKey}
               mode={editing}
-              path={editorPath}
-              text={editorText}
+              initialPath={editorPath}
+              initialText={editorText}
               err={editorErr}
               saving={saving}
-              onPath={setEditorPath}
-              onText={setEditorText}
               onSave={doSave}
               onCancel={() => {
                 setEditing(null);
@@ -413,25 +421,28 @@ function RequestView({
 
 function Editor({
   mode,
-  path,
-  text,
+  initialPath,
+  initialText,
   err,
   saving,
-  onPath,
-  onText,
   onSave,
   onCancel,
 }: {
   mode: EditMode;
-  path: string;
-  text: string;
+  initialPath: string;
+  initialText: string;
   err: string | null;
   saving: boolean;
-  onPath: (v: string) => void;
-  onText: (v: string) => void;
-  onSave: () => void;
+  onSave: (path: string, text: string) => void;
   onCancel: () => void;
 }) {
+  // Draft lives here (seeded once per mount via key) so keystrokes don't re-render App.
+  const [path, setPath] = useState(initialPath);
+  const [text, setText] = useState(initialText);
+  const save = () => {
+    const p = path.trim();
+    if (p) onSave(p, text);
+  };
   return (
     <div className="editor">
       <div className="editor-bar">
@@ -442,7 +453,7 @@ function Editor({
             value={path}
             spellCheck={false}
             placeholder="folder/name.tspec.yaml"
-            onChange={(e) => onPath(e.target.value)}
+            onChange={(e) => setPath(e.target.value)}
           />
         ) : (
           <code className="path-fixed">{path}</code>
@@ -451,7 +462,7 @@ function Editor({
         <button className="btn ghost small" onClick={onCancel} disabled={saving}>
           cancel
         </button>
-        <button className="btn run small" onClick={onSave} disabled={saving || !path.trim()}>
+        <button className="btn run small" onClick={save} disabled={saving || !path.trim()}>
           {saving ? "saving…" : "save"}
         </button>
       </div>
@@ -459,10 +470,10 @@ function Editor({
         className="editor-text"
         value={text}
         spellCheck={false}
-        onChange={(e) => onText(e.target.value)}
+        onChange={(e) => setText(e.target.value)}
         // Cmd/Ctrl+Enter saves; Esc cancels.
         onKeyDown={(e) => {
-          if ((e.metaKey || e.ctrlKey) && e.key === "Enter") onSave();
+          if ((e.metaKey || e.ctrlKey) && e.key === "Enter") save();
           else if (e.key === "Escape") onCancel();
         }}
       />
