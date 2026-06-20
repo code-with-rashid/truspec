@@ -15,4 +15,9 @@ pnpm --filter truspec-vscode build
 
 Then press **F5** in the repo (the *Run TruSpec Extension* launch config) to open an Extension Development Host on `examples/blog`, open a `.tspec.yaml`, and click the **▶ Run** CodeLens.
 
+## Documentation
+
+- **[Editors guide: Web UI & VS Code](https://code-with-rashid.github.io/truspec/editors)**.
+- **[Full documentation](https://code-with-rashid.github.io/truspec/)** — concepts, file format, CLI, spec sync, and more.
+
 Part of [TruSpec](https://github.com/code-with-rashid/truspec). MIT.
