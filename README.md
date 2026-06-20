@@ -7,6 +7,8 @@
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 ![status: alpha](https://img.shields.io/badge/status-alpha-orange)
 
+📚 **[Read the documentation →](https://code-with-rashid.github.io/truspec/)** — getting started, file format, CLI, spec sync, CI, MCP, and the programmatic API.
+
 ---
 
 ## Why TruSpec
@@ -120,9 +122,21 @@ truspec              — the CLI (run / drift / coverage / gen / import / mock /
 @truspec/web         — the web UI + local server (truspec serve)
 ```
 
+## Documentation
+
+Full documentation lives in [`docs/`](./docs/README.md):
+
+| | |
+|---|---|
+| [Getting started](./docs/getting-started.md) · [Core concepts](./docs/concepts.md) | install, the example loop, and the mental model |
+| [File format](./docs/file-format.md) · [CLI](./docs/cli.md) · [Programmatic API](./docs/api.md) | the complete references |
+| [Spec sync](./docs/spec-sync.md) · [Mock server](./docs/mocking.md) · [Importing](./docs/importing.md) | drift & coverage, offline mocks, Postman/Bruno migration |
+| [Scripting](./docs/scripting.md) · [CI/CD](./docs/ci.md) · [AI agents (MCP)](./docs/mcp.md) · [Editors](./docs/editors.md) | the advanced surfaces |
+| [FAQ & troubleshooting](./docs/faq.md) | common questions and error fixes |
+
 ## File format
 
-One request per file (`*.tspec.yaml`), folder config (`folder.tspec.yaml`) for shared base URL/auth/headers, and environments (`environments/*.env.yaml`) where **secrets are referenced by name, never inlined**. The Zod schema in `packages/core/src/format/schema.ts` is the source of truth; a JSON Schema is generated to `packages/core/schema/` for editors and agents. See [`CLAUDE.md`](./CLAUDE.md) for the full reference.
+One request per file (`*.tspec.yaml`), folder config (`folder.tspec.yaml`) for shared base URL/auth/headers, and environments (`environments/*.env.yaml`) where **secrets are referenced by name, never inlined**. The Zod schema in `packages/core/src/format/schema.ts` is the source of truth; a JSON Schema is generated to `packages/core/schema/` for editors and agents. See the [file format reference](./docs/file-format.md) for the full guide (or [`CLAUDE.md`](./CLAUDE.md) for the agent-oriented summary).
 
 ## Development
 

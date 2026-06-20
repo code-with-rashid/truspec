@@ -9,3 +9,7 @@ coverage/
 .env.local
 *.vsix
 .vscode-test/
+
+# VitePress
+docs/.vitepress/dist/
+docs/.vitepress/cache/

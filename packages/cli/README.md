@@ -14,4 +14,9 @@ truspec import postman ./postman.json --out ./api   # migrate existing collectio
 
 Every command supports `--json`. See the [main README](https://github.com/code-with-rashid/truspec#readme).
 
+## Documentation
+
+- **[CLI reference](https://code-with-rashid.github.io/truspec/cli)** — every command and flag, exit codes, and output formats.
+- **[Full documentation](https://code-with-rashid.github.io/truspec/)** — getting started, file format, spec sync, CI, and more.
+
 MIT
