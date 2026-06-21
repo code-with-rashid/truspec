@@ -46,7 +46,7 @@ copy-paste-safe.
 git clone https://github.com/code-with-rashid/truspec
 cd truspec
 
-truspec mock --spec examples/blog/openapi.yaml &        # offline mock on :4000
+truspec mock --spec examples/blog/openapi.yaml > /tmp/truspec-mock.log 2>&1 &   # mock on :4000
 truspec run examples/blog --env local                   # run requests + assertions
 truspec drift examples/blog --spec examples/blog/openapi.yaml
 truspec coverage examples/blog --spec examples/blog/openapi.yaml
@@ -99,8 +99,13 @@ variables:
 spec that serves `/pets/{id}`, so mock it on port 4000 (run from the cloned repo root):
 
 ```bash
-truspec mock --spec examples/petstore/openapi.yaml &    # offline mock on :4000
+truspec mock --spec examples/petstore/openapi.yaml > /tmp/truspec-mock.log 2>&1 &   # mock on :4000
 ```
+
+The `> /tmp/truspec-mock.log 2>&1` keeps the server's startup banner out of your prompt so
+the background job doesn't look like it hijacked the terminal — your shell is ready for the
+next command immediately. If the run below ever reports `fetch failed`, check that log to
+see whether the mock came up.
 
 > Pointing at a real API instead? Skip this step and set `baseUrl` to that API's URL in
 > `local.env.yaml`.
