@@ -94,7 +94,18 @@ variables:
   petId: "1"
 ```
 
-**3. Run it:**
+**3. Give it something to call.** The request targets `{{baseUrl}}` →
+`http://localhost:4000`, so something has to be listening there. The repo ships a petstore
+spec that serves `/pets/{id}`, so mock it on port 4000 (run from the cloned repo root):
+
+```bash
+truspec mock --spec examples/petstore/openapi.yaml &    # offline mock on :4000
+```
+
+> Pointing at a real API instead? Skip this step and set `baseUrl` to that API's URL in
+> `local.env.yaml`.
+
+**4. Run it:**
 
 ```bash
 truspec run ./api --env local
@@ -106,12 +117,19 @@ truspec run ./api --env local
 1 passed, 0 failed, 1 total
 ```
 
+When you're done, stop the mock (it was started with `&`):
+
+```bash
+kill %1
+```
+
 That's the whole flow: a request file, an environment that fills its variables, and a
 `run` that checks the assertions and exits non-zero if anything fails — which is exactly
 what makes it CI-ready.
 
-> No API to point at yet? Generate a mock from any OpenAPI spec and run against it:
-> `truspec mock --spec openapi.yaml` (see the [mock server guide](./mocking.md)).
+> This hand-written request mirrors [`examples/petstore/get-pet.tspec.yaml`](https://github.com/code-with-rashid/truspec/blob/main/examples/petstore/get-pet.tspec.yaml).
+> Generate a mock from any OpenAPI spec the same way — `truspec mock --spec openapi.yaml`
+> (see the [mock server guide](./mocking.md)).
 
 ---
 
