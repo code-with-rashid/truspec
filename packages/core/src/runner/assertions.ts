@@ -1,5 +1,16 @@
 import type { TruSpecAssertion } from "../format/types";
+import { responseSchemaFor, type SpecOperation } from "../spec/openapi";
+import { validateAgainstSchema } from "../spec/validate-response";
 import { jsonpath } from "./jsonpath";
+
+/** Everything except the spec-aware `schema` assertion, which needs the OpenAPI document. */
+type ResponseAssertion = Exclude<TruSpecAssertion, { type: "schema" }>;
+
+/** OpenAPI context a `{ type: schema }` assertion validates against (the matched operation). */
+export interface ContractContext {
+  doc: Record<string, unknown>;
+  operation: SpecOperation;
+}
 
 /** A normalized view of an HTTP response that assertions run against. */
 export interface ResponseView {
@@ -37,7 +48,7 @@ export function deepEqual(a: unknown, b: unknown): boolean {
 
 const all = (checks: boolean[]): boolean => checks.length > 0 && checks.every(Boolean);
 
-export function evaluateAssertion(a: TruSpecAssertion, res: ResponseView): AssertionResult {
+export function evaluateAssertion(a: ResponseAssertion, res: ResponseView): AssertionResult {
   switch (a.type) {
     case "status": {
       const checks: boolean[] = [];
@@ -106,10 +117,46 @@ export function evaluateAssertion(a: TruSpecAssertion, res: ResponseView): Asser
   }
 }
 
-export function evaluateAssertions(list: TruSpecAssertion[], res: ResponseView): AssertionResult[] {
+/**
+ * Validate the response body against the linked operation's OpenAPI response schema.
+ * Without a spec (`contract` undefined) it reports a passing skip, so a collection stays
+ * runnable spec-free. A status the spec doesn't document is a skip unless `required: true`.
+ */
+export function evaluateSchemaAssertion(
+  a: Extract<TruSpecAssertion, { type: "schema" }>,
+  res: ResponseView,
+  contract: ContractContext | undefined,
+): AssertionResult {
+  if (!contract) {
+    return { type: "schema", ok: true, message: "schema: no spec provided (skipped)" };
+  }
+  const status = a.status ?? res.status;
+  const contentType = a.contentType ?? "application/json";
+  const schema = responseSchemaFor(contract.operation, status, contentType);
+  if (!schema) {
+    const msg = `schema: no ${contentType} schema declared for status ${status} on ${contract.operation.key}`;
+    return { type: "schema", ok: a.required !== true, message: `${msg}${a.required ? " (required)" : " (skipped)"}` };
+  }
+  if (res.json === undefined) {
+    return { type: "schema", ok: false, message: "schema: response body is not valid JSON" };
+  }
+  const violations = validateAgainstSchema(res.json, schema, contract.doc);
+  if (violations.length === 0) {
+    return { type: "schema", ok: true, message: `schema: response conforms to ${contract.operation.key} (${status})` };
+  }
+  const shown = violations.slice(0, 5).map((v) => `${v.path || "(root)"}: ${v.message}`).join("; ");
+  const more = violations.length > 5 ? ` (+${violations.length - 5} more)` : "";
+  return { type: "schema", ok: false, message: `schema: ${violations.length} violation(s) — ${shown}${more}` };
+}
+
+export function evaluateAssertions(
+  list: TruSpecAssertion[],
+  res: ResponseView,
+  contract?: ContractContext,
+): AssertionResult[] {
   return list.map((a) => {
     try {
-      return evaluateAssertion(a, res);
+      return a.type === "schema" ? evaluateSchemaAssertion(a, res, contract) : evaluateAssertion(a, res);
     } catch (e) {
       // e.g. an invalid user-supplied regex in a `matches` assertion — fail just this
       // assertion instead of throwing out of the whole run.

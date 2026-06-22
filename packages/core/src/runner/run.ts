@@ -1,5 +1,12 @@
 import type { TruSpecFolderConfig, TruSpecRequest } from "../format/types";
-import { type AssertionResult, evaluateAssertions, type ResponseView } from "./assertions";
+import type { SpecOperation } from "../spec/openapi";
+import {
+  type AssertionResult,
+  type ContractContext,
+  evaluateAssertions,
+  evaluateSchemaAssertion,
+  type ResponseView,
+} from "./assertions";
 import { evaluateCaptures } from "./capture";
 import type { VarValue, Vars } from "./interpolate";
 import { resolveRequest } from "./resolve";
@@ -15,6 +22,13 @@ export interface RunContext {
   timeoutMs?: number;
   /** Cap on the response body in bytes; the request fails if a server exceeds it. */
   maxResponseBytes?: number;
+  /** OpenAPI context for response-schema validation (set when running with a spec). */
+  contract?: {
+    doc: Record<string, unknown>;
+    operation: SpecOperation;
+    /** Auto-add an implicit response-schema check for this request (set by `run --spec`). */
+    auto?: boolean;
+  };
 }
 
 export interface RunResult {
@@ -154,7 +168,14 @@ export async function runRequest(req: TruSpecRequest, ctx: RunContext = {}): Pro
   }
 
   const view: ResponseView = { status: response.status, headers, bodyText, json, durationMs };
-  const assertions = evaluateAssertions(req.assertions, view);
+  const contractCtx: ContractContext | undefined = ctx.contract
+    ? { doc: ctx.contract.doc, operation: ctx.contract.operation }
+    : undefined;
+  const assertions = evaluateAssertions(req.assertions, view, contractCtx);
+  // `run --spec` validates every spec-linked request even without an explicit `{ type: schema }`.
+  if (ctx.contract?.auto && !req.assertions.some((a) => a.type === "schema")) {
+    assertions.push(evaluateSchemaAssertion({ type: "schema" }, view, contractCtx));
+  }
   const captured = evaluateCaptures(req.capture, view);
 
   let scriptError: string | undefined;
