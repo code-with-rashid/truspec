@@ -9,13 +9,21 @@ export async function runCommand(argv: string[], deps: Partial<CommandDeps> = {}
 
   const options = {
     env: { type: "string", short: "e" },
+    spec: { type: "string", short: "s" },
     json: { type: "boolean" },
     reporter: { type: "string" },
     output: { type: "string", short: "o" },
     timeout: { type: "string" },
   } as const;
 
-  let values: { env?: string; json?: boolean; reporter?: string; output?: string; timeout?: string };
+  let values: {
+    env?: string;
+    spec?: string;
+    json?: boolean;
+    reporter?: string;
+    output?: string;
+    timeout?: string;
+  };
   let positionals: string[];
   try {
     const parsed = parseArgs({ args: argv, allowPositionals: true, options });
@@ -28,7 +36,9 @@ export async function runCommand(argv: string[], deps: Partial<CommandDeps> = {}
 
   const target = positionals[0];
   if (!target) {
-    d.stderr("Usage: truspec run <path> [--env <name>] [--json] [--output <file>] [--timeout <ms>]\n");
+    d.stderr(
+      "Usage: truspec run <path> [--env <name>] [--spec <openapi>] [--json] [--output <file>] [--timeout <ms>]\n",
+    );
     return 2;
   }
 
@@ -36,6 +46,7 @@ export async function runCommand(argv: string[], deps: Partial<CommandDeps> = {}
   try {
     result = await runPath(target, {
       env: values.env,
+      spec: values.spec,
       cwd: d.cwd,
       fetch: d.fetch,
       now: d.now,

@@ -18,6 +18,7 @@ truspec --version
 | [`run`](#run) | Run a request file or directory; non-zero exit on assertion failure. |
 | [`drift`](#drift) | Diff a collection against an OpenAPI spec; non-zero exit on drift. |
 | [`coverage`](#coverage) | Report which spec operations have a tested request. |
+| [`contract`](#contract) | Run the collection and validate responses against the spec's schemas. |
 | [`gen`](#gen) | Scaffold a request stub per operation from a spec. |
 | [`import`](#import) | Convert a Postman or Bruno collection to `.tspec.yaml`. |
 | [`mock`](#mock) | Serve generated responses from a spec (offline). |
@@ -45,12 +46,13 @@ Run a single request file or a whole directory of requests, evaluating each requ
 assertions.
 
 ```
-truspec run <path> [--env <name>] [--json] [--reporter <fmt>] [--output <file>] [--timeout <ms>]
+truspec run <path> [--env <name>] [--spec <openapi>] [--json] [--reporter <fmt>] [--output <file>] [--timeout <ms>]
 ```
 
 | Flag | Alias | Description |
 |---|---|---|
 | `--env <name>` | `-e` | Environment to load (`environments/<name>.env.yaml`). |
+| `--spec <openapi>` | `-s` | Validate each spec-linked request's response against the OpenAPI response schema. |
 | `--json` | | Shorthand for `--reporter json`. |
 | `--reporter <fmt>` | | Output format: `human` (default), `json`, or `junit`. |
 | `--output <file>` | `-o` | Write the report to a file instead of stdout. |
@@ -68,6 +70,7 @@ error.
 ```bash
 truspec run ./api --env local                 # run a collection
 truspec run ./api/get-pet.tspec.yaml          # run one request
+truspec run ./api --env local --spec openapi.yaml  # also validate responses vs the spec
 truspec run ./api --json                       # machine-readable output
 truspec run ./api --reporter junit -o junit.xml   # JUnit XML for CI test reporters
 truspec run ./api --timeout 5000               # 5s per-request timeout
@@ -214,6 +217,52 @@ Uncovered (1):
 
 ---
 
+## `contract`
+
+Run the collection and validate each response **body against the spec's OpenAPI response
+schema** for the matched operation. Where `drift` and `coverage` are static, `contract`
+exercises the API and catches *behavioral* drift. See the
+[Spec sync guide](./spec-sync.md#response-validation-contract).
+
+```
+truspec contract --spec <openapi> [<dir>] [--env <name>] [--timeout <ms>] [--json] [--output <file>]
+```
+
+| Flag | Alias | Description |
+|---|---|---|
+| `--spec <openapi>` | `-s` | **Required.** Path to the OpenAPI document. |
+| `--env <name>` | `-e` | Environment to load (base URL + secrets), like `run`. |
+| `--timeout <ms>` | | Per-request timeout. Default `30000`. |
+| `--json` | | Machine-readable `ContractReport`. |
+| `--output <file>` | `-o` | Write the report to a file. |
+
+`<dir>` defaults to `.`. Because it sends real requests, point it at a
+[mock](./mocking.md) or a live API via the environment's `baseUrl`.
+
+**Exit code:** `0` if every exercised response conforms, `1` on any schema violation (or on
+error), `2` if `--spec` is missing. Untested and status-undocumented operations are reported
+but never fail the gate.
+
+```bash
+truspec contract --spec openapi.yaml ./api --env local
+```
+
+```
+Contract: 2/3 tested operations conform to the spec
+  ✓ GET /posts
+  ✓ GET /posts/{id}
+
+Violations (1):
+  ✗ POST /posts  →  schema: 1 violation(s) — /author/id: missing required property 'id'
+
+Untested — no request exercises these (1, see `coverage`):
+  – GET /users/{id}
+
+Contract violations: 1.
+```
+
+---
+
 ## `gen`
 
 Scaffold a request stub for every operation in an OpenAPI spec. Each stub gets a
@@ -321,5 +370,5 @@ truspec serve --dir ./api       # opens http://localhost:4100
 - **Everything is `--json`-able** (where it makes sense), so you can pipe TruSpec into
   `jq`, dashboards, or your own scripts.
 - **Use `npx truspec …`** in CI to avoid a global install step.
-- **Combine `run` + `drift` + `coverage`** as three gates in the same job — see the
+- **Combine `run` + `drift` + `coverage` + `contract`** as gates in the same job — see the
   [CI guide](./ci.md).

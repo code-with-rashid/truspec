@@ -1,11 +1,11 @@
 # Spec sync: drift & coverage
 
 This is the feature TruSpec exists for. Your OpenAPI document is the source of truth; your
-collection is measured against it. Two checks — **drift** and **coverage** — keep them
-honest, run fully offline, and fail the build the moment your collection rots away from
-your API.
+collection is measured against it. Three checks — **drift**, **coverage**, and
+**contract** — keep them honest, run fully offline, and fail the build the moment your
+collection (or your API) rots away from your spec.
 
-A third command, [`gen`](#scaffolding-from-a-spec), closes the loop by generating a
+A fourth command, [`gen`](#scaffolding-from-a-spec), closes the loop by generating a
 request stub for every operation so you start at full coverage.
 
 ---
@@ -137,6 +137,80 @@ exits `0` when `percent >= --min` (default `0`, i.e. report-only).
 
 ---
 
+## Response validation (contract)
+
+`drift` and `coverage` are **static** — they reason about whether a request *references* an
+operation and supplies its required inputs. They never look at what the API actually
+*returns*. `truspec contract` closes that gap: it **runs** the collection and validates each
+response **body against the spec's response schema** for the matched operation.
+
+```bash
+truspec contract --spec openapi.yaml ./api --env local
+```
+
+```
+Contract: 2/3 tested operations conform to the spec
+  ✓ GET /posts
+  ✓ GET /posts/{id}
+
+Violations (1):
+  ✗ POST /posts  →  schema: 1 violation(s) — /author/id: missing required property 'id'
+
+Untested — no request exercises these (1, see `coverage`):
+  – GET /users/{id}
+
+Contract violations: 1.
+```
+
+Because it sends requests, `contract` takes the same knobs as [`run`](./cli.md#run) —
+`--env` for the base URL and secrets, `--timeout`, `--json`. Point it at a
+[mock](./mocking.md) or a real API. It exits non-zero **only** on a schema violation;
+untested and status-undocumented operations are reported but don't fail the gate (that's
+`coverage`/`drift`'s job).
+
+This is **behavioral** drift — the kind the structural `drift` check can't catch. A handler
+that returns a string `id` where the spec promises an integer, drops a required field, or
+adds an undeclared status passes every existing `status`/`jsonpath` assertion but fails
+`contract`.
+
+### Validated without a separate command
+
+You don't need the `contract` command to get response validation. Two lighter paths:
+
+- **`truspec run --spec openapi.yaml ./api`** — every spec-linked request is validated
+  against its response schema inline, as an extra assertion in the normal run output.
+- **`{ type: schema }` assertion** — opt a single request in (or pin a `status` /
+  `contentType`). See [File format → schema](./file-format.md#schema).
+
+The validator covers the OpenAPI 3 schema subset (`type`, `properties`, `required`,
+`items`, `enum`, `nullable`, `allOf`/`oneOf`/`anyOf`, `$ref`, `additionalProperties: false`)
+and reports the JSON path of every violation. `format` is treated as an annotation (not
+enforced).
+
+### JSON shape
+
+`--json` emits a `ContractReport`:
+
+```json
+{
+  "specOperations": 4,
+  "conformed": ["GET /posts", "GET /posts/{id}"],
+  "violations": [
+    {
+      "op": "POST /posts",
+      "status": 201,
+      "message": "schema: 1 violation(s) — /author/id: missing required property 'id'",
+      "filePath": "api/create-post.tspec.yaml"
+    }
+  ],
+  "skipped": [],
+  "untested": ["GET /users/{id}"],
+  "ok": false
+}
+```
+
+---
+
 ## Scaffolding from a spec
 
 `truspec gen` writes a request stub for **every** operation in your spec — each with a
@@ -185,14 +259,16 @@ truspec mock --spec openapi.yaml &
 truspec run ./api --env local
 
 # 3. Gate CI on the contract.
-truspec drift    --spec openapi.yaml ./api          # no new/removed/changed endpoints
-truspec coverage --spec openapi.yaml ./api --min 80 # enough of the surface is tested
+truspec drift    --spec openapi.yaml ./api              # no new/removed/changed endpoints
+truspec coverage --spec openapi.yaml ./api --min 80     # enough of the surface is tested
+truspec contract --spec openapi.yaml ./api --env local  # responses match the spec's schemas
 ```
 
 When someone adds an endpoint to the spec, `drift` fails until a request covers it. When
 someone makes a parameter required, `drift` flags the now-incomplete request. When the
-deployed API and the spec disagree, `drift --live` catches it. That's the whole point: the
-collection can't silently fall out of sync.
+deployed API and the spec disagree, `drift --live` catches it. When a handler returns a
+shape the spec doesn't allow, `contract` catches it. That's the whole point: the collection
+— and the API behind it — can't silently fall out of sync.
 
 See the **[CI/CD guide](./ci.md)** to wire these into GitHub Actions and other pipelines.
 
@@ -200,7 +276,7 @@ See the **[CI/CD guide](./ci.md)** to wire these into GitHub Actions and other p
 
 ## See also
 
-- **[CLI reference](./cli.md#drift)** — every flag for `drift`, `coverage`, and `gen`.
+- **[CLI reference](./cli.md#drift)** — every flag for `drift`, `coverage`, `contract`, and `gen`.
 - **[File format → Spec link](./file-format.md#spec-link)** — how requests reference
   operations.
 - **[Programmatic API → spec](./api.md#spec--drift-coverage-openapi)** — compute drift and

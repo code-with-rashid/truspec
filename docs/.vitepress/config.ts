@@ -76,7 +76,7 @@ export default defineConfig({
       {
         text: "Guides",
         items: [
-          { text: "Spec sync: drift & coverage", link: "/spec-sync" },
+          { text: "Spec sync: drift, coverage & contract", link: "/spec-sync" },
           { text: "Mock server", link: "/mocking" },
           { text: "Importing", link: "/importing" },
           { text: "Scripting", link: "/scripting" },

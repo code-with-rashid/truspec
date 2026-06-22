@@ -37,7 +37,7 @@ reference below.
 | **[Chaining, auth & variables](./file-format.md#chaining-with-capture)** | Log in, capture a token, and reuse it downstream — no scripting required. |
 | **[Scripting](./scripting.md)** | The advanced escape hatch: pre-request and post-response scripts and the `tr` API. |
 | **[CI/CD integration](./ci.md)** | Wire `truspec` into GitHub Actions and any other CI, with JUnit reports and masked secrets. |
-| **[AI agents (MCP)](./mcp.md)** | The first-party MCP server: 10 tools for Claude Code, Cursor, and other agents. |
+| **[AI agents (MCP)](./mcp.md)** | The first-party MCP server: 11 tools for Claude Code, Cursor, and other agents. |
 | **[Editors: Web UI & VS Code](./editors.md)** | The local web UI (`truspec serve`) and the VS Code extension. |
 | **[FAQ & troubleshooting](./faq.md)** | Common questions, error messages, and how to fix them. |
 
@@ -79,9 +79,9 @@ TruSpec is a small monorepo. Most users only ever install `truspec` (the CLI).
 
 | Package | npm | Role |
 |---|---|---|
-| **`truspec`** | [`truspec`](https://www.npmjs.com/package/truspec) | The CLI: `run` / `drift` / `coverage` / `gen` / `import` / `mock` / `serve`. |
+| **`truspec`** | [`truspec`](https://www.npmjs.com/package/truspec) | The CLI: `run` / `drift` / `coverage` / `contract` / `gen` / `import` / `mock` / `serve`. |
 | **`@truspec/core`** | [`@truspec/core`](https://www.npmjs.com/package/@truspec/core) | The engine — pure TypeScript modules with no platform lock-in. Import it to build your own tooling. |
-| **`@truspec/mcp-server`** | [`@truspec/mcp-server`](https://www.npmjs.com/package/@truspec/mcp-server) | The agent surface — 10 MCP tools over the official SDK. |
+| **`@truspec/mcp-server`** | [`@truspec/mcp-server`](https://www.npmjs.com/package/@truspec/mcp-server) | The agent surface — 11 MCP tools over the official SDK. |
 | **`@truspec/web`** | — | The local web UI served by `truspec serve`. |
 | **TruSpec for VS Code** | — | CodeLens to run requests and check drift/coverage from your editor. |
 

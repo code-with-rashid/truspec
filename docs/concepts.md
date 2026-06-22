@@ -167,11 +167,11 @@ it:
   ├─ format      parse / serialize / validate (+ published JSON Schema)
   ├─ runner      interpolation, auth, fetch, declarative assertions, scripts
   ├─ workspace   discovery, folder inheritance, env + secret resolution
-  ├─ spec        OpenAPI drift + coverage
+  ├─ spec        OpenAPI drift + coverage + response contract validation
   ├─ importers   Postman v2.1 + Bruno → .tspec.yaml
   └─ mock        local mock server generated from a spec
 truspec              — the CLI
-@truspec/mcp-server  — the agent surface (10 MCP tools)
+@truspec/mcp-server  — the agent surface (11 MCP tools)
 @truspec/web         — the local web UI (truspec serve)
 ```
 

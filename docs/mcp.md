@@ -42,7 +42,7 @@ collections, environments, and folder config from.
 
 ## Tools
 
-The server exposes **10 tools** over the official MCP SDK. Tools that create or update
+The server exposes **11 tools** over the official MCP SDK. Tools that create or update
 files **validate against the schema before writing**, so an agent can't land a malformed
 `.tspec.yaml` in your repo.
 
@@ -55,6 +55,7 @@ files **validate against the schema before writing**, so an agent can't land a m
 | `truspec_update_request` | `path`, `patch` | Merge a partial patch into an existing request (validated first). |
 | `truspec_drift` | `dir`, `spec`, `live?` | Diff a collection against an OpenAPI spec; optionally probe a live API. |
 | `truspec_coverage` | `dir`, `spec`, `min?` | Report which spec operations are exercised by a request with assertions. |
+| `truspec_contract` | `dir`, `spec`, `env?` | Run the collection and validate each response against the spec's response schema. |
 | `truspec_scaffold_from_spec` | `spec`, `out`, `baseUrlVar?` | Generate a request stub per operation (closes drift gaps). |
 | `truspec_mock_start` | `spec`, `port?`, `delay?`, `validate?` | Start a local mock server from a spec. |
 | `truspec_mock_stop` | — | Stop the running mock server, if any. |
@@ -82,7 +83,8 @@ end-to-end:
 1. `truspec_scaffold_from_spec` → stubs for every operation.
 2. `truspec_mock_start` → an offline API to run against.
 3. `truspec_run_collection` → execute and report.
-4. `truspec_coverage` / `truspec_drift` → find the gaps.
+4. `truspec_coverage` / `truspec_drift` / `truspec_contract` → find the gaps: untested,
+   drifted, and responses that violate the spec's schema.
 5. `truspec_create_request` / `truspec_update_request` → fill them in (validated on write).
 6. `truspec_mock_stop` → clean up.
 

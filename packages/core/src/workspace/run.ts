@@ -1,7 +1,10 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { parse as parseYaml } from "yaml";
 import { parse } from "../format";
 import { type RunResult, runRequest, type Vars } from "../runner";
+import { refMatchesOp } from "../spec/drift";
+import { parseOpenApi, type SpecOperation } from "../spec/openapi";
 import { buildVars, loadDotenv, loadEnvironment, loadFolderChain } from "./context";
 import { discoverRequests, findUp } from "./discover";
 
@@ -52,6 +55,8 @@ export interface WorkspaceRunOptions {
   timeoutMs?: number;
   cwd?: string;
   processEnv?: NodeJS.ProcessEnv;
+  /** OpenAPI spec path: spec-linked requests get their response validated against it. */
+  spec?: string;
 }
 
 export interface WorkspaceRunResult {
@@ -93,6 +98,17 @@ export async function runPath(target: string, opts: WorkspaceRunOptions = {}): P
   const processEnv = { ...loadDotenv(root), ...(opts.processEnv ?? process.env) };
   const built = buildVars(env, processEnv);
 
+  // Optional OpenAPI spec: load operations (for matching) and the raw doc (for $ref resolution).
+  let specOps: SpecOperation[] | undefined;
+  let specDoc: Record<string, unknown> | undefined;
+  if (opts.spec) {
+    const specPath = resolve(cwd, opts.spec);
+    if (!existsSync(specPath)) throw new Error(`Spec not found: ${opts.spec}`);
+    const specText = readFileSync(specPath, "utf8");
+    specOps = parseOpenApi(specText).operations;
+    specDoc = (parseYaml(specText) as Record<string, unknown>) ?? {};
+  }
+
   // Parse, then run in `order` (then path) so captured values chain forward.
   const requests = files
     .map((file) => ({ file, req: parse.request.parse(readFileSync(file, "utf8")) }))
@@ -107,12 +123,15 @@ export async function runPath(target: string, opts: WorkspaceRunOptions = {}): P
   const results: RunResult[] = [];
   for (const { file, req } of requests) {
     const folder = loadFolderChain(dirname(file), root);
+    // Match the request to its spec operation so its response is validated against the contract.
+    const op = specOps && req.spec ? specOps.find((o) => refMatchesOp(req.spec!, o)) : undefined;
     const result = await runRequest(req, {
       folder,
       vars,
       fetch: opts.fetch,
       now: opts.now,
       timeoutMs: opts.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+      ...(op && specDoc ? { contract: { doc: specDoc, operation: op, auto: true } } : {}),
     });
     result.filePath = file;
     results.push(result);

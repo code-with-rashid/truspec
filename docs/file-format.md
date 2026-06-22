@@ -54,6 +54,7 @@ assertions:                        # declarative + machine-checkable
   - { type: status, equals: 200 }
   - { type: jsonpath, path: "$.id", exists: true }
   - { type: duration, ltMs: 1000 }
+  - { type: schema }                 # validate body against the linked spec's response schema
 capture:                           # save response values into vars for later requests
   ownerId: "$.owner.id"
 order: 1                           # run order within a collection (lower first; default 0)
@@ -189,6 +190,7 @@ must hold.
 | `jsonpath` | `path` + (`equals` · `exists` · `matches`) | A value selected from the JSON body. |
 | `body` | `contains` · `matches` | The raw response body text. |
 | `duration` | `ltMs` | Wall-clock request duration (strictly less than). |
+| `schema` | `status` · `contentType` · `required` | The body against the spec's OpenAPI **response** schema. |
 
 ### `status`
 
@@ -238,6 +240,25 @@ Runs against the raw response text — useful for non-JSON responses.
 ```yaml
 - { type: duration, ltMs: 1000 }   # fail if the request took ≥ 1s
 ```
+
+### `schema`
+
+```yaml
+- { type: schema }                          # validate against the linked operation's response schema
+- { type: schema, status: 200 }             # pin a specific status's schema
+- { type: schema, contentType: application/json }
+- { type: schema, required: true }          # fail if the spec declares no schema for this status
+```
+
+Validates the response body against the **OpenAPI response schema** for the operation the
+request is [linked to](#spec-link) — catching *behavioral* drift the structural
+[drift](./spec-sync.md) check can't see. It needs a spec supplied to the run
+(`truspec run --spec <openapi>`, or the dedicated [`truspec contract`](./cli.md#contract)
+gate); **without a spec it's a passing skip**, so a collection stays runnable spec-free. By
+default it checks the schema for the response's *actual* status and `application/json`; an
+undocumented status is skipped unless `required: true`. With `truspec run --spec`, every
+spec-linked request is validated automatically — no explicit `schema` assertion needed. See
+[Spec sync → Response validation](./spec-sync.md#response-validation-contract).
 
 > **Invalid regexes fail gracefully.** A bad `matches` pattern fails *that* assertion with
 > an `assertion error: …` message rather than aborting the whole run.

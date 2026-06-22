@@ -1,6 +1,5 @@
 import { parse as parseYaml } from "yaml";
-import { parseOpenApi } from "../spec/openapi";
-import { safeDecodeURIComponent } from "../util/uri";
+import { asRecord, parseOpenApi, resolveRef } from "../spec/openapi";
 
 const METHODS = ["get", "put", "post", "delete", "patch", "head", "options"] as const;
 
@@ -17,22 +16,6 @@ export interface MockResponse {
   status: number;
   headers: Record<string, string>;
   body: string;
-}
-
-function asRecord(v: unknown): Record<string, unknown> | undefined {
-  return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : undefined;
-}
-
-/** Resolve a local `#/components/schemas/Name` reference within the document. */
-function resolveRef(ref: string, doc: Record<string, unknown>): Record<string, unknown> | undefined {
-  if (!ref.startsWith("#/")) return undefined;
-  let node: unknown = doc;
-  for (const segment of ref.slice(2).split("/")) {
-    const rec = asRecord(node);
-    if (!rec) return undefined;
-    node = rec[safeDecodeURIComponent(segment)];
-  }
-  return asRecord(node);
 }
 
 function stringExample(schema: Record<string, unknown>): string {

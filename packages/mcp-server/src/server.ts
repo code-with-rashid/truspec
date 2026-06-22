@@ -113,6 +113,21 @@ export function createServer(ctx: ServerContext = {}): McpServer {
   );
 
   server.registerTool(
+    "truspec_contract",
+    {
+      title: "Contract",
+      description:
+        "Run a collection and validate each response against its OpenAPI response schema. Reports per-operation conformance, violations (with the offending JSON paths), status-undocumented skips, and untested operations.",
+      inputSchema: {
+        dir: z.string(),
+        spec: z.string().describe("Path to the OpenAPI spec."),
+        env: z.string().optional().describe("Environment name."),
+      },
+    },
+    async ({ dir, spec, env }) => json(await tools.contractTool(c, dir, spec, env)),
+  );
+
+  server.registerTool(
     "truspec_scaffold_from_spec",
     {
       title: "Scaffold from spec",

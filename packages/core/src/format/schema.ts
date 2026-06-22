@@ -85,6 +85,15 @@ export const Assertion = z.discriminatedUnion("type", [
     matches: z.string().optional(),
   }),
   z.object({ type: z.literal("duration"), ltMs: z.number().positive() }),
+  z.object({
+    type: z.literal("schema"),
+    /** Validate against the schema for this status (default: the response's actual status). */
+    status: z.number().int().optional(),
+    /** Media type whose schema to use (default: application/json). */
+    contentType: z.string().optional(),
+    /** Fail if the spec declares no schema for this status/type (default: skip with a note). */
+    required: z.boolean().optional(),
+  }),
 ]);
 
 /** Links a request back to its OpenAPI operation — consumed by drift & coverage. */

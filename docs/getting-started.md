@@ -39,7 +39,7 @@ yarn global add truspec
 ## Run the example loop (60 seconds, fully offline)
 
 The repository ships ready-made collections plus an OpenAPI spec so you can see the whole
-loop — run, mock, drift, coverage — without writing anything. These commands are
+loop — run, mock, drift, coverage, contract — without writing anything. These commands are
 copy-paste-safe.
 
 ```bash
@@ -50,6 +50,7 @@ truspec mock --spec examples/blog/openapi.yaml > /tmp/truspec-mock.log 2>&1 &   
 truspec run examples/blog --env local                   # run requests + assertions
 truspec drift examples/blog --spec examples/blog/openapi.yaml
 truspec coverage examples/blog --spec examples/blog/openapi.yaml
+truspec contract examples/blog --spec examples/blog/openapi.yaml --env local
 ```
 
 You should see:
@@ -57,7 +58,8 @@ You should see:
 - **`run`** report **3 passing** requests against the mock,
 - **`drift`** flag **`GET /users/{id}`** as untracked (it's in the spec but no request
   references it yet),
-- **`coverage`** show **75% (3/4)** operations tested.
+- **`coverage`** show **75% (3/4)** operations tested,
+- **`contract`** confirm all **3** tested responses conform to the spec's schemas.
 
 Two examples ship in [`examples/`](https://github.com/code-with-rashid/truspec/tree/main/examples): a small `petstore` and a fuller `blog`.
 

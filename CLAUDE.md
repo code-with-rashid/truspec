@@ -22,7 +22,7 @@ packages/
     src/importers/   postman v2.1 + bruno -> .tspec.yaml
     src/mock/        local mock server generated from a spec
     schema/          PUBLISHED JSON Schema (generated; do not hand-edit)
-  cli/           truspec — `run` / `drift` / `coverage` / `gen` / `import` / `mock`
+  cli/           truspec — `run` / `drift` / `coverage` / `contract` / `gen` / `import` / `mock`
   mcp-server/    @truspec/mcp-server — 10 tools over the official MCP SDK
 examples/        petstore + blog sample collections (+ openapi.yaml) for tests + demos
 ```
@@ -63,6 +63,7 @@ assertions:                        # declarative + machine-checkable (power CI +
   - { type: status, equals: 200 }
   - { type: jsonpath, path: "$.id", exists: true }
   - { type: duration, ltMs: 1000 }
+  - { type: schema }               # validate body vs the linked spec's response schema (run --spec / contract)
 capture:                           # save response values into vars for later requests
   token: "$.access_token"          # jsonpath shorthand; or { header: "X-Id" } / { status: true }
 order: 1                           # run order within a collection (lower first; default 0)
@@ -79,6 +80,10 @@ spec:                              # links request → OpenAPI operation (drift/
 - `jsonpath` — `path` + (`equals` | `exists` | `matches` regex)
 - `body` — `contains` | `matches` regex
 - `duration` — `ltMs`
+- `schema` — validate the response body against the linked operation's OpenAPI **response**
+  schema. Optional `status` / `contentType` / `required`. Needs a spec supplied to the run
+  (`truspec run --spec` or `truspec contract`); a spec-less run skips it (passes). With
+  `run --spec`, every spec-linked request is validated automatically.
 
 ### GraphQL body
 

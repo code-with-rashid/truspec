@@ -1,5 +1,5 @@
 import { relative } from "node:path";
-import type { CoverageReport, DriftReport } from "@truspec/core/spec";
+import type { ContractReport, CoverageReport, DriftReport } from "@truspec/core/spec";
 import type { WorkspaceRunResult } from "@truspec/core/workspace";
 
 export function formatJson(result: WorkspaceRunResult): string {
@@ -56,6 +56,32 @@ export function formatDrift(report: DriftReport): string {
     if (report.liveMissing) parts.push(`${report.liveMissing.length} missing live`);
     lines.push(`Drift detected: ${parts.join(", ")}.`);
   }
+  return lines.join("\n");
+}
+
+export function formatContract(report: ContractReport): string {
+  const lines: string[] = [];
+  const tested = report.conformed.length + report.violations.length + report.skipped.length;
+  lines.push(`Contract: ${report.conformed.length}/${tested} tested operations conform to the spec`);
+  for (const k of report.conformed) lines.push(`  ✓ ${k}`);
+  if (report.violations.length > 0) {
+    lines.push("", `Violations (${report.violations.length}):`);
+    for (const v of report.violations) lines.push(`  ✗ ${v.op}  →  ${v.message}`);
+  }
+  if (report.skipped.length > 0) {
+    lines.push("", `Skipped — spec declares no schema for the response status (${report.skipped.length}):`);
+    for (const s of report.skipped) lines.push(`  ~ ${s.op}`);
+  }
+  if (report.untested.length > 0) {
+    lines.push("", `Untested — no request exercises these (${report.untested.length}, see \`coverage\`):`);
+    for (const k of report.untested) lines.push(`  – ${k}`);
+  }
+  lines.push("");
+  lines.push(
+    report.ok
+      ? `All ${tested} tested operation(s) conform to the spec.`
+      : `Contract violations: ${report.violations.length}.`,
+  );
   return lines.join("\n");
 }
 

@@ -22,6 +22,7 @@ The API-client market runs from **local-and-minimal** (Bruno) to **cloud-and-eve
 | Open source (MIT) | ✗ | ✓ | ✓ |
 | OpenAPI **drift detection** (CI gate) | ✗ | basic | ✓ |
 | OpenAPI **coverage** report | ✗ | ✗ | ✓ |
+| OpenAPI **response contract** validation | ✗ | ✗ | ✓ |
 | Local **mock server** (no cloud) | cloud | ✗ | ✓ |
 | First-party **MCP server** for agents | bolted-on | community | ✓ |
 | Import from Postman + Bruno | — | partial | ✓ |
@@ -69,6 +70,7 @@ Point the same commands at **your own** collection — a folder of `.tspec.yaml`
 - `truspec run <dir> --env <name>` — run requests + assertions; non-zero exit on failure
 - `truspec drift --spec <openapi.yaml> <dir> [--live <baseUrl>]` — fail CI on drift vs the spec (and a live API)
 - `truspec coverage --spec <openapi.yaml> <dir> --min 80` — gate on tested-operation coverage
+- `truspec contract --spec <openapi.yaml> <dir> --env <name>` — run + validate responses against the spec's schemas
 - `truspec gen --spec <openapi.yaml> --out <dir>` — scaffold a request stub per operation
 - `truspec mock --spec <openapi.yaml> --port 4000` — offline mock server from your spec
 - `truspec import postman <file.json> --out <dir>` — migrate existing collections (or `truspec import bruno <dir>`)
@@ -105,7 +107,7 @@ Or add it to your MCP client config:
 }
 ```
 
-Tools exposed: `truspec_list_collections`, `truspec_run_request`, `truspec_run_collection`, `truspec_create_request`, `truspec_update_request`, `truspec_drift`, `truspec_coverage`, `truspec_scaffold_from_spec`, `truspec_mock_start`, `truspec_mock_stop`. Create/update operations validate against the schema before writing.
+Tools exposed: `truspec_list_collections`, `truspec_run_request`, `truspec_run_collection`, `truspec_create_request`, `truspec_update_request`, `truspec_drift`, `truspec_coverage`, `truspec_contract`, `truspec_scaffold_from_spec`, `truspec_mock_start`, `truspec_mock_stop`. Create/update operations validate against the schema before writing.
 
 ## How it fits together
 
@@ -117,7 +119,7 @@ Tools exposed: `truspec_list_collections`, `truspec_run_request`, `truspec_run_c
   ├─ spec        OpenAPI drift + coverage
   ├─ importers   Postman v2.1 + Bruno → .tspec.yaml
   └─ mock        local mock server generated from a spec
-truspec              — the CLI (run / drift / coverage / gen / import / mock / serve)
+truspec              — the CLI (run / drift / coverage / contract / gen / import / mock / serve)
 @truspec/mcp-server  — the agent surface (10 MCP tools)
 @truspec/web         — the web UI + local server (truspec serve)
 ```
@@ -152,7 +154,7 @@ The CLI runs on Node ≥ 22. A Bun-compiled single binary for zero-install distr
 
 ## Status & roadmap
 
-**Shipped:** format + JSON Schema · runner (REST + GraphQL, auth, request chaining/capture, **post-response scripts**) · CLI (`run` [+ JUnit], `drift`, `coverage`, `gen`, `import`, `mock`, `serve`) · OpenAPI drift (added/removed/**changed** + **`--live`** API probe) + coverage · **local mock server** (latency + **request validation**) · `.env` + secrets (**masked in run output**) · Postman/Bruno import · MCP server (10 tools) · **web UI** (`truspec serve`) · **VS Code extension** (CodeLens + results view, pre-release).
+**Shipped:** format + JSON Schema · runner (REST + GraphQL, auth, request chaining/capture, **post-response scripts**) · CLI (`run` [+ JUnit], `drift`, `coverage`, `contract`, `gen`, `import`, `mock`, `serve`) · OpenAPI drift (added/removed/**changed** + **`--live`** API probe) + coverage + **response contract validation** (`{ type: schema }` · `run --spec` · `contract`) · **local mock server** (latency + **request validation**) · `.env` + secrets (**masked in run output**) · Postman/Bruno import · MCP server (11 tools) · **web UI** (`truspec serve`) · **VS Code extension** (CodeLens + results view, pre-release).
 **Next:** publish v0.5.0 to npm + the extension to the Marketplace · **Bun single-binary** distribution · **in-UI request editing** · **pre-request scripting**.
 
 Deferred by design (not bloat): hosted dashboards, visual flow builders, exotic protocols, mandatory cloud sync.

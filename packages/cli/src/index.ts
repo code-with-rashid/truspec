@@ -1,3 +1,4 @@
+import { contractCommand } from "./commands/contract";
 import { coverageCommand } from "./commands/coverage";
 import { driftCommand } from "./commands/drift";
 import { genCommand } from "./commands/gen";
@@ -12,9 +13,10 @@ const VERSION = typeof __TRUSPEC_VERSION__ === "string" ? __TRUSPEC_VERSION__ : 
 const HELP = `truspec ${VERSION} — local-first, spec-synced, agent-native API client
 
 Usage:
-  truspec run <path> [--env <name>] [--json] [--output <file>] [--timeout <ms>]
+  truspec run <path> [--env <name>] [--spec <openapi>] [--json] [--output <file>] [--timeout <ms>]
   truspec drift --spec <openapi> [<dir>] [--live <baseUrl>] [--json]
   truspec coverage --spec <openapi> [<dir>] [--min <percent>] [--json]
+  truspec contract --spec <openapi> [<dir>] [--env <name>] [--json]
   truspec gen --spec <openapi> --out <dir> [--base-url-var <name>]
   truspec import <postman|bruno> <path> [--out <dir>]
   truspec mock --spec <openapi> [--port <n>] [--delay <ms>]
@@ -26,6 +28,7 @@ Commands:
   run        Run a request file or directory; non-zero exit on assertion failure.
   drift      Diff a collection against an OpenAPI spec (+ --live API probe); non-zero exit on drift.
   coverage   Report which spec operations have a tested request (--min to gate).
+  contract   Run the collection and validate each response against the spec; non-zero exit on violation.
   gen        Scaffold a request stub per operation from an OpenAPI spec.
   import     Convert a Postman collection or Bruno directory to .tspec.yaml files.
   mock       Serve generated responses from an OpenAPI spec (local, offline).
@@ -51,6 +54,8 @@ export async function main(argv: string[]): Promise<number> {
       return driftCommand(rest);
     case "coverage":
       return coverageCommand(rest);
+    case "contract":
+      return contractCommand(rest);
     case "gen":
       return genCommand(rest);
     case "import":

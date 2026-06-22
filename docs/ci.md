@@ -4,13 +4,14 @@ TruSpec is built to be a build gate. Every command exits **non-zero on failure**
 `--json`, and can emit **JUnit XML** — so wiring it into CI is mostly choosing which gates
 you want.
 
-The three gates:
+The four gates:
 
 | Gate | Command | Fails the build when… |
 |---|---|---|
 | **Requests pass** | `truspec run` | any assertion fails. |
 | **No drift** | `truspec drift` | the collection and spec have diverged. |
 | **Enough coverage** | `truspec coverage --min N` | tested-operation coverage drops below `N`. |
+| **Responses conform** | `truspec contract` | a response violates the spec's response schema. |
 
 ---
 
@@ -47,6 +48,12 @@ jobs:
 
       - name: Check coverage
         run: npx truspec coverage --spec openapi.yaml ./api --min 80
+
+      # Validate that the mock's (or a real API's) responses match the spec's schemas.
+      - name: Check contract
+        run: npx truspec contract --spec openapi.yaml ./api --env ci
+        env:
+          token: ${{ secrets.API_TOKEN }}
 
       # Optional: surface results in the GitHub UI from the JUnit report.
       - name: Publish test report
@@ -135,6 +142,7 @@ npx truspec mock --spec openapi.yaml --port 4000 &
 npx truspec run ./api --env ci --reporter junit --output report.xml
 npx truspec drift    --spec openapi.yaml ./api
 npx truspec coverage --spec openapi.yaml ./api --min 80
+npx truspec contract --spec openapi.yaml ./api --env ci
 ```
 
 Point your platform's test-report ingestion at `report.xml`, and expose secrets as
