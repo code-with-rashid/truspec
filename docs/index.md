@@ -20,7 +20,7 @@ hero:
 features:
   - icon: 🎯
     title: The spec is the source of truth
-    details: Drift detection and coverage fail your build the moment your collection diverges from your OpenAPI spec — offline and in CI.
+    details: Drift, coverage, and response-contract validation fail your build the moment your collection — or your API — diverges from your OpenAPI spec — offline and in CI.
   - icon: 📦
     title: Local-first & offline
     details: Plain-text YAML that diffs cleanly in Git. No account, no cloud, ever. Everything works without a network.

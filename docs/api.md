@@ -182,6 +182,7 @@ import { runPath } from "@truspec/core/workspace";
 const summary = await runPath("./api", {
   env: "local",          // environments/local.env.yaml
   cwd: process.cwd(),
+  spec: "./openapi.yaml",// optional — validate each spec-linked response against its schema
   // vars, fetch, now, timeoutMs, processEnv all optional
 });
 
@@ -206,19 +207,20 @@ missingSecrets }`. It parses every request, runs them in `order` (then path) so
 
 ---
 
-## `spec` — drift, coverage, OpenAPI
+## `spec` — drift, coverage, contract, OpenAPI
 
-The functions behind `truspec drift` / `coverage` / `gen`.
+The functions behind `truspec drift` / `coverage` / `contract` / `gen`.
 
 ```ts
 import {
-  driftReport, liveDriftReport, coverageReport,
-  scaffoldFromSpec, writeScaffold, parseOpenApi,
+  driftReport, liveDriftReport, coverageReport, contractReport,
+  scaffoldFromSpec, writeScaffold, parseOpenApi, validateAgainstSchema,
 } from "@truspec/core/spec";
 
 const drift = driftReport("./api", "./openapi.yaml");          // DriftReport
 const live  = await liveDriftReport("./api", "./openapi.yaml", "https://api.example.com");
 const cov   = coverageReport("./api", "./openapi.yaml", 80);   // CoverageReport (min 80%)
+const ctr   = await contractReport("./api", "./openapi.yaml", { env: "local" }); // ContractReport
 
 // Scaffold stubs from a spec, then write them:
 const result = scaffoldFromSpec(specText, { baseUrlVar: "baseUrl" });
@@ -227,10 +229,12 @@ writeScaffold(result.files, "./api");
 
 | Export | Returns | Notes |
 |---|---|---|
-| `parseOpenApi(text)` | `OpenApiSummary` | Flat operation list from an OpenAPI 3 doc. |
+| `parseOpenApi(text)` | `OpenApiSummary` | Flat operation list (with response schemas) from an OpenAPI 3 doc. |
 | `driftReport(dir, specPath)` | `DriftReport` | `{ added, removed, changed, ok, … }`. |
 | `liveDriftReport(dir, specPath, baseUrl, opts?)` | `Promise<DriftReport>` | Adds `liveMissing` from a GET/HEAD probe. |
 | `coverageReport(dir, specPath, minPercent?)` | `CoverageReport` | `{ covered, uncovered, percent, ok }`. |
+| `contractReport(dir, specPath, opts?)` | `Promise<ContractReport>` | Runs the collection; `{ conformed, violations, skipped, untested, ok }`. |
+| `validateAgainstSchema(value, schema, doc)` | `SchemaViolation[]` | Validate any value against an OpenAPI 3 schema subset. |
 | `scaffoldFromSpec(text, opts?)` | `ScaffoldResult` | `{ files, skipped }`. |
 | `writeScaffold(files, outDir)` | `string[]` | Paths written. |
 | `computeDrift` / `computeCoverage` | reports | Pure functions over parsed operations. |
