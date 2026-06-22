@@ -4,7 +4,7 @@ import { parse as parseYaml } from "yaml";
 import { describe, expect, it } from "vitest";
 import { parse } from "../src/format";
 import { runRequest } from "../src/runner";
-import { parseOpenApi } from "../src/spec";
+import { contractReport, parseOpenApi } from "../src/spec";
 import { runPath } from "../src/workspace";
 
 const repoRoot = resolve(import.meta.dirname, "..", "..", "..");
@@ -145,5 +145,33 @@ describe("run --spec (workspace)", () => {
       fetch: jsonFetch(200, { id: 1, name: "Rex" }),
     });
     expect(res.results[0]?.assertions.some((a) => a.type === "schema")).toBe(false);
+  });
+});
+
+describe("contractReport", () => {
+  const base = { env: "local", processEnv: { token: "testtoken" }, now: () => 0, cwd: repoRoot } as const;
+  const specRel = "examples/petstore/openapi.yaml";
+
+  it("reports conformance and lists the operations no request exercises", async () => {
+    const report = await contractReport("examples/petstore", specRel, {
+      ...base,
+      fetch: jsonFetch(200, { id: 1, name: "Rex" }),
+    });
+    expect(report.ok).toBe(true);
+    expect(report.conformed).toEqual(["GET /pets/{id}"]);
+    expect(report.violations).toEqual([]);
+    expect(report.untested).toEqual(["GET /pets", "POST /pets"]);
+    expect(report.specOperations).toBe(3);
+  });
+
+  it("flags a violating response and fails the gate", async () => {
+    const report = await contractReport("examples/petstore", specRel, {
+      ...base,
+      fetch: jsonFetch(200, { id: "bad", name: 5 }),
+    });
+    expect(report.ok).toBe(false);
+    expect(report.violations).toHaveLength(1);
+    expect(report.violations[0]?.op).toBe("GET /pets/{id}");
+    expect(report.violations[0]?.message).toContain("/id");
   });
 });
