@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  contractTool,
   coverageTool,
   createRequest,
   driftTool,
@@ -57,6 +58,30 @@ describe("mcp tools", () => {
     const drift = await driftTool(ctx, "examples/petstore", "examples/petstore/openapi.yaml");
     expect(drift.added).toContain("GET /pets");
     expect(coverageTool(ctx, "examples/petstore", "examples/petstore/openapi.yaml").percent).toBe(33);
+  });
+
+  it("validates responses against the spec (contract)", async () => {
+    const fetchMock = (async () =>
+      new Response(JSON.stringify({ id: "not-an-int", name: "Rex" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      })) as typeof fetch;
+    const prev = process.env.token;
+    process.env.token = "x"; // the petstore folder requires bearer auth — supply the secret
+    try {
+      const report = await contractTool(
+        { cwd: repoRoot, fetch: fetchMock },
+        "examples/petstore",
+        "examples/petstore/openapi.yaml",
+        "local",
+      );
+      expect(report.ok).toBe(false);
+      expect(report.violations[0]?.op).toBe("GET /pets/{id}");
+      expect(report.untested).toContain("GET /pets");
+    } finally {
+      if (prev === undefined) delete process.env.token;
+      else process.env.token = prev;
+    }
   });
 
   it("scaffolds requests from a spec", () => {

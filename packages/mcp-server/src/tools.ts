@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
 import { parse } from "@truspec/core/format";
 import {
+  contractReport,
   coverageReport,
   driftReport,
   liveDriftReport,
@@ -67,6 +68,11 @@ export async function driftTool(ctx: ToolContext, dir: string, specPath: string,
 
 export function coverageTool(ctx: ToolContext, dir: string, specPath: string, minPercent = 0) {
   return coverageReport(resolve(ctx.cwd, dir), resolve(ctx.cwd, specPath), minPercent);
+}
+
+/** Run the collection and validate each response against its OpenAPI response schema. */
+export async function contractTool(ctx: ToolContext, dir: string, specPath: string, env?: string) {
+  return contractReport(resolve(ctx.cwd, dir), resolve(ctx.cwd, specPath), { env, cwd: ctx.cwd, fetch: ctx.fetch });
 }
 
 /** Scaffold a request stub for every operation in an OpenAPI spec (closes drift's "added" gap). */

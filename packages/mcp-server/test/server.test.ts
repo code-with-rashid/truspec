@@ -32,6 +32,7 @@ describe("MCP server (in-memory client ↔ server)", () => {
         "truspec_update_request",
         "truspec_drift",
         "truspec_coverage",
+        "truspec_contract",
         "truspec_scaffold_from_spec",
       ]),
     );
