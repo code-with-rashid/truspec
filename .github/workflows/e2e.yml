@@ -20,8 +20,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
 
-      # The e2e suite serves the built web client + server, so build first.
-      - run: pnpm --filter @truspec/web build
+      # The e2e suite serves the built web client + server, which imports the built @truspec/core,
+      # so build the whole graph (turbo orders core before web).
+      - run: pnpm build
 
       - name: Install Playwright chromium + OS deps
         run: pnpm exec playwright install --with-deps chromium
