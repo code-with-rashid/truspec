@@ -85,6 +85,24 @@ function pathToRegex(path: string): RegExp {
   return new RegExp(`${out}/?$`);
 }
 
+/**
+ * Pick the more specific of two path templates by comparing segment-by-segment: a literal segment
+ * (`me`) beats a parameter (`{id}`) at the same position. Returns >0 when `a` is more specific than
+ * `b`. So when several routes match a path, the static one wins over the parametric one regardless
+ * of declaration order — `/users/me` must not be shadowed by an earlier `/users/{id}`.
+ */
+function compareSpecificity(a: string, b: string): number {
+  const score = (seg: string | undefined): number => (seg === undefined ? -1 : /^\{[^}]+\}$/.test(seg) ? 0 : 1);
+  const sa = a.split("/");
+  const sb = b.split("/");
+  const n = Math.max(sa.length, sb.length);
+  for (let i = 0; i < n; i++) {
+    const d = score(sa[i]) - score(sb[i]);
+    if (d !== 0) return d;
+  }
+  return 0;
+}
+
 function pickResponse(op: Record<string, unknown>, doc: Record<string, unknown>): {
   status: number;
   body: unknown;
@@ -162,7 +180,13 @@ export function createMockResponder(specText: string, opts: MockResponderOptions
     routes,
     respond(method, path, info) {
       const m = method.toUpperCase();
-      const route = routes.find((r) => r.method === m && r.regex.test(path));
+      // Among all routes that match, prefer the most specific template (static beats parametric),
+      // not merely the first in document order.
+      let route: MockRoute | undefined;
+      for (const r of routes) {
+        if (r.method !== m || !r.regex.test(path)) continue;
+        if (!route || compareSpecificity(r.pathTemplate, route.pathTemplate) > 0) route = r;
+      }
       if (!route) return undefined;
 
       const rule = rules.get(`${route.method} ${route.pathTemplate}`);
