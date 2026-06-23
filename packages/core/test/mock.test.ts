@@ -101,3 +101,30 @@ paths:
     expect(responder.respond("GET", "/search", { query: {} })?.status).toBe(200);
   });
 });
+
+describe("mock route specificity", () => {
+  // Regression: a literal route declared AFTER a parametric one used to be unreachable, because
+  // `respond` returned the first regex match in document order. A static segment must beat a param.
+  const spec = (order: "paramFirst" | "literalFirst") => {
+    const byId = `
+  /users/{id}:
+    get:
+      responses:
+        "200": { content: { application/json: { schema: { type: object, properties: { kind: { type: string, example: byId } } } } } }`;
+    const me = `
+  /users/me:
+    get:
+      responses:
+        "200": { content: { application/json: { schema: { type: object, properties: { kind: { type: string, example: me } } } } } }`;
+    return `openapi: 3.0.3\ninfo: { title: T, version: "1" }\npaths:${order === "paramFirst" ? byId + me : me + byId}\n`;
+  };
+
+  for (const order of ["paramFirst", "literalFirst"] as const) {
+    it(`routes /users/me to the literal route (declared ${order})`, () => {
+      const r = createMockResponder(spec(order));
+      expect(JSON.parse(r.respond("GET", "/users/me")?.body ?? "{}").kind).toBe("me");
+      // …and a genuine id still hits the parametric route.
+      expect(JSON.parse(r.respond("GET", "/users/42")?.body ?? "{}").kind).toBe("byId");
+    });
+  }
+});
