@@ -138,7 +138,12 @@ export async function runRequest(req: TruSpecRequest, ctx: RunContext = {}): Pro
   const start = now();
   let response: Response;
   try {
-    const init: RequestInit = { method: eff.method, headers: eff.headers };
+    // Do NOT auto-follow redirects: this is a spec-contract tool, so a request must observe the
+    // ACTUAL response its URL returns — including a 3xx with its Location header. Auto-following
+    // silently reports the redirect TARGET's response instead, which makes redirect responses
+    // impossible to assert on and blinds `truspec contract`/`run --spec` to any 3xx operation the
+    // spec declares. (Node returns the real 3xx for `manual`, unlike a browser's opaque response.)
+    const init: RequestInit = { method: eff.method, headers: eff.headers, redirect: "manual" };
     if (eff.body !== undefined) init.body = eff.body;
     if (ctx.timeoutMs !== undefined && ctx.timeoutMs > 0) init.signal = AbortSignal.timeout(ctx.timeoutMs);
     response = await doFetch(eff.url, init);

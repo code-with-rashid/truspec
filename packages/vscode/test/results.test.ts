@@ -69,4 +69,25 @@ describe("vscode results rendering", () => {
     expect(html).toContain("&lt;script&gt;");
     expect(html).not.toContain('"name"><script>');
   });
+
+  it("escapes HTML in assertion messages, errors, and drift/coverage keys (untrusted response data)", () => {
+    // an assertion message can carry a hostile RESPONSE header/body value; it must not inject markup
+    const payload = `<img src=x onerror="alert(1)"></img><script>alert(2)</script>`;
+    const run: WorkspaceRunResult = {
+      results: [
+        { name: "n", request: { method: "GET", url: "x" }, ok: false, error: payload, assertions: [{ type: "header", ok: false, message: payload }] },
+      ],
+      passed: 0, failed: 1, ok: false, missingSecrets: [],
+    };
+    const html = renderResults(run);
+    expect(html).not.toContain("<img src=x onerror");
+    expect(html).not.toContain("<script>alert");
+    expect(html).toContain("&lt;img");
+
+    // drift/coverage operation keys + spec path are escaped too
+    const drift: DriftReport = { specOperations: 1, collectionOperations: 0, added: [payload], removed: [], changed: [], ok: false };
+    expect(renderDrift(drift, payload)).not.toContain("<img src=x onerror");
+    const cov: CoverageReport = { total: 1, covered: [], uncovered: [payload], percent: 0, ok: false };
+    expect(renderCoverage(cov, payload)).not.toContain("<script>alert");
+  });
 });

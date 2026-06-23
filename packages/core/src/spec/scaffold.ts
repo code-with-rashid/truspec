@@ -32,21 +32,34 @@ export function scaffoldFromSpec(specText: string, opts: { baseUrlVar?: string }
   const baseUrlVar = opts.baseUrlVar ?? "baseUrl";
   const files: ScaffoldFile[] = [];
   const skipped: string[] = [];
+  // Distinct operations can slug to the same base (case-variant operationIds like
+  // `getUser`/`GetUser`, or paths differing only in separators like `/a-b` vs `/a/b`). Without a
+  // uniqueness counter the second file would overwrite the first on disk — silently dropping
+  // operations from a per-operation scaffold. Mirror the Postman importer: suffix `-2`, `-3`, …
+  const used = new Map<string, number>();
   for (const op of summary.operations) {
     if (!VALID_METHODS.has(op.method)) {
       skipped.push(op.key);
       continue;
     }
+    // `|| op.key` (not `??`): an operation can declare an EMPTY-string operationId, which `??` would
+    // keep — and an empty `name` fails the request schema's `name.min(1)`, throwing out of the whole
+    // `gen`. `op.key` (`${METHOD} ${path}`) is always non-empty. Likewise omit an empty operationId
+    // from the spec link rather than writing `operationId: ""`.
+    const label = op.operationId || op.key;
     const request: TruSpecRequest = {
       tspec: SCHEMA_VERSION,
-      name: op.operationId ?? op.key,
+      name: label,
       method: op.method as TruSpecMethod,
       url: `{{${baseUrlVar}}}${op.path.replace(/\{([^}]+)\}/g, "{{$1}}")}`,
       assertions: [{ type: "status", equals: 200 }],
-      spec: { operation: op.key, operationId: op.operationId },
+      spec: { operation: op.key, operationId: op.operationId || undefined },
     };
+    const base = slug(label);
+    const n = (used.get(base) ?? 0) + 1;
+    used.set(base, n);
     files.push({
-      path: `${slug(op.operationId ?? op.key)}.tspec.yaml`,
+      path: `${n > 1 ? `${base}-${n}` : base}.tspec.yaml`,
       content: parse.request.serialize(request),
     });
   }

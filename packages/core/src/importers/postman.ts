@@ -156,7 +156,9 @@ function convertBody(raw: unknown, warnings: string[], name: string): TruSpecBod
 }
 
 function convertRequest(item: Record<string, unknown>, warnings: string[]): TruSpecRequest | undefined {
-  const name = String(item.name ?? "Request");
+  // `?? "Request"` only covers null/undefined; an EMPTY-string name (legal in Postman exports) would
+  // slip through and then fail the request schema's `name.min(1)`, throwing out of the whole import.
+  const name = String(item.name ?? "Request") || "Request";
 
   // Postman shorthand: `request` may be a bare string ("GET http://…" or "http://…").
   if (typeof item.request === "string") {
@@ -256,7 +258,7 @@ export function importPostman(input: unknown): ImportResult {
       path: "folder.tspec.yaml",
       content: parse.folderConfig.serialize({
         tspec: SCHEMA_VERSION,
-        name: String(info?.name ?? "Imported"),
+        name: String(info?.name ?? "Imported") || "Imported",
         auth: collectionAuth,
       }),
     });

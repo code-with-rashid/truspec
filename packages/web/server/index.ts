@@ -29,6 +29,30 @@ function hostAllowed(hostHeader: string | undefined, bindHost: string): boolean 
   return LOOPBACK_HOSTNAMES.has(hostname);
 }
 
+/**
+ * Block cross-site request forgery. The Host guard above defeats DNS rebinding, but it does NOT stop
+ * a page on `evil.com` — OR a page served from ANOTHER local port (a second dev server, a malicious
+ * local service) — from firing a cross-origin "simple" request (e.g. `POST /api/run` with a text/plain
+ * body, which skips the CORS preflight) at `http://127.0.0.1:<port>`. That would let it trigger the
+ * user's collection / write files. So we require the `Origin` to match the exact host:port the server
+ * was reached on (its `Host` header): a genuine same-origin request from the UI does; a cross-site OR
+ * cross-PORT page does not. (A bare loopback check is NOT enough — `localhost:OTHER` is loopback too.)
+ * A non-browser client (curl/CI/MCP) sends no Origin → allowed; `Origin: null` (opaque) is refused.
+ * When the user explicitly binds a non-loopback host they've opted into exposure, so the guard steps aside.
+ */
+function originAllowed(originHeader: string | undefined, hostHeader: string | undefined, bindHost: string): boolean {
+  if (!LOOPBACK_BINDS.has(bindHost)) return true;
+  if (originHeader === undefined) return true;
+  if (originHeader === "null") return false;
+  try {
+    // `URL.host` is `hostname:port` (port omitted only for the scheme default). It must equal the
+    // Host header the request arrived on — same scheme-host-port = same origin.
+    return new URL(originHeader).host === hostHeader;
+  } catch {
+    return false;
+  }
+}
+
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript",
@@ -93,9 +117,19 @@ export async function startWebServer(opts: WebServerOptions = {}): Promise<WebSe
 
   const server = createServer((req, res) => {
     void (async () => {
+      // Never allow the local UI to be framed by another site (clickjacking + the `?run=all`
+      // deep-link auto-executing inside a hidden iframe). Set before any writeHead so it merges
+      // into every response.
+      res.setHeader("X-Frame-Options", "DENY");
+      res.setHeader("Content-Security-Policy", "frame-ancestors 'none'");
       if (!hostAllowed(req.headers.host, host)) {
         res.writeHead(403, { "content-type": "text/plain" });
         res.end("Forbidden: unexpected Host header");
+        return;
+      }
+      if (!originAllowed(req.headers.origin, req.headers.host, host)) {
+        res.writeHead(403, { "content-type": "text/plain" });
+        res.end("Forbidden: cross-origin request refused");
         return;
       }
       // A malformed request URL (e.g. a bad %-escape) makes `new URL`/decodeURIComponent

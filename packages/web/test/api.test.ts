@@ -17,6 +17,23 @@ describe("web server api", () => {
     expect(s.environments).toContain("local");
   });
 
+  it("a malformed request file does not 500 /api/state — valid requests load, bad files reported", async () => {
+    const { mkdtempSync, writeFileSync, rmSync } = await import("node:fs");
+    const dir = mkdtempSync(join(tmpdir(), "truspec-web-state-"));
+    try {
+      writeFileSync(join(dir, "good.tspec.yaml"), 'tspec: "0.1"\nname: Good\nmethod: GET\nurl: "http://x"\nassertions: []\n');
+      writeFileSync(join(dir, "broken.tspec.yaml"), "this: is: not: valid\n[}");
+      const r = await handleApi("GET", "/api/state", noQuery, undefined, { dir });
+      expect(r.status).toBe(200); // pre-fix: parse threw → 500, the UI couldn't load at all
+      const s = r.json as { requests: { name: string }[]; errors: { path: string }[] };
+      expect(s.requests.length).toBe(1);
+      expect(s.requests[0].name).toBe("Good");
+      expect(s.errors.map((e) => e.path)).toContain("broken.tspec.yaml");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("computes drift and coverage", async () => {
     const drift = await handleApi("POST", "/api/drift", noQuery, { spec: "openapi.yaml" }, ctx);
     expect((drift.json as { added: string[] }).added).toContain("GET /pets");

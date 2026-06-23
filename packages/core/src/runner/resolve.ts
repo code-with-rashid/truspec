@@ -98,7 +98,16 @@ export function resolveRequest(req: TruSpecRequest, opts: ResolveOptions = {}): 
   }
   if (authQuery) usp.append(authQuery[0], authQuery[1]);
   const qs = usp.toString();
-  if (qs) url += (url.includes("?") ? "&" : "?") + qs;
+  if (qs) {
+    // Insert query params *before* any `#fragment`. Appending them blindly to the end
+    // pushes them into the fragment (`/p#frag?q=1`), where the WHATWG URL parser keeps
+    // them in the hash and they're never sent to the server — silent data loss, and a
+    // silently-dropped `apikey in: query` auth param.
+    const hash = url.indexOf("#");
+    const head = hash === -1 ? url : url.slice(0, hash);
+    const frag = hash === -1 ? "" : url.slice(hash);
+    url = head + (head.includes("?") ? "&" : "?") + qs + frag;
+  }
 
   // Body.
   let body: string | undefined;

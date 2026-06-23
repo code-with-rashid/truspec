@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -20,6 +20,21 @@ describe("mcp tools", () => {
     const r = listCollections({ cwd: repoRoot }, "examples/petstore");
     expect(r.count).toBe(1);
     expect(r.requests[0]?.name).toBe("Get pet by id");
+  });
+
+  it("a malformed file does not abort the listing — valid requests still list, bad files reported with path", () => {
+    const dir = mkdtempSync(join(tmpdir(), "truspec-mcp-bad-"));
+    try {
+      writeFileSync(join(dir, "good.tspec.yaml"), 'tspec: "0.1"\nname: Good\nmethod: GET\nurl: "http://x"\nassertions: []\n');
+      writeFileSync(join(dir, "bad.tspec.yaml"), "this: is: not: valid\n[}");
+      const r = listCollections({ cwd: dir });
+      expect(r.count).toBe(1); // the good one still lists
+      expect(r.requests[0]?.name).toBe("Good");
+      expect(r.errors?.length).toBe(1); // the bad one is reported, not silently dropped
+      expect(r.errors?.[0]?.path).toBe("bad.tspec.yaml"); // …and names the offending file
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("creates and updates a request, validating before writing", () => {

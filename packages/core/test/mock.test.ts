@@ -128,3 +128,80 @@ describe("mock route specificity", () => {
     });
   }
 });
+
+describe("mock adjacent-param path matching (ReDoS regression)", () => {
+  // A spec with adjacent path params (legal OpenAPI, e.g. `/v{major}.{minor}`) used to compile to
+  // `([^/]+)([^/]+)…` — adjacent unbounded greedy groups that backtrack catastrophically (O(n^k)) on
+  // a long non-matching request path, hanging the mock server's event loop. Matching is now linear.
+  const spec = `openapi: 3.0.3
+info: { title: T, version: "1" }
+paths:
+  /file/{a}{b}{c}{d}{e}{f}{g}{h}:
+    get:
+      responses:
+        "200": { content: { application/json: { schema: { type: object, example: { ok: true } } } } }
+`;
+
+  it("matches an adjacent-param route in well under a millisecond even on a long hostile path", () => {
+    const r = createMockResponder(spec);
+    const hostile = "/file/" + "a".repeat(5000) + "/x/y/z"; // long run + trailing segments defeat the anchor
+    const t0 = Date.now();
+    const res = r.respond("GET", hostile);
+    const dt = Date.now() - t0;
+    expect(dt).toBeLessThan(100); // pre-fix this took seconds→minutes
+    expect(res).toBeUndefined(); // trailing segments mean it shouldn't match
+  });
+
+  it("still matches a legitimate adjacent-param path", () => {
+    const r = createMockResponder(spec);
+    expect(JSON.parse(r.respond("GET", "/file/abcdefgh")?.body ?? "{}").ok).toBe(true);
+  });
+});
+
+describe("mock server resilience (out-of-range status code)", () => {
+  const badSpec = `openapi: 3.0.3
+info: { title: T, version: "1" }
+paths:
+  /bad:
+    get:
+      responses:
+        "20000": { content: { application/json: { schema: { type: object, example: { ok: true } } } } }
+`;
+
+  const specWith = (code: string) =>
+    `openapi: 3.0.3\ninfo: { title: T, version: "1" }\npaths:\n  /bad:\n    get:\n      responses:\n        "${code}": { content: { application/json: { schema: { type: object, example: { ok: true } } } } }\n`;
+
+  it("clamps any non-final spec status to 200 (out-of-range AND 1xx interim)", () => {
+    // 20000/99/0 would crash writeHead; 100/101 are interim statuses that hang clients as a final
+    // response. All must collapse to a valid final status (200).
+    for (const code of ["20000", "99", "0", "100", "101", "199"]) {
+      const res = createMockResponder(specWith(code)).respond("GET", "/bad");
+      expect(res!.status).toBeGreaterThanOrEqual(200);
+      expect(res!.status).toBeLessThanOrEqual(599);
+      expect(res!.status).toBe(200);
+    }
+    // a legitimate non-2xx status is preserved
+    expect(createMockResponder(specWith("404")).respond("GET", "/bad")!.status).toBe(404);
+  });
+
+  it("a live server with such a route responds (no crash, no client hang)", async () => {
+    let uncaught: Error | undefined;
+    const onUncaught = (e: Error) => { uncaught = e; };
+    process.on("uncaughtException", onUncaught);
+    // "20000" (would crash writeHead) and "100" (interim → would hang the client)
+    for (const code of ["20000", "100"]) {
+      const handle = await startMockServer(specWith(code), { port: 0 });
+      try {
+        const res = await fetch(`${handle.url}/bad`, { signal: AbortSignal.timeout(3000) });
+        expect(res.status).toBe(200); // pre-fix: crash (20000) or hang→timeout (100)
+        const again = await fetch(`${handle.url}/bad`, { signal: AbortSignal.timeout(3000) });
+        expect(again.status).toBe(200); // still alive
+      } finally {
+        await handle.close();
+      }
+    }
+    await new Promise((r) => setTimeout(r, 50));
+    process.off("uncaughtException", onUncaught);
+    expect(uncaught).toBeUndefined();
+  });
+});

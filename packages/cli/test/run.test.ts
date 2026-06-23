@@ -130,12 +130,14 @@ describe("truspec run", () => {
     expect(cap.out).toMatch(/1 passed/);
   });
 
-  it("warns and exits 0 when no requests are found", async () => {
+  it("exits 1 (fails the CI gate) when no requests are found", async () => {
+    // A green build when zero requests executed silently masks a misconfigured path / uncommitted
+    // files / bad glob — the worst false-positive for a gate. `run` must fail loudly, not pass.
     const dir = mkdtempSync(join(tmpdir(), "truspec-empty-"));
     try {
       const cap = capture();
       const code = await runCommand([dir], { cwd: repoRoot, stdout: cap.stdout, stderr: cap.stderr });
-      expect(code).toBe(0);
+      expect(code).toBe(1);
       expect(cap.err).toMatch(/no .tspec.yaml requests found/i);
     } finally {
       rmSync(dir, { recursive: true, force: true });

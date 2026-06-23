@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   coverage as apiCoverage,
   drift as apiDrift,
@@ -201,6 +201,8 @@ export function App() {
   return (
     <div className="app">
       <header className="topbar">
+        {/* The visible brand is decorative styling; this is the document's real top-level heading. */}
+        <h1 className="sr-only">TruSpec — local-first API client</h1>
         <div className="brand">
           <span className="logo">◢◤</span>
           <span className="word">
@@ -267,7 +269,7 @@ export function App() {
             spec <span className="count">{state?.specs.length ?? 0}</span>
           </div>
           <div className="spec-pick">
-            <select value={spec} onChange={(e) => setSpec(e.target.value)}>
+            <select aria-label="OpenAPI spec" value={spec} onChange={(e) => setSpec(e.target.value)}>
               <option value="">(choose spec)</option>
               {state?.specs.map((s) => (
                 <option key={s} value={s}>
@@ -318,7 +320,7 @@ export function App() {
           )}
         </main>
 
-        <section className="results">
+        <section className="results" aria-label="run results">
           <div className="rail-head">
             results
             {result && (
@@ -443,6 +445,28 @@ function Editor({
     const p = path.trim();
     if (p) onSave(p, text);
   };
+  // "Esc to cancel" / "⌘/Ctrl+Enter to save" (per the hint) must work the moment the editor is open —
+  // not only when the textarea happens to be focused. A keydown handler scoped to the textarea misses
+  // the path input, the buttons, and the just-opened state (focus still on the "+ new" button). A
+  // document-level listener covers all of those; refs keep it calling the latest save/cancel without
+  // re-binding on every keystroke.
+  const saveRef = useRef(save);
+  saveRef.current = save;
+  const cancelRef = useRef(onCancel);
+  cancelRef.current = onCancel;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        cancelRef.current();
+      } else if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+        e.preventDefault();
+        saveRef.current();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
   return (
     <div className="editor">
       <div className="editor-bar">
@@ -450,6 +474,7 @@ function Editor({
         {mode === "new" ? (
           <input
             className="path-input"
+            aria-label="file path"
             value={path}
             spellCheck={false}
             placeholder="folder/name.tspec.yaml"
@@ -468,14 +493,10 @@ function Editor({
       </div>
       <textarea
         className="editor-text"
+        aria-label="request YAML"
         value={text}
         spellCheck={false}
         onChange={(e) => setText(e.target.value)}
-        // Cmd/Ctrl+Enter saves; Esc cancels.
-        onKeyDown={(e) => {
-          if ((e.metaKey || e.ctrlKey) && e.key === "Enter") save();
-          else if (e.key === "Escape") onCancel();
-        }}
       />
       {err ? <div className="editor-err">{err}</div> : <div className="editor-hint muted">validated against the schema on save · ⌘/Ctrl+Enter to save · Esc to cancel</div>}
     </div>

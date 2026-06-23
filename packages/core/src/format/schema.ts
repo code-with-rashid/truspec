@@ -27,30 +27,41 @@ const Template = z.string();
 const Primitive = z.union([z.string(), z.number(), z.boolean()]);
 const KeyValue = z.record(z.string(), Primitive);
 
+// Every nested object is `.strict()` too — NOT just the top-level request/folder/env schemas — so a
+// typo'd OPTIONAL key (e.g. `exits` for `exists`, or `operatonId` for `operationId`) surfaces as a
+// parse error instead of being silently stripped. A stripped key otherwise yields confusing silent
+// behavior: a condition-less assertion that always fails, or an empty `spec: {}` link that drift then
+// mis-reports as stale. (Required-field typos were already caught; this closes the optional-key gap,
+// honoring CLAUDE.md's "unknown keys are rejected" hard rule at every level.)
+
 /** Request body. Omit entirely for no body. */
 export const Body = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("none") }),
-  z.object({ type: z.literal("json"), content: z.unknown() }),
-  z.object({ type: z.literal("text"), content: z.string() }),
-  z.object({ type: z.literal("form"), content: z.record(z.string(), z.string()) }),
-  z.object({
-    type: z.literal("graphql"),
-    query: z.string(),
-    variables: z.record(z.string(), z.unknown()).optional(),
-  }),
+  z.object({ type: z.literal("none") }).strict(),
+  z.object({ type: z.literal("json"), content: z.unknown() }).strict(),
+  z.object({ type: z.literal("text"), content: z.string() }).strict(),
+  z.object({ type: z.literal("form"), content: z.record(z.string(), z.string()) }).strict(),
+  z
+    .object({
+      type: z.literal("graphql"),
+      query: z.string(),
+      variables: z.record(z.string(), z.unknown()).optional(),
+    })
+    .strict(),
 ]);
 
 /** Auth, optionally inherited from folder config. Secrets are referenced by name. */
 export const Auth = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("none") }),
-  z.object({ type: z.literal("bearer"), token: Template }),
-  z.object({ type: z.literal("basic"), username: Template, password: Template }),
-  z.object({
-    type: z.literal("apikey"),
-    name: z.string(),
-    value: Template,
-    in: z.enum(["header", "query"]).default("header"),
-  }),
+  z.object({ type: z.literal("none") }).strict(),
+  z.object({ type: z.literal("bearer"), token: Template }).strict(),
+  z.object({ type: z.literal("basic"), username: Template, password: Template }).strict(),
+  z
+    .object({
+      type: z.literal("apikey"),
+      name: z.string(),
+      value: Template,
+      in: z.enum(["header", "query"]).default("header"),
+    })
+    .strict(),
 ]);
 
 /**
@@ -58,50 +69,62 @@ export const Auth = z.discriminatedUnion("type", [
  * power CI gating and coverage in v0. A JS scripting sandbox is deferred.
  */
 export const Assertion = z.discriminatedUnion("type", [
-  z.object({
-    type: z.literal("status"),
-    equals: z.number().int().optional(),
-    in: z.array(z.number().int()).optional(),
-    lt: z.number().int().optional(),
-    gte: z.number().int().optional(),
-  }),
-  z.object({
-    type: z.literal("header"),
-    name: z.string(),
-    equals: z.string().optional(),
-    matches: z.string().optional(),
-    exists: z.boolean().optional(),
-  }),
-  z.object({
-    type: z.literal("jsonpath"),
-    path: z.string(),
-    equals: z.unknown().optional(),
-    exists: z.boolean().optional(),
-    matches: z.string().optional(),
-  }),
-  z.object({
-    type: z.literal("body"),
-    contains: z.string().optional(),
-    matches: z.string().optional(),
-  }),
-  z.object({ type: z.literal("duration"), ltMs: z.number().positive() }),
-  z.object({
-    type: z.literal("schema"),
-    /** Validate against the schema for this status (default: the response's actual status). */
-    status: z.number().int().optional(),
-    /** Media type whose schema to use (default: application/json). */
-    contentType: z.string().optional(),
-    /** Fail if the spec declares no schema for this status/type (default: skip with a note). */
-    required: z.boolean().optional(),
-  }),
+  z
+    .object({
+      type: z.literal("status"),
+      equals: z.number().int().optional(),
+      in: z.array(z.number().int()).optional(),
+      lt: z.number().int().optional(),
+      gte: z.number().int().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("header"),
+      name: z.string(),
+      equals: z.string().optional(),
+      matches: z.string().optional(),
+      exists: z.boolean().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("jsonpath"),
+      path: z.string(),
+      equals: z.unknown().optional(),
+      exists: z.boolean().optional(),
+      matches: z.string().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("body"),
+      contains: z.string().optional(),
+      matches: z.string().optional(),
+    })
+    .strict(),
+  z.object({ type: z.literal("duration"), ltMs: z.number().positive() }).strict(),
+  z
+    .object({
+      type: z.literal("schema"),
+      /** Validate against the schema for this status (default: the response's actual status). */
+      status: z.number().int().optional(),
+      /** Media type whose schema to use (default: application/json). */
+      contentType: z.string().optional(),
+      /** Fail if the spec declares no schema for this status/type (default: skip with a note). */
+      required: z.boolean().optional(),
+    })
+    .strict(),
 ]);
 
 /** Links a request back to its OpenAPI operation — consumed by drift & coverage. */
-const SpecLink = z.object({
-  operationId: z.string().optional(),
-  /** `${METHOD} ${path}`, e.g. "GET /pets/{id}" — fallback when no operationId. */
-  operation: z.string().optional(),
-});
+const SpecLink = z
+  .object({
+    operationId: z.string().optional(),
+    /** `${METHOD} ${path}`, e.g. "GET /pets/{id}" — fallback when no operationId. */
+    operation: z.string().optional(),
+  })
+  .strict();
 
 /** Source for a captured variable: a jsonpath shorthand, or an explicit source. */
 export const CaptureSource = z.union([

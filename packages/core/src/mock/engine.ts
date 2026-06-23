@@ -78,9 +78,22 @@ export function generateExample(schema: Record<string, unknown>, doc: Record<str
 
 function pathToRegex(path: string): RegExp {
   let out = "^";
+  let prevWasParam = false;
   for (const part of path.split(/(\{[^}]+\})/g)) {
-    if (/^\{[^}]+\}$/.test(part)) out += "([^/]+)";
-    else out += part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    if (part === "") continue;
+    if (/^\{[^}]+\}$/.test(part)) {
+      // Collapse a run of adjacent params (no literal separator between them) into a SINGLE
+      // unbounded segment. Emitting `[^/]+[^/]+…` — two+ greedy quantifiers over the same class
+      // with nothing between — backtracks catastrophically (O(n^k)) on a long non-matching path,
+      // and the mock matches attacker-controlled request paths on the event loop → a DoS.
+      // Adjacent params are inherently ambiguous to split anyway, so one `[^/]+` is the right match.
+      // Groups are non-capturing because the regex is only ever used for `.test()`.
+      if (!prevWasParam) out += "[^/]+";
+      prevWasParam = true;
+    } else {
+      out += part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      prevWasParam = false;
+    }
   }
   return new RegExp(`${out}/?$`);
 }
@@ -112,7 +125,14 @@ function pickResponse(op: Record<string, unknown>, doc: Record<string, unknown>)
   const codes = Object.keys(responses);
   const success = codes.filter((c) => /^2\d\d$/.test(c)).sort();
   const chosen = success[0] ?? (responses.default !== undefined ? "default" : codes[0]);
-  const status = chosen && /^\d+$/.test(chosen) ? Number(chosen) : 200;
+  const parsed = chosen && /^\d+$/.test(chosen) ? Number(chosen) : 200;
+  // Clamp to a valid FINAL HTTP status (200–599). Two failure modes this guards:
+  //  • out-of-range codes ("20000", "99", "0") make `res.writeHead` throw `Invalid status code` →
+  //    in an unguarded handler that crashes the mock process;
+  //  • a 1xx INTERIM code ("100"/"101") sent as the final response makes HTTP clients hang waiting
+  //    for the real response (fetch times out).
+  // A mock sends one complete response, so a non-final status is meaningless → fall back to 200.
+  const status = parsed >= 200 && parsed <= 599 ? parsed : 200;
 
   const response = asRecord(chosen ? responses[chosen] : undefined) ?? {};
   const content = asRecord(response.content);
