@@ -19,3 +19,7 @@ coverage/
 .stryker-tmp/
 qa/.stryker-tmp/
 qa/mutation-report.json
+
+# Playwright e2e artifacts
+test-results/
+playwright-report/

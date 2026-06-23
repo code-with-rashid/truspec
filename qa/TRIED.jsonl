@@ -26,3 +26,9 @@
 {"id":"HELD-xss","category":"security/xss","target":"web client + vscode webview","input":"img/script/svg payloads (renderToStaticMarkup + live browser + axe)","result":"HELD react-escaped; vscode esc()+enableScripts:false","cycle":"c7-c10"}
 {"id":"HELD-traversal","category":"security/path","target":"confinePath web+mcp+live UI save","input":"../../../etc raw/encoded/null-byte","result":"HELD realpath-confined no escape","cycle":"c1-c9"}
 {"id":"HELD-script-vm","category":"sandbox","target":"runner/script.ts","input":"~1200 random pre/post scripts incl infinite loops","result":"HELD timeout 1s, no crash/unhandled","cycle":"c6"}
+{"id":"E2E-csrf","category":"security/csrf","target":"web e2e (real chromium)","input":"cross-port loopback attacker page POST /api/request","result":"PASS no file written (Origin==Host)","cycle":"v2-2"}
+{"id":"E2E-xss","category":"security/xss","target":"web e2e","input":"malicious request name <img onerror>","result":"PASS not executed, escaped","cycle":"v2-2"}
+{"id":"E2E-kbd","category":"ui/a11y","target":"web e2e","input":"Esc from path input / Ctrl+Enter","result":"PASS (BUG-O regression)","cycle":"v2-2"}
+{"id":"E2E-axe","category":"ui/a11y","target":"web e2e (axe-core)","input":"main/editor/light-theme scans","result":"PASS 0 wcag2a/aa violations (BUG-P + contrast)","cycle":"v2-2"}
+{"id":"FIX-flaky-fuzz","category":"regression/flake","target":"core/test/fuzz.test.ts INV-4","input":"slowest<100ms timing under parallel load","result":"FIXED: structural ReDoS check (no adjacent [^/]+[^/]+) instead of wall-clock","cycle":"v2-2"}
+{"id":"FIX-contrast","category":"ui/a11y","target":"web/src/styles.css","input":"--dimmer ~2.6:1, light run-button 4:1","result":"FIXED: raised --dim/--dimmer both themes + light run-button white text; axe 0 contrast","cycle":"v2-2"}

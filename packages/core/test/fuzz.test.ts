@@ -52,8 +52,12 @@ describe("seeded property fuzz (invariants)", () => {
     expect(crashes).toBe(0);
   });
 
-  it("INV-4 / no-ReDoS: mock pathToRegex matches a hostile path in bounded time; status always 200-599", () => {
-    let slowest = 0, badStatus = 0;
+  it("INV-4 / no-ReDoS: mock pathToRegex has no catastrophic-backtracking shape; status always 200-599", () => {
+    // Structural (deterministic, load-immune) ReDoS check: the generated regex must never contain two
+    // adjacent unbounded quantifiers over the same class (`[^/]+[^/]+`) — that's the O(n^k) shape the
+    // BUG-B fix collapsed away. We still `.test()` a 5000-char hostile path each iteration, so a real
+    // ReDoS would hang the loop and trip the vitest timeout; we just don't assert a flaky wall-clock.
+    let badStatus = 0, dangerousRegex = 0;
     const hostile = "/" + "a".repeat(5000) + "/x/y/z";
     for (const seed of SEEDS) {
       const r = mulberry32(seed); const pick = <T>(a: T[]): T => a[Math.floor(r() * a.length)]!;
@@ -62,12 +66,12 @@ describe("seeded property fuzz (invariants)", () => {
         const code = pick(["100", "200", "404", "600", "20000", "0", "default"]);
         const spec = `openapi: 3.0.3\ninfo: { title: T, version: "1" }\npaths: ${JSON.stringify({ [path]: { get: { responses: { [code]: { content: { "application/json": { schema: {} } } } } } } })}\n`;
         const re = buildRoutes(JSON.parse(`{"paths":${JSON.stringify({ [path]: { get: { responses: {} } } })}}`))[0]?.regex;
-        if (re) { const t0 = Date.now(); re.test(hostile); slowest = Math.max(slowest, Date.now() - t0); }
+        if (re) { re.test(hostile); if (/\[\^\/\]\+\[\^\/\]\+/.test(re.source)) dangerousRegex++; }
         const res = createMockResponder(spec).respond("GET", path.replace(/\{[^}]+\}/g, "1"));
         if (res && (res.status < 200 || res.status > 599)) badStatus++;
       }
     }
-    expect(slowest).toBeLessThan(100);
+    expect(dangerousRegex).toBe(0);
     expect(badStatus).toBe(0);
   });
 

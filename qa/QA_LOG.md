@@ -87,3 +87,25 @@ state), `qa/TRIED.jsonl` (28 executed attacks — never repeated), `qa/SEEDS.jso
 - `pnpm gen:schema` no-diff check (catches the BUG-G class).
 - Playwright + axe-core e2e (covers BUG-M/N/O/P regressions live).
 - The committed `fuzz.test.ts` on every run + a scheduled deep-fuzz from `qa/corpus/`.
+
+---
+
+## Cycle v2-2 — browser e2e in CI + a11y contrast (Issue #14, items 4 & 5)
+
+- **Playwright + axe-core e2e suite** (`e2e/`, 13 tests, CI job `e2e.yml` via `playwright install
+  --with-deps chromium`) — permanently guards the browser-only regressions that node coverage can't reach:
+  - security: XSS escaped/not-executed; CSRF rejected cross-origin AND cross-port-loopback (BUG-N, the
+    exact vector that needed a real browser); `X-Frame-Options: DENY` + CSP on every response (BUG-M)
+  - editor: save writes + sidebar update; **Esc from the path input** and **Ctrl+Enter** (BUG-O);
+    traversal refused with nothing written outside; double-click → one uncorrupted file
+  - a11y: **axe-core = 0 WCAG 2 A/AA violations** on main view, editor, and light theme (BUG-P), plus
+    explicit checks that the spec select is labeled and an h1 exists
+- **Color contrast (item 5, axe `serious`)** fixed at root: raised `--dim`/`--dimmer` in both themes
+  (dark `--dimmer` was ~2.6:1) and gave the light-theme run button white text (dark text on the
+  dark-green lime was 4:1). axe now reports **0 contrast violations** in both themes.
+- **Flaky test fixed:** `fuzz.test.ts` INV-4 asserted a wall-clock `slowest < 100ms`, which spiked under
+  parallel-suite load. Replaced with a deterministic structural check (the regex must never contain
+  adjacent `[^/]+[^/]+`); the loop still `.test()`s a 5000-char hostile path, so a real ReDoS trips the
+  vitest timeout. Suite now green twice with no flake.
+
+Remaining Issue-#14 items (1 expand mutation, 2 continuous 1M-exec fuzz, 3 throughput-SLO load) stay open.
