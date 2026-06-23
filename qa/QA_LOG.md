@@ -109,3 +109,34 @@ state), `qa/TRIED.jsonl` (28 executed attacks — never repeated), `qa/SEEDS.jso
   vitest timeout. Suite now green twice with no flake.
 
 Remaining Issue-#14 items (1 expand mutation, 2 continuous 1M-exec fuzz, 3 throughput-SLO load) stay open.
+
+---
+
+## Cycle v2-3 — mutation expansion, continuous fuzz, load/SLO (Issue #14, items 1–3)
+
+**Item 1 — mutation beyond the validator.** Expanded the Stryker scope from 1 to **6 modules**, all now
+≥ the 80 break threshold. Two were below and were lifted by targeted killing tests:
+- `mock/engine.ts` 77.4% → **82.2%** (`mock-engine-mutation.test.ts`: exact content-types, validate-mode
+  400 body, route specificity, regex semantics, response selection, depth cap)
+- `spec/drift.ts` 75.6% → **92.3%** (`drift-mutation.test.ts`: normalizeKey whitespace/uppercasing,
+  refMatchesOp branches, sorted added/removed/changed, ok logic, required-param drift)
+- already ≥80: validate-response 85.4, resolve 84.4, scaffold 81.5, capture 80.4.
+- Root-caused why engine mutation never finished inline: `fuzz.test.ts` (~11s smoke) was in the covering
+  set and re-ran per mutant. Added `vitest.mutation.config.ts` (excludes the fuzz smoke) → engine run
+  4m34s instead of timing out. Benefits the weekly `mutation.yml` too.
+
+**Item 2 — continuous fuzz to the 1M-exec budget.** `qa/fuzz/deep-fuzz.mjs`: feedback-driven (keeps
+inputs that hit a new output signature — AFL-style corpus growth), 7 targets, up to 1,000,000 execs OR
+`--minutes` per target, crash/hang findings → `qa/fuzz/findings.jsonl`, corpus persisted to `qa/corpus/`.
+Scheduled in `fuzz-deep.yml`. Smoke: **140,000 execs, 0 findings**. The fuzzer itself had two bugs I
+found and fixed: a global (not per-target) findings counter, and treating jsonpath's correct "invalid
+path" throw on a malformed author expression as a crash.
+
+**Item 3 — throughput / latency / leak SLO.** `qa/load/load-test.mjs` (custom concurrent driver) +
+`load.yml`. Hard SLOs: **error-rate 0** and **bounded post-GC heapUsed growth** — the real leak signal;
+I first measured RSS and saw it climb 58MB, then realised RSS is the high-water-mark (V8 never returns
+it) and switched to post-GC heapUsed, which is **flat (+0.6MB over 47k requests) → no leak**. Latency
+gated on **p95** (stable) not p99 (a single GC spike blew p99 to 1469ms). Results: mock ~2400 rps /
+p95 33–43ms, web ~740 rps static / p95 68ms, both leak-free.
+
+### Outcome — Issue #14 fully closed (items 1–5). 326 tests green, typecheck 7/7, all SLOs met.

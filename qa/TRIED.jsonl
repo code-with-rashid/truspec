@@ -32,3 +32,9 @@
 {"id":"E2E-axe","category":"ui/a11y","target":"web e2e (axe-core)","input":"main/editor/light-theme scans","result":"PASS 0 wcag2a/aa violations (BUG-P + contrast)","cycle":"v2-2"}
 {"id":"FIX-flaky-fuzz","category":"regression/flake","target":"core/test/fuzz.test.ts INV-4","input":"slowest<100ms timing under parallel load","result":"FIXED: structural ReDoS check (no adjacent [^/]+[^/]+) instead of wall-clock","cycle":"v2-2"}
 {"id":"FIX-contrast","category":"ui/a11y","target":"web/src/styles.css","input":"--dimmer ~2.6:1, light run-button 4:1","result":"FIXED: raised --dim/--dimmer both themes + light run-button white text; axe 0 contrast","cycle":"v2-2"}
+{"id":"MUT-engine","category":"mutation","target":"mock/engine.ts","input":"292 mutants","result":"77.4->82.2% via mock-engine-mutation.test.ts","cycle":"v2-3"}
+{"id":"MUT-drift","category":"mutation","target":"spec/drift.ts","input":"78 mutants","result":"75.6->92.3% via drift-mutation.test.ts","cycle":"v2-3"}
+{"id":"FUZZ-deep","category":"fuzz/continuous","target":"7 engine targets","input":"140k execs smoke (1M budget job)","result":"0 findings; corpus persisted","cycle":"v2-3"}
+{"id":"FIX-fuzz-harness","category":"regression/harness","target":"deep-fuzz.mjs","input":"global findings counter + jsonpath false-positive","result":"FIXED both","cycle":"v2-3"}
+{"id":"LOAD-slo","category":"nonfunctional/load","target":"mock+web servers","input":"64/32-conc soak","result":"0 err, post-GC heap flat (no leak), p95 within SLO","cycle":"v2-3"}
+{"id":"FIX-rss-metric","category":"methodology","target":"load-test.mjs","input":"RSS used as leak metric (climbs by high-water-mark)","result":"FIXED: gate on post-GC heapUsed","cycle":"v2-3"}

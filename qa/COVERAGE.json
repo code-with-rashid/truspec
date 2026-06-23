@@ -74,14 +74,18 @@
     ]
   },
   "mutation": {
-    "tool": "Stryker 9.6.1 + vitest-runner",
-    "scope": "packages/core/src/spec/validate-response.ts (most security-critical; full-repo = scheduled CI job per stryker.config _mutateNote)",
-    "score": 85.4,
-    "killed": 300,
-    "survived": 52,
-    "timeout": 10,
-    "noCoverage": 1,
-    "survivorsJustified": "~18 equivalent (memoization L75-83 cache identity, depth-arithmetic that does not change observable output, jsonType default L27); remainder = low-value boundary + unasserted-message conditionals near the depth>100 cutoff"
+    "tool": "Stryker 9.6.1 + vitest-runner (vitest.mutation.config.ts excludes the slow fuzz smoke)",
+    "thresholdBreak": 80,
+    "modules": {
+      "spec/validate-response.ts": 85.4,
+      "runner/resolve.ts": 84.4,
+      "mock/engine.ts": 82.2,
+      "spec/scaffold.ts": 81.5,
+      "runner/capture.ts": 80.4,
+      "spec/drift.ts": 92.3
+    },
+    "allModulesMeetThreshold": true,
+    "note": "engine.ts 77.4->82.2 and drift.ts 75.6->92.3 after adding mock-engine-mutation + drift-mutation killing tests; weekly mutation.yml gates the full scope at break=80"
   },
   "fuzz": {
     "_comment": "Seeded property fuzz from campaigns 1-10; corpus + seeds persisted under qa/. Counts are cumulative across prior campaigns.",
@@ -126,7 +130,7 @@
   },
   "nonFunctional": {
     "loadSoak": "mock server 30k req @ ~791rps, heap stable (no leak, forced-GC verified); web 10k req graceful timeouts under 64-conc; runner defeats gzip-bomb/slow-loris (campaign 5).",
-    "slo": "no formal SLO defined for a local-first CLI; throughput-to-a-target-RPS NOT measured (gap)."
+    "slo": "DEFINED + gated: err-rate 0 (hard), post-GC heap leak (hard), throughput floor, p95 latency cap. See qa/load + .github/workflows/load.yml."
   },
   "e2e": {
     "tool": "Playwright 1.61 + axe-core/playwright",
@@ -134,5 +138,20 @@
     "scope": "web UI: XSS, CSRF (cross-origin+cross-port), X-Frame-Options, editor save/keyboard(BUG-O), traversal, double-click, axe a11y(BUG-P)+contrast (main/editor/light)",
     "ci": ".github/workflows/e2e.yml (playwright install --with-deps)",
     "status": "all green"
+  },
+  "deepFuzz": {
+    "tool": "qa/fuzz/deep-fuzz.mjs (feedback-driven, corpus-growing)",
+    "targets": 7,
+    "budget": "1,000,000 execs OR --minutes per target",
+    "ci": ".github/workflows/fuzz-deep.yml (weekly + dispatch)",
+    "lastSmoke": "140000 execs, 0 findings",
+    "corpus": "qa/corpus/*.corpus.json"
+  },
+  "load": {
+    "tool": "qa/load/load-test.mjs (custom concurrent driver)",
+    "ci": ".github/workflows/load.yml (weekly + dispatch)",
+    "hardSLOs": "error-rate 0 + post-GC heap growth bounded (real leak signal; RSS ignored as high-water-mark)",
+    "mock": "~2400 rps, p95 33-43ms, heap +0.6MB (no leak)",
+    "web": "~740 rps static, p95 68ms, heap flat (no leak)"
   }
 }

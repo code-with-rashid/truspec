@@ -4,7 +4,7 @@
   "packageManager": "pnpm",
   "testRunner": "vitest",
   "plugins": ["@stryker-mutator/vitest-runner"],
-  "vitest": { "configFile": "vitest.config.ts" },
+  "vitest": { "configFile": "vitest.mutation.config.ts" },
   "coverageAnalysis": "perTest",
   "reporters": ["clear-text", "json"],
   "jsonReporter": { "fileName": "qa/mutation-report.json" },
@@ -13,8 +13,13 @@
   "timeoutMS": 20000,
   "ignoreStatic": true,
   "thresholds": { "high": 90, "low": 80, "break": 80 },
-  "_mutateNote": "Scoped to the most security-critical module (the contract validator) for an inline run; measured 85.4%. A scheduled CI job should expand `mutate` to resolve.ts, mock/engine.ts, runner/run.ts, importers/* (796+ mutants for 3 modules alone — too slow inline).",
+  "_mutateNote": "Scoped to the highest-risk pure-logic modules. The weekly mutation.yml job can widen this to mock/engine.ts, runner/run.ts, and importers/* as the time budget allows.",
   "mutate": [
-    "packages/core/src/spec/validate-response.ts"
+    "packages/core/src/spec/validate-response.ts",
+    "packages/core/src/runner/resolve.ts",
+    "packages/core/src/runner/capture.ts",
+    "packages/core/src/spec/scaffold.ts",
+    "packages/core/src/spec/drift.ts",
+    "packages/core/src/mock/engine.ts"
   ]
 }

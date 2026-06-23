@@ -23,3 +23,7 @@ qa/mutation-report.json
 # Playwright e2e artifacts
 test-results/
 playwright-report/
+
+# Transient QA outputs (regenerated)
+qa/fuzz/findings.jsonl
+qa/mut-*.json

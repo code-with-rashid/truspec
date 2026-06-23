@@ -1,0 +1,31 @@
+name: Load
+
+# Throughput / latency / memory-leak SLO check for the local servers. Environment-sensitive, so it runs
+# weekly + on demand rather than gating every PR. Hard SLOs: zero errors under load and bounded post-GC
+# RSS growth (leak detection); latency/throughput are gated against generous, runner-tolerant caps.
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: Soak duration (seconds)
+        default: "30"
+
+jobs:
+  load:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Mock server load + leak SLO
+        run: node --expose-gc qa/load/load-test.mjs --target mock --seconds ${{ github.event.inputs.seconds || '30' }} --concurrency 64 --rps-floor 200 --p95-cap-ms 250
+      - name: Web server load + leak SLO (static route)
+        run: node --expose-gc qa/load/load-test.mjs --target web --seconds ${{ github.event.inputs.seconds || '30' }} --concurrency 32 --rps-floor 100 --p95-cap-ms 500

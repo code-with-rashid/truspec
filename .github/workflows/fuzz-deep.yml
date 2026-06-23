@@ -1,0 +1,36 @@
+name: Deep Fuzz
+
+# The continuous, high-volume fuzz job (the committed fuzz.test.ts is the bounded per-PR smoke).
+# Up to 1,000,000 execs OR --minutes per target, feedback-driven, with crash/hang findings written to
+# qa/fuzz/findings.jsonl. Scheduled weekly + on demand; too slow to gate every PR.
+on:
+  schedule:
+    - cron: "0 5 * * 1" # Mondays 05:00 UTC
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: Minutes per target
+        default: "20"
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: node qa/fuzz/deep-fuzz.mjs --minutes ${{ github.event.inputs.minutes || '20' }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fuzz-corpus-and-findings
+          path: |
+            qa/fuzz/findings.jsonl
+            qa/corpus/
+          retention-days: 14
