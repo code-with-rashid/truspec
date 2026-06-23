@@ -41,20 +41,31 @@ function listSpecs(dir: string): string[] {
 }
 
 function buildState(ctx: ApiContext) {
-  const requests = discoverRequests(ctx.dir).map((file) => {
-    const req = parse.request.parse(readFileSync(file, "utf8"));
-    return {
-      path: relative(ctx.dir, file),
-      name: req.name,
-      method: req.method,
-      url: req.url,
-      operation: req.spec?.operationId ?? req.spec?.operation,
-      assertions: req.assertions.length,
-    };
-  });
+  // A single malformed `.tspec.yaml` must not make the whole workspace fail to load (a 500 on
+  // /api/state would white-screen the UI with no way to find the broken file). List the valid
+  // requests and surface bad files (with their path) as errors instead of throwing.
+  const requests: Array<Record<string, unknown>> = [];
+  const errors: Array<{ path: string; error: string }> = [];
+  for (const file of discoverRequests(ctx.dir)) {
+    const path = relative(ctx.dir, file);
+    try {
+      const req = parse.request.parse(readFileSync(file, "utf8"));
+      requests.push({
+        path,
+        name: req.name,
+        method: req.method,
+        url: req.url,
+        operation: req.spec?.operationId ?? req.spec?.operation,
+        assertions: req.assertions.length,
+      });
+    } catch (e) {
+      errors.push({ path, error: (e as Error).message });
+    }
+  }
   return {
     dir: ctx.dir,
     requests,
+    errors,
     environments: listEnvironments(ctx.dir),
     specs: listSpecs(ctx.dir),
   };

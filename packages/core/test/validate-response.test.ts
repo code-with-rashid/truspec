@@ -379,4 +379,58 @@ describe("validateAgainstSchema", () => {
       expect(validateAgainstSchema({ a: 1 }, schema, {})).not.toEqual([]); // a must be string
     });
   });
+
+  describe("composition keywords are conjunctive with sibling constraints", () => {
+    // Regression: allOf/anyOf/oneOf used to short-circuit (`return`), silently dropping any sibling
+    // `type`/`required`/`properties` checks — so a non-conforming response passed. JSON Schema is
+    // conjunctive: every keyword present must hold.
+    it("enforces sibling required alongside allOf", () => {
+      const schema = {
+        type: "object",
+        required: ["id"],
+        properties: { id: { type: "integer" } },
+        allOf: [{ type: "object", properties: { name: { type: "string" } } }],
+      };
+      expect(validateAgainstSchema({ name: "x" }, schema, {})).toEqual([
+        { path: "/id", message: "missing required property 'id'" },
+      ]);
+      expect(validateAgainstSchema({ id: 1, name: "x" }, schema, {})).toEqual([]);
+    });
+
+    it("enforces sibling required alongside allOf:[{$ref}] (the common OpenAPI shape)", () => {
+      const doc = { components: { schemas: { Base: { type: "object", properties: { createdAt: { type: "string" } } } } } };
+      const schema = {
+        type: "object",
+        required: ["id"],
+        properties: { id: { type: "integer" } },
+        allOf: [{ $ref: "#/components/schemas/Base" }],
+      };
+      expect(validateAgainstSchema({ createdAt: "2026-01-01" }, schema, doc)).toEqual([
+        { path: "/id", message: "missing required property 'id'" },
+      ]);
+      // a fully-conforming value still passes (no false positive)
+      expect(validateAgainstSchema({ id: 1, createdAt: "2026-01-01" }, schema, doc)).toEqual([]);
+      // and the $ref'd Base constraint is still enforced
+      expect(validateAgainstSchema({ id: 1, createdAt: 5 }, schema, doc)).toEqual([
+        { path: "/createdAt", message: "expected string, got number" },
+      ]);
+    });
+
+    it("enforces sibling properties alongside anyOf", () => {
+      const schema = { properties: { a: { type: "string" } }, anyOf: [{ type: "object" }] };
+      expect(validateAgainstSchema({ a: 123 }, schema, {})).toEqual([
+        { path: "/a", message: "expected string, got number" },
+      ]);
+      expect(validateAgainstSchema({ a: "ok" }, schema, {})).toEqual([]);
+    });
+
+    it("enforces sibling type alongside oneOf", () => {
+      const schema = {
+        type: "object",
+        oneOf: [{ properties: { a: { type: "string" } } }, { properties: { b: { type: "number" } } }],
+      };
+      const v = validateAgainstSchema("not an object", schema, {});
+      expect(v.some((x) => x.message === "expected object, got string")).toBe(true);
+    });
+  });
 });

@@ -1,0 +1,16 @@
+{
+  "_comment": "Registry of every PRNG seed used by the property-fuzz harnesses, so runs are reproducible/resumable. mulberry32(seed).",
+  "validator_and_engine_fuzz": [
+    "0x9e3779b9", "0x1234567", "0xdeadbeef", "0xcafef00d", "0x0badc0de", "0x5eed5eed",
+    "0x13572468", "0x0c0ffee5", "0x11111111", "0xa5a5a5a5", "0x33445566", "0xbeefcafe"
+  ],
+  "campaign_seed_sets": {
+    "c2_confirm": ["0x9e3779b9"],
+    "c4_broad": ["0x11111111", "0xa5a5a5a5", "0xdeadbeef", "0x0badf00d", "0xc0ffee99"],
+    "c5_fresh": ["0x2b2b2b2b", "0xfeedface", "0x9e3779b9", "0x1a2b3c4d", "0x77777777"],
+    "c6_final": ["0x33445566", "0xbeefcafe", "0x01234567", "0xfacefeed", "0x8badf00d", "0x5a5a5a5a"],
+    "c7_8th": ["0x0fedcba9", "0x88aa99bb", "0x13572468", "0xdeadfa11", "0x60bb1e5c", "0x11335577"],
+    "c8_9th": ["0xa1b2c3d4", "0x5e6f7a8b", "0xc0ffee42", "0x13371337", "0xf00dbabe"]
+  },
+  "next_unused_seeds": ["0xc10c10c1", "0x5a17ed00", "0x0ddba11", "0xf1f2f3f4", "0xab12cd34"]
+}

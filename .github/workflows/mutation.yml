@@ -1,0 +1,30 @@
+name: Mutation
+
+# Mutation testing is slow, so it runs weekly (and on demand) rather than on every PR.
+# It proves the TESTS are strong — a high pass rate with a low mutation score means the suite is
+# decorative. Scoped to the most security-critical module (the contract validator); expand `mutate`
+# in stryker.config.json to cover more modules as the budget allows.
+on:
+  schedule:
+    - cron: "0 4 * * 1" # Mondays 04:00 UTC
+  workflow_dispatch:
+
+jobs:
+  mutation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Fails the job if the mutation score drops below `thresholds.break` (80) in stryker.config.json.
+      - run: pnpm exec stryker run
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mutation-report
+          path: qa/mutation-report.json

@@ -83,6 +83,15 @@ describe("postman auth + body variants", () => {
     );
     expect(req.body).toEqual({ type: "graphql", query: "{ me }", variables: { a: 1 } });
   });
+
+  it("an empty request name imports with a default instead of crashing the whole import", () => {
+    // Postman exports legitimately contain empty names; `?? "Request"` doesn't catch "" and the
+    // request schema requires name.min(1), so this used to throw out of the entire import.
+    const result = importPostman({ item: [{ name: "", request: { method: "GET", url: "http://x" } }] });
+    const req = parse.request.parse(result.files[0]?.content ?? "");
+    expect(req.name).toBe("Request");
+    expect(req.url).toBe("http://x");
+  });
 });
 
 describe("bruno variants", () => {

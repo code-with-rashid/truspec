@@ -64,6 +64,42 @@ describe("web server host guard (DNS-rebinding defense)", () => {
     expect((await post(handle.port, "/api/run", {})).status).toBe(200);
   });
 
+  // CSRF / clickjacking: a malicious site the user visits must not be able to trigger their
+  // collection to run, nor frame the local UI.
+  function reqWith(port: number, method: string, path: string, headers: Record<string, string>): Promise<{ status: number; headers: Record<string, string | string[] | undefined> }> {
+    return new Promise((res, rej) => {
+      // default Host = the real host:port a browser would send (so Origin-vs-Host matching is exercised)
+      const r = httpRequest({ host: "127.0.0.1", port, path, method, headers: { host: `localhost:${port}`, ...headers } }, (resp) => {
+        resp.resume();
+        resp.on("end", () => res({ status: resp.statusCode ?? 0, headers: resp.headers }));
+      });
+      r.on("error", rej);
+      r.end(method === "POST" ? "{}" : undefined);
+    });
+  }
+
+  it("refuses cross-origin POSTs — cross-site AND cross-PORT loopback (CSRF defense)", async () => {
+    const p = handle.port;
+    // a 'simple' cross-origin request (text/plain skips preflight) must be rejected before it runs
+    expect((await reqWith(p, "POST", "/api/run", { origin: "http://evil.com", "content-type": "text/plain" })).status).toBe(403);
+    expect((await reqWith(p, "POST", "/api/run", { origin: "null", "content-type": "text/plain" })).status).toBe(403);
+    // a page on ANOTHER LOCAL PORT is still cross-origin — a bare loopback check would wrongly allow it
+    expect((await reqWith(p, "POST", "/api/run", { origin: `http://localhost:${p + 1}`, "content-type": "text/plain" })).status).toBe(403);
+    expect((await reqWith(p, "POST", "/api/run", { origin: "http://127.0.0.1:9999", "content-type": "text/plain" })).status).toBe(403);
+  });
+
+  it("allows same-origin (matching Host) and origin-less (curl/CI/MCP) API requests", async () => {
+    const p = handle.port;
+    expect((await reqWith(p, "POST", "/api/run", { origin: `http://localhost:${p}`, "content-type": "application/json" })).status).toBe(200);
+    expect((await reqWith(p, "POST", "/api/run", { "content-type": "application/json" })).status).toBe(200); // no Origin
+  });
+
+  it("sends anti-framing headers on every response (clickjacking defense)", async () => {
+    const r = await reqWith(handle.port, "GET", "/", {});
+    expect(r.headers["x-frame-options"]).toBe("DENY");
+    expect(String(r.headers["content-security-policy"])).toMatch(/frame-ancestors 'none'/);
+  });
+
   it("survives a POST aborted mid-body without an unhandledRejection", async () => {
     const seen: unknown[] = [];
     const onRej = (e: unknown): void => {

@@ -61,8 +61,13 @@ export async function runCommand(argv: string[], deps: Partial<CommandDeps> = {}
   if (result.missingSecrets.length > 0) {
     d.stderr(`Warning: unresolved secrets (set as env vars): ${result.missingSecrets.join(", ")}\n`);
   }
-  if (result.results.length === 0) {
-    d.stderr(`Warning: no .tspec.yaml requests found under "${target}".\n`);
+  // Finding ZERO requests is a failure, not a pass: `run` is a CI gate, and a green build when no
+  // request executed silently masks a misconfigured path, uncommitted files, or a bad glob — the
+  // worst kind of false-positive for a gate. (`[].every()` is `true`, so `result.ok` alone says
+  // "pass" here.) Industry test runners (jest, pytest, go test) fail on "no tests found" too.
+  const noRequests = result.results.length === 0;
+  if (noRequests) {
+    d.stderr(`Error: no .tspec.yaml requests found under "${target}".\n`);
   }
 
   const reporter = values.reporter ?? (values.json ? "json" : "human");
@@ -73,5 +78,5 @@ export async function runCommand(argv: string[], deps: Partial<CommandDeps> = {}
         ? formatJson(result)
         : formatHuman(result, d.cwd);
   emit(d, text, values.output);
-  return result.ok ? 0 : 1;
+  return result.ok && !noRequests ? 0 : 1;
 }

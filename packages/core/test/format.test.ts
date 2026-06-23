@@ -65,6 +65,29 @@ describe("format: request", () => {
     expect(res.ok).toBe(false);
   });
 
+  it("rejects unknown keys in NESTED objects too (assertion/spec/auth/body typos surface)", () => {
+    // A typo in an optional nested key used to be silently stripped, yielding confusing behavior
+    // (a condition-less assertion that always fails, or an empty `spec: {}` link mis-reported as
+    // stale drift). Every level is strict now.
+    const assertionTypo = parse.request.safeParse(
+      'name: x\nurl: http://a\nassertions:\n  - { type: jsonpath, path: "$.id", exits: true }',
+    );
+    expect(assertionTypo.ok).toBe(false); // `exits` should be `exists`
+
+    const specTypo = parse.request.safeParse("name: x\nurl: http://a\nspec:\n  operatonId: getPet");
+    expect(specTypo.ok).toBe(false); // `operatonId` should be `operationId`
+
+    const authTypo = parse.request.safeParse(
+      'name: x\nurl: http://a\nauth: { type: bearer, token: t, scheme: x }',
+    );
+    expect(authTypo.ok).toBe(false); // `scheme` is not a bearer-auth field
+
+    // a correctly-spelled nested object still parses
+    expect(
+      parse.request.safeParse('name: x\nurl: http://a\nassertions:\n  - { type: jsonpath, path: "$.id", exists: true }').ok,
+    ).toBe(true);
+  });
+
   it("requires a url", () => {
     const res = parse.request.safeParse("name: x\nmethod: GET");
     expect(res.ok).toBe(false);

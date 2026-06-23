@@ -99,6 +99,32 @@ describe("resolveRequest", () => {
     expect(eff.url).toBe("http://x?k=v");
   });
 
+  it("inserts query params before a URL fragment (params must reach the server, not the hash)", () => {
+    const req = parse.request.parse('name: r\nmethod: GET\nurl: "http://x/search#section"\nquery: { q: hello }');
+    const eff = resolveRequest(req, {});
+    expect(eff.url).toBe("http://x/search?q=hello#section");
+    // The WHATWG URL parser must see q in the search, not buried in the hash.
+    const u = new URL(eff.url);
+    expect(u.searchParams.get("q")).toBe("hello");
+    expect(u.hash).toBe("#section");
+  });
+
+  it("appends to an existing query string before the fragment", () => {
+    const req = parse.request.parse('name: r\nurl: "http://x/p?a=1#f"\nquery: { b: "2" }');
+    const eff = resolveRequest(req, {});
+    expect(eff.url).toBe("http://x/p?a=1&b=2#f");
+    const u = new URL(eff.url);
+    expect(u.searchParams.get("a")).toBe("1");
+    expect(u.searchParams.get("b")).toBe("2");
+  });
+
+  it("places an apikey-in-query before a URL fragment (auth param must not be dropped)", () => {
+    const req = parse.request.parse('name: r\nurl: "http://x/p#frag"\nauth: { type: apikey, name: k, value: secret, in: query }');
+    const eff = resolveRequest(req, {});
+    expect(eff.url).toBe("http://x/p?k=secret#frag");
+    expect(new URL(eff.url).searchParams.get("k")).toBe("secret");
+  });
+
   it("reports missing variables", () => {
     const eff = resolveRequest(parse.request.parse("name: r\nurl: http://x/{{missing}}"), {});
     expect(eff.missing).toContain("missing");
@@ -159,6 +185,29 @@ describe("runRequest (injected fetch)", () => {
     expect(result.ok).toBe(true);
     expect(result.response?.status).toBe(200);
     expect(result.assertions.every((a) => a.ok)).toBe(true);
+  });
+
+  it("does not auto-follow redirects — a 3xx is observable and assertable", async () => {
+    // A spec-contract tool must report the ACTUAL response a URL returns; auto-following would report
+    // the redirect target's 200 instead, making redirect responses impossible to test/validate.
+    let sawRedirect: string | undefined;
+    const fakeFetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+      sawRedirect = init?.redirect;
+      return new Response("", { status: 302, headers: { location: "/final", "content-type": "text/plain" } });
+    }) as typeof fetch;
+    const req = parse.request.parse(
+      [
+        "name: r",
+        "url: http://x/redirect",
+        "assertions:",
+        "  - { type: status, equals: 302 }",
+        "  - { type: header, name: location, exists: true }",
+      ].join("\n"),
+    );
+    const result = await runRequest(req, { fetch: fakeFetch });
+    expect(sawRedirect).toBe("manual"); // runner must request the raw redirect, not follow it
+    expect(result.response?.status).toBe(302);
+    expect(result.ok).toBe(true); // both the status and Location assertions pass
   });
 
   it("fails on unresolved variables without calling fetch", async () => {

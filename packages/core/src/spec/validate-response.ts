@@ -154,20 +154,23 @@ function validateInto(
     return;
   }
 
-  // Composition keywords.
+  // Composition keywords are CONJUNCTIVE with each other and with sibling constraints
+  // (`type`/`properties`/`required`/`items`): in JSON Schema every keyword present in a schema
+  // object is an independent constraint the value must satisfy. So these do NOT short-circuit —
+  // they accumulate violations and fall through to the sibling type-dispatch below. (Returning
+  // early here silently dropped sibling checks: `allOf: [{$ref: Base}]` next to an own
+  // `required`/`properties` — the most common OpenAPI composition shape — passed any response.)
   if (Array.isArray(schema.allOf)) {
     for (const part of schema.allOf) {
       const p = asRecord(part);
       if (p) rebase("", collect(value, p, doc, depth + 1, cache, visiting), out);
     }
-    return;
   }
   if (Array.isArray(schema.anyOf)) {
     const branches = schema.anyOf.map(asRecord).filter((b): b is Record<string, unknown> => b !== undefined);
     if (branches.length > 0 && !branches.some((b) => conforms(value, b, doc, depth + 1, cache, visiting))) {
       out.push({ path: "", message: "value does not match any anyOf subschema" });
     }
-    return;
   }
   if (Array.isArray(schema.oneOf)) {
     const branches = schema.oneOf.map(asRecord).filter((b): b is Record<string, unknown> => b !== undefined);
@@ -177,7 +180,6 @@ function validateInto(
         out.push({ path: "", message: `value matches ${matched} oneOf subschemas (expected exactly 1)` });
       }
     }
-    return;
   }
 
   // Array `type` (OpenAPI 3.1 / JSON Schema, e.g. `type: ["string", "null"]`): the non-null value

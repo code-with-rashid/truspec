@@ -20,5 +20,16 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
-      - run: pnpm test
+
+      # Coverage gate — fails if line/branch/function coverage regresses below the thresholds in
+      # vitest.config.ts (lines ≥90, branches ≥85). The committed seeded fuzz (fuzz.test.ts) runs here too.
+      - run: pnpm test:coverage
+
       - run: pnpm build
+
+      # Schema gate — the published JSON Schema must stay in sync with the Zod source (catches the
+      # class of bug where the runtime and the contract drift apart).
+      - name: JSON Schema is in sync with the Zod source
+        run: |
+          pnpm gen:schema
+          git diff --exit-code packages/core/schema

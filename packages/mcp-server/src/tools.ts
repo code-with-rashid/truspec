@@ -19,18 +19,33 @@ export interface ToolContext {
 export function listCollections(ctx: ToolContext, dir = ".") {
   const root = resolve(ctx.cwd, dir);
   const files = discoverRequests(root);
-  const requests = files.map((file) => {
-    const req = parse.request.parse(readFileSync(file, "utf8"));
-    return {
-      path: relative(ctx.cwd, file),
-      name: req.name,
-      method: req.method,
-      url: req.url,
-      operation: req.spec?.operationId ?? req.spec?.operation,
-      assertions: req.assertions.length,
-    };
-  });
-  return { dir: relative(ctx.cwd, root) || ".", count: requests.length, requests };
+  const requests: Array<Record<string, unknown>> = [];
+  // One malformed file must NOT abort the whole listing — otherwise an agent/UI can't see any of
+  // the collection to even find (let alone fix) the broken file. Report bad files with their path
+  // so the failure is diagnosable, and still list the rest.
+  const errors: Array<{ path: string; error: string }> = [];
+  for (const file of files) {
+    const path = relative(ctx.cwd, file);
+    try {
+      const req = parse.request.parse(readFileSync(file, "utf8"));
+      requests.push({
+        path,
+        name: req.name,
+        method: req.method,
+        url: req.url,
+        operation: req.spec?.operationId ?? req.spec?.operation,
+        assertions: req.assertions.length,
+      });
+    } catch (e) {
+      errors.push({ path, error: (e as Error).message });
+    }
+  }
+  return {
+    dir: relative(ctx.cwd, root) || ".",
+    count: requests.length,
+    requests,
+    ...(errors.length > 0 ? { errors } : {}),
+  };
 }
 
 export async function runRequestTool(ctx: ToolContext, path: string, env?: string) {

@@ -13,3 +13,9 @@ coverage/
 # VitePress
 docs/.vitepress/dist/
 docs/.vitepress/cache/
+
+# QA tooling artifacts (regenerated)
+coverage/
+.stryker-tmp/
+qa/.stryker-tmp/
+qa/mutation-report.json
