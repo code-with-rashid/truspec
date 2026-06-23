@@ -1,0 +1,28 @@
+{"id":"BUG-1","category":"dos/algorithmic","target":"spec/validate-response.ts","input":"recursive $ref oneOf/anyOf over deep value","result":"FIXED+regression(memoize)","cycle":"c1"}
+{"id":"BUG-2","category":"api/contract","target":"mock/engine.ts","input":"/users/{id} before /users/me","result":"FIXED+regression(specificity)","cycle":"c1"}
+{"id":"BUG-3","category":"api/contract","target":"spec/validate-response.ts","input":"type:[string,null] vs number","result":"FIXED+regression(array type)","cycle":"c2"}
+{"id":"BUG-4","category":"dos/algorithmic","target":"spec/validate-response.ts","input":"recursive allOf direct path","result":"FIXED+regression(collect memo)","cycle":"c1"}
+{"id":"BUG-5","category":"dos/algorithmic","target":"spec/validate-response.ts","input":"primitive/cyclic value vs $ref-cycle","result":"FIXED+regression(visiting guard)","cycle":"c1"}
+{"id":"BUG-A","category":"correctness/data-loss","target":"runner/resolve.ts","input":"url with #fragment + query","result":"FIXED+regression(query before fragment)","cycle":"c2"}
+{"id":"BUG-B","category":"dos/redos","target":"mock/engine.ts","input":"/x/{a}{b}{c}{d}{e}{f} adjacent params","result":"FIXED+regression(collapse to [^/]+)","cycle":"c2"}
+{"id":"BUG-C","category":"api/contract","target":"spec/validate-response.ts","input":"allOf/anyOf/oneOf sibling of required/properties","result":"FIXED+regression(conjunctive)","cycle":"c3"}
+{"id":"BUG-D","category":"cli/exit-code","target":"cli/commands/run.ts","input":"empty dir run","result":"FIXED+test(exit 1 on 0 requests) [behavior change]","cycle":"c2"}
+{"id":"BUG-E","category":"parser/crash","target":"importers/postman.ts","input":"item name=''","result":"FIXED+regression(|| Request)","cycle":"c2"}
+{"id":"BUG-F","category":"codegen/data-loss","target":"spec/scaffold.ts","input":"colliding operationId slugs","result":"FIXED+regression(dedup -2)","cycle":"c3"}
+{"id":"BUG-G","category":"schema/contract","target":"format/schema.ts","input":"nested optional-key typos (exits/operatonId)","result":"FIXED+regression(.strict nested)","cycle":"c3"}
+{"id":"BUG-H","category":"crash/dos","target":"mock/engine.ts+server.ts","input":"spec status 20000 -> writeHead crash","result":"FIXED+regression(clamp+handler try/catch)","cycle":"c4"}
+{"id":"BUG-I","category":"observability","target":"mcp/tools.ts+web/api.ts","input":"one malformed .tspec.yaml aborts listing","result":"FIXED+regression(per-file errors[])","cycle":"c4"}
+{"id":"BUG-J","category":"codegen/crash","target":"spec/scaffold.ts","input":"operationId=''","result":"FIXED+regression(|| key)","cycle":"c4"}
+{"id":"BUG-K","category":"hang/dos","target":"mock/engine.ts","input":"spec status 1xx interim -> client hang","result":"FIXED+regression(clamp 200-599)","cycle":"c4"}
+{"id":"BUG-L","category":"correctness","target":"runner/run.ts","input":"3xx auto-followed, untestable","result":"FIXED+regression(redirect:manual) [behavior change]","cycle":"c5"}
+{"id":"BUG-M","category":"security/csrf","target":"web/server/index.ts","input":"cross-origin simple POST /api/run","result":"FIXED+regression(Origin guard+XFO/CSP)","cycle":"c7"}
+{"id":"BUG-N","category":"security/csrf","target":"web/server/index.ts","input":"cross-PORT loopback origin (live browser)","result":"FIXED+regression(Origin==Host)","cycle":"c8"}
+{"id":"BUG-O","category":"ui/a11y/keyboard","target":"web/src/App.tsx","input":"Esc/Ctrl+Enter only from textarea (live browser)","result":"FIXED(document listener) [no DOM test env]","cycle":"c9"}
+{"id":"BUG-P","category":"ui/a11y/screenreader","target":"web/src/App.tsx+styles.css","input":"unlabeled select/textarea, no h1/landmark (axe-core)","result":"FIXED(aria-label+sr-only h1) [no DOM test env]","cycle":"c10"}
+{"id":"FUZZ-validator","category":"fuzz","target":"validateAgainstSchema","input":"~150k iters 12 seeds recursive $ref","result":"PASS 0 crash/hang slowest~12ms","cycle":"c1-c8"}
+{"id":"FUZZ-resolve","category":"fuzz","target":"resolveRequest","input":"~100k iters url/query/fragment","result":"PASS 0 lost params","cycle":"c4-c8"}
+{"id":"FUZZ-mock-regex","category":"fuzz","target":"pathToRegex","input":"~50k adjacent-param templates","result":"PASS linear","cycle":"c2-c8"}
+{"id":"FUZZ-importers","category":"fuzz","target":"importPostman/bruToRequest","input":"~70k hostile json/.bru","result":"PASS 0 unparseable/round-trip-fail","cycle":"c1-c8"}
+{"id":"HELD-xss","category":"security/xss","target":"web client + vscode webview","input":"img/script/svg payloads (renderToStaticMarkup + live browser + axe)","result":"HELD react-escaped; vscode esc()+enableScripts:false","cycle":"c7-c10"}
+{"id":"HELD-traversal","category":"security/path","target":"confinePath web+mcp+live UI save","input":"../../../etc raw/encoded/null-byte","result":"HELD realpath-confined no escape","cycle":"c1-c9"}
+{"id":"HELD-script-vm","category":"sandbox","target":"runner/script.ts","input":"~1200 random pre/post scripts incl infinite loops","result":"HELD timeout 1s, no crash/unhandled","cycle":"c6"}

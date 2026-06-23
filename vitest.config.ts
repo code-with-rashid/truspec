@@ -22,8 +22,13 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       include: ["packages/*/src/**/*.ts"],
-      exclude: ["**/index.ts"],
+      // index.ts = re-export barrels; format/types.ts = pure `z.infer` type aliases (no runtime code,
+      // validated by typecheck). Neither has anything executable to cover.
+      exclude: ["**/index.ts", "packages/core/src/format/types.ts"],
       reporter: ["text-summary"],
+      // CI gate: `pnpm test:coverage` fails if coverage regresses below these. Current: lines 95.18%,
+      // branches 86.52%, functions 98.27% (see qa/COVERAGE.json).
+      thresholds: { lines: 90, branches: 85, functions: 90, statements: 90 },
     },
   },
 });

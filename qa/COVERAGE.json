@@ -1,0 +1,131 @@
+{
+  "_comment": "Objective convergence state for the measured QA loop. Updated every RECOMPUTE step.",
+  "thresholds": {
+    "lines": 90,
+    "branches": 85,
+    "mutationScore": 80,
+    "fuzzExecsPerTarget": 1000000,
+    "fuzzMinutesPerTarget": 30
+  },
+  "baseline": {
+    "timestamp": "2026-06-23",
+    "tool": "vitest v2.1.9 + v8",
+    "tests": 243,
+    "lines": {
+      "total": 3116,
+      "covered": 2709,
+      "pct": 86.93
+    },
+    "branches": {
+      "total": 1256,
+      "covered": 993,
+      "pct": 79.06
+    },
+    "functions": {
+      "total": 160,
+      "covered": 154,
+      "pct": 96.25
+    }
+  },
+  "current": {
+    "timestamp": "2026-06-23",
+    "tests": 312,
+    "lines": {
+      "pct": 95.18,
+      "covered": 2966,
+      "total": 3116
+    },
+    "branches": {
+      "pct": 86.52,
+      "covered": 1220,
+      "total": 1410
+    },
+    "functions": {
+      "pct": 98.27
+    },
+    "mutationScore": 85.4,
+    "thresholdsMet": {
+      "lines": true,
+      "branches": true,
+      "mutation": "85.4% validate-response.ts >=80",
+      "fuzz": "committed seeded fuzz (5 invariants) + cumulative ~505k execs; 1M/30min = scheduled job",
+      "nonFunctional": "load/soak/leak met (campaign 5); throughput-SLO not measured"
+    }
+  },
+  "frontier": {
+    "_comment": "Lowest-covered files selected for attack (highest line/branch deficit first).",
+    "zeroPct": [
+      "vscode/src/extension.ts (121L)",
+      "cli/src/commands/serve.ts (56L)",
+      "web/src/api.ts (16L)"
+    ],
+    "typeOnlyExcludable": [
+      "core/src/format/types.ts",
+      "core/src/importers/types.ts (has runtime — not excludable)"
+    ],
+    "lowBranch": [
+      "cli/commands/coverage.ts 44%",
+      "cli/commands/gen.ts 55%",
+      "cli/commands/mock.ts 54%",
+      "cli/commands/drift.ts 61%",
+      "spec/report.ts 63%",
+      "cli/output.ts 65%",
+      "mock/server.ts 65%"
+    ]
+  },
+  "mutation": {
+    "tool": "Stryker 9.6.1 + vitest-runner",
+    "scope": "packages/core/src/spec/validate-response.ts (most security-critical; full-repo = scheduled CI job per stryker.config _mutateNote)",
+    "score": 85.4,
+    "killed": 300,
+    "survived": 52,
+    "timeout": 10,
+    "noCoverage": 1,
+    "survivorsJustified": "~18 equivalent (memoization L75-83 cache identity, depth-arithmetic that does not change observable output, jsonType default L27); remainder = low-value boundary + unasserted-message conditionals near the depth>100 cutoff"
+  },
+  "fuzz": {
+    "_comment": "Seeded property fuzz from campaigns 1-10; corpus + seeds persisted under qa/. Counts are cumulative across prior campaigns.",
+    "targets": {
+      "validateAgainstSchema": {
+        "execs": 150000,
+        "lastResult": "0 crashes/hangs (linear, cycle-guarded)"
+      },
+      "resolveRequest_query_fragment": {
+        "execs": 100000,
+        "lastResult": "0 lost params"
+      },
+      "mock_pathToRegex": {
+        "execs": 50000,
+        "lastResult": "linear, no ReDoS"
+      },
+      "importPostman_roundtrip": {
+        "execs": 40000,
+        "lastResult": "0 unparseable emits"
+      },
+      "bruToRequest_roundtrip": {
+        "execs": 30000,
+        "lastResult": "0 round-trip failures"
+      },
+      "parse_request_untrusted": {
+        "execs": 30000,
+        "lastResult": "no crash/hang"
+      },
+      "scaffoldFromSpec": {
+        "execs": 25000,
+        "lastResult": "0 collisions, 0 crashes"
+      },
+      "interpolate": {
+        "execs": 50000,
+        "lastResult": "no ReDoS, no re-injection"
+      },
+      "jsonpath": {
+        "execs": 30000,
+        "lastResult": "no crash"
+      }
+    }
+  },
+  "nonFunctional": {
+    "loadSoak": "mock server 30k req @ ~791rps, heap stable (no leak, forced-GC verified); web 10k req graceful timeouts under 64-conc; runner defeats gzip-bomb/slow-loris (campaign 5).",
+    "slo": "no formal SLO defined for a local-first CLI; throughput-to-a-target-RPS NOT measured (gap)."
+  }
+}

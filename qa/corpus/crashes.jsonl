@@ -1,0 +1,10 @@
+{"target":"validateAgainstSchema","bug":"BUG-1/4/5","input":"recursive $ref oneOf/anyOf/allOf over deep or cyclic value","was":"exponential / non-terminating","now":"linear (memo+cycle guard)"}
+{"target":"resolveRequest","bug":"BUG-A","input":{"url":"{{baseUrl}}/search#section","query":{"q":"hello"}},"was":"q lost to fragment","now":"q before fragment"}
+{"target":"pathToRegex","bug":"BUG-B","input":"/x/{a}{b}{c}{d}{e}{f}","was":"O(n^k) ReDoS 1886ms","now":"linear [^/]+"}
+{"target":"validateAgainstSchema","bug":"BUG-C","input":{"schema":{"allOf":[{"$ref":"#/Base"}],"required":["id"]},"value":{}},"was":"false-negative (siblings skipped)","now":"conjunctive"}
+{"target":"importPostman","bug":"BUG-E","input":{"item":[{"name":"","request":{"method":"GET","url":"http://x"}}]},"was":"crash name.min(1)","now":"|| Request"}
+{"target":"scaffoldFromSpec","bug":"BUG-F/J","input":"operationId='' or colliding slugs getUser/GetUser","was":"crash / overwrite","now":"|| key + dedup"}
+{"target":"createMockResponder","bug":"BUG-H/K","input":{"responses":{"20000":{},"100":{}}},"was":"writeHead crash / 1xx client hang","now":"clamp 200-599"}
+{"target":"runRequest","bug":"BUG-L","input":"302 redirect server","was":"auto-followed (untestable 3xx)","now":"redirect:manual"}
+{"target":"originAllowed","bug":"BUG-M/N","input":{"Origin":"http://evil.com OR http://localhost:OTHERPORT"},"was":"CSRF executed","now":"Origin==Host"}
+{"target":"interpolate","bug":"re-injection guard","input":{"tmpl":"{{a}}","vars":{"a":"{{b}}","b":"LEAK"}},"expect":"{{b}} not LEAK"}

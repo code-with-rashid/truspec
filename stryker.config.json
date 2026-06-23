@@ -1,0 +1,20 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "_comment": "Scoped to the highest-risk pure-logic modules. Full-repo mutation is left to a scheduled CI job (too slow inline). qa/COVERAGE.json tracks the score.",
+  "packageManager": "pnpm",
+  "testRunner": "vitest",
+  "plugins": ["@stryker-mutator/vitest-runner"],
+  "vitest": { "configFile": "vitest.config.ts" },
+  "coverageAnalysis": "perTest",
+  "reporters": ["clear-text", "json"],
+  "jsonReporter": { "fileName": "qa/mutation-report.json" },
+  "tempDirName": "qa/.stryker-tmp",
+  "concurrency": 4,
+  "timeoutMS": 20000,
+  "ignoreStatic": true,
+  "thresholds": { "high": 90, "low": 80, "break": 80 },
+  "_mutateNote": "Scoped to the most security-critical module (the contract validator) for an inline run; measured 85.4%. A scheduled CI job should expand `mutate` to resolve.ts, mock/engine.ts, runner/run.ts, importers/* (796+ mutants for 3 modules alone — too slow inline).",
+  "mutate": [
+    "packages/core/src/spec/validate-response.ts"
+  ]
+}
