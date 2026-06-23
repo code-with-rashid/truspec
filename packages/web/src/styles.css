@@ -21,8 +21,10 @@
   --line: #23262d;
   --line-2: #2d313a;
   --text: #e8e9eb;
-  --dim: #888e98;
-  --dimmer: #565c66;
+  /* dim/dimmer raised to meet WCAG AA 4.5:1 on the darkest panel bg (was #888e98/#565c66, the latter
+     ~2.6:1). Hierarchy preserved: dim is still clearly fainter than --text. */
+  --dim: #9499a3;
+  --dimmer: #868c96;
 
   --lime: #c8ff32;
   --green: #34d977;
@@ -45,8 +47,9 @@
   --line: #ddd9cc;
   --line-2: #cbc6b6;
   --text: #1a1c20;
-  --dim: #6b6f63;
-  --dimmer: #9a9d92;
+  /* darkened to meet WCAG AA on the lightest panel bg (was #6b6f63/#9a9d92, the latter ~2.8:1). */
+  --dim: #5d6157;
+  --dimmer: #6b6f63;
   --lime: #5f7a00;
   --green: #1d9e57;
   --red: #d63b3b;
@@ -200,6 +203,11 @@ select:focus {
   color: #0a0b0d;
   border-color: var(--lime);
   font-weight: 600;
+}
+/* In the light theme --lime is a dark green, so dark button text falls below WCAG AA (4:1).
+   Use light text on it instead (5:1). */
+[data-theme="light"] .btn.run {
+  color: #ffffff;
 }
 .btn.run:hover {
   box-shadow: 0 0 0 3px color-mix(in oklab, var(--lime) 30%, transparent);

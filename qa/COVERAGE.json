@@ -127,5 +127,12 @@
   "nonFunctional": {
     "loadSoak": "mock server 30k req @ ~791rps, heap stable (no leak, forced-GC verified); web 10k req graceful timeouts under 64-conc; runner defeats gzip-bomb/slow-loris (campaign 5).",
     "slo": "no formal SLO defined for a local-first CLI; throughput-to-a-target-RPS NOT measured (gap)."
+  },
+  "e2e": {
+    "tool": "Playwright 1.61 + axe-core/playwright",
+    "tests": 13,
+    "scope": "web UI: XSS, CSRF (cross-origin+cross-port), X-Frame-Options, editor save/keyboard(BUG-O), traversal, double-click, axe a11y(BUG-P)+contrast (main/editor/light)",
+    "ci": ".github/workflows/e2e.yml (playwright install --with-deps)",
+    "status": "all green"
   }
 }

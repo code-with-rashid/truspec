@@ -1,0 +1,39 @@
+name: E2E
+
+# Browser end-to-end regressions for the web UI — guards the bugs that only a real browser exposes
+# (CSRF cross-origin/cross-port, X-Frame-Options, editor keyboard a11y, XSS escaping, axe a11y).
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # The e2e suite serves the built web client + server, which imports the built @truspec/core,
+      # so build the whole graph (turbo orders core before web).
+      - run: pnpm build
+
+      - name: Install Playwright chromium + OS deps
+        run: pnpm exec playwright install --with-deps chromium
+
+      - run: pnpm test:e2e
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
