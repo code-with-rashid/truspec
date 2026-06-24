@@ -1,6 +1,6 @@
 {
   "name": "@truspec/core",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "TruSpec engine: collection format, request runner, OpenAPI drift & coverage, importers, mock.",
   "type": "module",
   "license": "MIT",

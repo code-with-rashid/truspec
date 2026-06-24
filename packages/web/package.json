@@ -1,6 +1,6 @@
 {
   "name": "@truspec/web",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "TruSpec web UI + local server (truspec serve).",
   "type": "module",
   "license": "MIT",
