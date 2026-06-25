@@ -12,7 +12,7 @@ Or in your MCP client config:
 { "mcpServers": { "truspec": { "command": "npx", "args": ["-y", "@truspec/mcp-server"] } } }
 ```
 
-10 tools: `list_collections`, `run_request`, `run_collection`, `create_request`, `update_request`, `drift`, `coverage`, `scaffold_from_spec`, `mock_start`, `mock_stop`. Create/update validate against the schema before writing.
+11 tools: `list_collections`, `run_request`, `run_collection`, `create_request`, `update_request`, `drift`, `coverage`, `contract`, `scaffold_from_spec`, `mock_start`, `mock_stop`. Create/update validate against the schema before writing.
 
 ## Documentation
 
