@@ -1,0 +1,54 @@
+# Copy this into YOUR repo at .github/workflows/truspec.yml
+#
+# It gates every push/PR on your API staying in sync with your OpenAPI spec —
+# fully offline, no account, no hosted runner secrets required.
+#
+# Pin to a released tag once one exists that ships action.yml (e.g. @v0.7.1),
+# or use @v0 for the moving major tag. @main always tracks latest.
+name: API contract
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  truspec:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 1. Run the collection and its assertions (non-zero exit fails the build).
+      - name: Run requests
+        uses: code-with-rashid/truspec@main
+        with:
+          command: run
+          dir: api
+          env: ci
+
+      # 2. Fail if the collection has drifted from the spec
+      #    (untracked / stale / changed operations).
+      - name: Drift check
+        uses: code-with-rashid/truspec@main
+        with:
+          command: drift
+          dir: api
+          spec: openapi.yaml
+
+      # 3. Gate on tested-operation coverage (tune --min to taste).
+      - name: Coverage gate
+        uses: code-with-rashid/truspec@main
+        with:
+          command: coverage
+          dir: api
+          spec: openapi.yaml
+          min: "80"
+
+      # 4. Validate live responses against the spec's response schemas.
+      - name: Contract check
+        uses: code-with-rashid/truspec@main
+        with:
+          command: contract
+          dir: api
+          spec: openapi.yaml
+          env: ci

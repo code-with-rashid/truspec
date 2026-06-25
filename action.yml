@@ -1,0 +1,84 @@
+name: "TruSpec"
+description: "Run TruSpec API checks (run / drift / coverage / contract) in CI — spec-synced, offline, no account."
+author: "Rashid Mahmood"
+
+branding:
+  icon: "check-circle"
+  color: "blue"
+
+inputs:
+  command:
+    description: "TruSpec subcommand to run: run | drift | coverage | contract."
+    required: false
+    default: "run"
+  dir:
+    description: "Collection directory (a folder of .tspec.yaml files)."
+    required: true
+  spec:
+    description: "Path to the OpenAPI spec. Required for drift / coverage / contract."
+    required: false
+    default: ""
+  env:
+    description: "Environment name (resolves environments/<name>.env.yaml)."
+    required: false
+    default: ""
+  min:
+    description: "Minimum coverage percent — fails below this (coverage command only)."
+    required: false
+    default: ""
+  live:
+    description: "Base URL of a running API to probe for drift (drift command only)."
+    required: false
+    default: ""
+  json:
+    description: "Emit machine-readable JSON output."
+    required: false
+    default: "false"
+  args:
+    description: "Extra raw arguments appended to the command (escape hatch)."
+    required: false
+    default: ""
+  version:
+    description: "Version of the `truspec` npm package to run (e.g. 0.7.0, or latest)."
+    required: false
+    default: "latest"
+  node-version:
+    description: "Node.js version to set up (TruSpec requires >= 22)."
+    required: false
+    default: "22"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Node.js
+      uses: actions/setup-node@v6
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - name: Run TruSpec
+      shell: bash
+      env:
+        # Pass inputs via env (never interpolate ${{ }} into the script body — avoids shell injection).
+        TS_COMMAND: ${{ inputs.command }}
+        TS_DIR: ${{ inputs.dir }}
+        TS_SPEC: ${{ inputs.spec }}
+        TS_ENV: ${{ inputs.env }}
+        TS_MIN: ${{ inputs.min }}
+        TS_LIVE: ${{ inputs.live }}
+        TS_JSON: ${{ inputs.json }}
+        TS_ARGS: ${{ inputs.args }}
+        TS_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        args=( "$TS_COMMAND" )
+        [ -n "$TS_DIR" ]  && args+=( "$TS_DIR" )
+        [ -n "$TS_SPEC" ] && args+=( --spec "$TS_SPEC" )
+        [ -n "$TS_ENV" ]  && args+=( --env "$TS_ENV" )
+        [ -n "$TS_MIN" ]  && args+=( --min "$TS_MIN" )
+        [ -n "$TS_LIVE" ] && args+=( --live "$TS_LIVE" )
+        [ "$TS_JSON" = "true" ] && args+=( --json )
+        # Word-split TS_ARGS intentionally (escape hatch for extra flags).
+        # shellcheck disable=SC2206
+        [ -n "$TS_ARGS" ] && args+=( $TS_ARGS )
+        echo "+ npx -y truspec@$TS_VERSION ${args[*]}"
+        npx -y "truspec@$TS_VERSION" "${args[@]}"
