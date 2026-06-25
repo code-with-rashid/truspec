@@ -1,0 +1,88 @@
+# End-to-end smoke test for the composite action in action.yml.
+# Runs the action against the bundled blog example inside a real runner, exercising
+# the full wiring we cannot test locally: actions/setup-node, `npx -y truspec`
+# fetching the published package, and exit-code propagation through the composite.
+#
+# It asserts BOTH directions:
+#   - green path: `run` + `contract` against the mock must exit 0
+#   - red path:   `drift` + `coverage --min 80` on the (intentionally out-of-sync)
+#                 blog example must exit non-zero, proving the CI gate actually fails.
+name: action smoke
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node (for the mock server)
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Start mock server on :4000 (published package)
+        run: |
+          nohup npx -y truspec mock --spec examples/blog/openapi.yaml --port 4000 > mock.log 2>&1 &
+          echo "MOCK_PID=$!" >> "$GITHUB_ENV"
+          for i in $(seq 1 30); do
+            if curl -sf -o /dev/null http://localhost:4000/posts; then echo "mock is up"; exit 0; fi
+            sleep 1
+          done
+          echo "mock failed to start"; cat mock.log; exit 1
+
+      # --- GREEN PATH: the action runs the real CLI and must succeed (exit 0) ---
+      - name: run (expect pass)
+        uses: ./
+        with:
+          command: run
+          dir: examples/blog
+          env: local
+
+      - name: contract (expect pass)
+        uses: ./
+        with:
+          command: contract
+          dir: examples/blog
+          spec: examples/blog/openapi.yaml
+          env: local
+
+      # --- RED PATH: the action must propagate the CLI's non-zero exit ---
+      - name: drift (expect failure — blog has untracked GET /users/{id})
+        id: drift
+        continue-on-error: true
+        uses: ./
+        with:
+          command: drift
+          dir: examples/blog
+          spec: examples/blog/openapi.yaml
+
+      - name: assert drift failed the step
+        if: steps.drift.outcome != 'failure'
+        run: |
+          echo "::error::expected 'drift' to exit non-zero on the blog example, but the step passed"
+          exit 1
+
+      - name: coverage --min 80 (expect failure — blog is 75%)
+        id: coverage
+        continue-on-error: true
+        uses: ./
+        with:
+          command: coverage
+          dir: examples/blog
+          spec: examples/blog/openapi.yaml
+          min: "80"
+
+      - name: assert coverage gate failed the step
+        if: steps.coverage.outcome != 'failure'
+        run: |
+          echo "::error::expected 'coverage --min 80' to exit non-zero on the blog example, but the step passed"
+          exit 1
+
+      - name: Stop mock server
+        if: always()
+        run: kill "$MOCK_PID" 2>/dev/null || true
