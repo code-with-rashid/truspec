@@ -3,7 +3,8 @@ export interface RequestSummary {
   name: string;
   method: string;
   url: string;
-  operation?: string;
+  /** `spec.operation ?? spec.operationId ?? name` — matches a `DriftReport.removed` entry 1:1. */
+  specRef?: string;
   assertions: number;
 }
 
@@ -63,14 +64,32 @@ export interface CoverageReport {
   ok: boolean;
 }
 
+export type RequestBody =
+  | { type: "none" }
+  | { type: "json"; content: unknown }
+  | { type: "text"; content: string }
+  | { type: "form"; content: Record<string, string> }
+  | { type: "graphql"; query: string; variables?: Record<string, unknown> };
+
+export type RequestAuth =
+  | { type: "none" }
+  | { type: "bearer"; token: string }
+  | { type: "basic"; username: string; password: string }
+  | { type: "apikey"; name: string; value: string; in: "header" | "query" };
+
+export type CaptureSource = string | { jsonpath: string } | { header: string } | { status: true };
+
 export interface RequestDetail {
   name: string;
   method: string;
   url: string;
   headers?: Record<string, string | number | boolean>;
   query?: Record<string, string | number | boolean>;
+  body?: RequestBody;
   assertions?: Array<Record<string, unknown>>;
-  auth?: { type: string };
+  auth?: RequestAuth;
+  capture?: Record<string, CaptureSource>;
+  order?: number;
   docs?: string;
   spec?: { operation?: string; operationId?: string };
   /** Raw YAML source of the file, for the editor. */
@@ -83,6 +102,27 @@ export interface SaveResult {
   error?: string;
 }
 
+export interface MockStatus {
+  running: boolean;
+  spec?: string;
+  port?: number;
+  url?: string;
+  routes?: number;
+}
+
+export interface MockLogEntry {
+  method: string;
+  path: string;
+  status: number;
+  durationMs: number;
+  at: number;
+}
+
+export interface MockStartResult extends MockStatus {
+  ok: boolean;
+  error?: string;
+}
+
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, { headers: { "content-type": "application/json" }, ...init });
   if (!res.ok) throw new Error(`${path} → HTTP ${res.status}`);
@@ -92,11 +132,17 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 export const getState = () => api<WorkspaceState>("/api/state");
 export const getRequest = (path: string) =>
   api<RequestDetail>(`/api/request?path=${encodeURIComponent(path)}`);
-export const run = (target: string | undefined, env: string | undefined) =>
-  api<WorkspaceRunResult>("/api/run", { method: "POST", body: JSON.stringify({ target, env }) });
+export const run = (target: string | undefined, env: string | undefined, spec?: string) =>
+  api<WorkspaceRunResult>("/api/run", { method: "POST", body: JSON.stringify({ target, env, spec }) });
 export const drift = (spec: string) =>
   api<DriftReport>("/api/drift", { method: "POST", body: JSON.stringify({ spec }) });
 export const coverage = (spec: string) =>
   api<CoverageReport>("/api/coverage", { method: "POST", body: JSON.stringify({ spec }) });
 export const saveRequest = (path: string, content: string) =>
   api<SaveResult>("/api/request", { method: "POST", body: JSON.stringify({ path, content }) });
+
+export const mockStatus = () => api<MockStatus>("/api/mock/status");
+export const mockStart = (spec: string, port?: number) =>
+  api<MockStartResult>("/api/mock/start", { method: "POST", body: JSON.stringify({ spec, port }) });
+export const mockStop = () => api<{ ok: boolean }>("/api/mock/stop", { method: "POST" });
+export const mockLog = () => api<{ log: MockLogEntry[] }>("/api/mock/log");

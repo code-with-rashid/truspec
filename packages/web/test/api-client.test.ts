@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { coverage, drift, getRequest, getState, run, saveRequest } from "../src/api";
+import { coverage, drift, getRequest, getState, mockLog, mockStart, mockStatus, mockStop, run, saveRequest } from "../src/api";
 
 // The client api.ts is browser code but uses the global fetch, so it's unit-testable in node
 // with a stub. We assert the URL + method + body each helper sends, and the error path.
@@ -34,6 +34,12 @@ describe("web client api", () => {
     expect(JSON.parse(String(s.calls[0][1]?.body))).toEqual({ target: "dir", env: "local" });
   });
 
+  it("run also POSTs spec when given (contract validation)", async () => {
+    const s = stub(() => ok({ results: [], passed: 0, failed: 0, ok: true, missingSecrets: [] }));
+    await run("dir", "local", "openapi.yaml");
+    expect(JSON.parse(String(s.calls[0][1]?.body))).toEqual({ target: "dir", env: "local", spec: "openapi.yaml" });
+  });
+
   it("drift and coverage POST the spec", async () => {
     const s = stub((url) => ok(url.includes("drift") ? { specOperations: 1, collectionOperations: 0, added: [], removed: [], changed: [], ok: true } : { total: 1, covered: [], uncovered: [], percent: 0, ok: false }));
     await drift("openapi.yaml");
@@ -52,5 +58,32 @@ describe("web client api", () => {
   it("throws on a non-ok HTTP status", async () => {
     stub(() => new Response("nope", { status: 500 }));
     await expect(getState()).rejects.toThrow(/HTTP 500/);
+  });
+
+  it("mockStatus GETs /api/mock/status", async () => {
+    const s = stub(() => ok({ running: true, port: 4000 }));
+    const r = await mockStatus();
+    expect(r.running).toBe(true);
+    expect(s.calls[0][0]).toBe("/api/mock/status");
+  });
+
+  it("mockStart POSTs spec+port to /api/mock/start", async () => {
+    const s = stub(() => ok({ ok: true, running: true, port: 4000 }));
+    await mockStart("openapi.yaml", 4000);
+    expect(s.calls[0][0]).toBe("/api/mock/start");
+    expect(JSON.parse(String(s.calls[0][1]?.body))).toEqual({ spec: "openapi.yaml", port: 4000 });
+  });
+
+  it("mockStop POSTs to /api/mock/stop", async () => {
+    const s = stub(() => ok({ ok: true }));
+    await mockStop();
+    expect(s.calls[0][0]).toBe("/api/mock/stop");
+    expect(s.calls[0][1]?.method).toBe("POST");
+  });
+
+  it("mockLog GETs /api/mock/log", async () => {
+    const s = stub(() => ok({ log: [] }));
+    await mockLog();
+    expect(s.calls[0][0]).toBe("/api/mock/log");
   });
 });

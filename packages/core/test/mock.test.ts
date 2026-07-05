@@ -65,6 +65,21 @@ describe("startMockServer", () => {
     }
   });
 
+  it("reports each request via onRequest (method, path, status, durationMs)", async () => {
+    const entries: Array<{ method: string; path: string; status: number; durationMs: number }> = [];
+    const handle = await startMockServer(specText, { port: 0, onRequest: (e) => entries.push(e) });
+    try {
+      await fetch(`${handle.url}/pets/1`);
+      await fetch(`${handle.url}/nope`);
+      expect(entries).toEqual([
+        { method: "GET", path: "/pets/1", status: 200, durationMs: expect.any(Number) },
+        { method: "GET", path: "/nope", status: 404, durationMs: expect.any(Number) },
+      ]);
+    } finally {
+      await handle.close();
+    }
+  });
+
   it("applies a response delay", async () => {
     const handle = await startMockServer(specText, { port: 0, delayMs: 30 });
     try {
