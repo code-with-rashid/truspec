@@ -8,10 +8,24 @@ export interface MockServerHandle {
   close: () => Promise<void>;
 }
 
+export interface MockRequestLogEntry {
+  method: string;
+  path: string;
+  status: number;
+  durationMs: number;
+}
+
 /** Start a local HTTP mock server from OpenAPI text. Port 0 picks a free port. */
 export async function startMockServer(
   specText: string,
-  opts: { port?: number; host?: string; delayMs?: number; validate?: boolean } = {},
+  opts: {
+    port?: number;
+    host?: string;
+    delayMs?: number;
+    validate?: boolean;
+    /** Called once per request after the response is sent (or would have been, on failure). */
+    onRequest?: (entry: MockRequestLogEntry) => void;
+  } = {},
 ): Promise<MockServerHandle> {
   const responder = createMockResponder(specText, { validate: opts.validate });
   const host = opts.host ?? "127.0.0.1";
@@ -45,18 +59,26 @@ export async function startMockServer(
       query[k] = v;
     });
     const hasBody = Number(req.headers["content-length"] ?? 0) > 0;
+    const method = req.method ?? "GET";
     const send = (): void => {
+      const t0 = Date.now();
+      const log = (status: number): void => {
+        opts.onRequest?.({ method, path: u.pathname, status, durationMs: Date.now() - t0 });
+      };
       try {
-        const result = responder.respond(req.method ?? "GET", u.pathname, { query, hasBody });
+        const result = responder.respond(method, u.pathname, { query, hasBody });
         if (!result) {
           res.writeHead(404, { "content-type": "application/json" });
-          res.end(JSON.stringify({ error: `No mock for ${req.method} ${u.pathname}` }));
+          res.end(JSON.stringify({ error: `No mock for ${method} ${u.pathname}` }));
+          log(404);
           return;
         }
         res.writeHead(result.status, result.headers);
         res.end(result.body);
+        log(result.status);
       } catch {
         fail(500, "Mock failed to build a response");
+        log(500);
       }
     };
     if (delayMs > 0) setTimeout(send, delayMs);

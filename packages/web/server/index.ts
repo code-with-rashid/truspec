@@ -202,6 +202,12 @@ export async function startWebServer(opts: WebServerOptions = {}): Promise<WebSe
     url: `http://${host}:${port}`,
     port,
     dir,
-    close: () => new Promise((r, j) => server.close((e) => (e ? j(e) : r()))),
+    close: async () => {
+      if (ctx.mock) {
+        await ctx.mock.handle.close();
+        ctx.mock = undefined;
+      }
+      await new Promise<void>((r, j) => server.close((e) => (e ? j(e) : r())));
+    },
   };
 }

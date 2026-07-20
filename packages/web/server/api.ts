@@ -1,11 +1,43 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { parse } from "@truspec/core/format";
+import { type MockRequestLogEntry, type MockServerHandle, startMockServer } from "@truspec/core/mock";
 import { coverageReport, driftReport } from "@truspec/core/spec";
 import { confinePath, discoverRequests, runPath, walkDirSafe } from "@truspec/core/workspace";
 
+/** Default mock server port, matching `truspec mock`'s CLI default. */
+const DEFAULT_MOCK_PORT = 4000;
+/** Ring buffer cap for the in-UI mock request log. */
+const MOCK_LOG_LIMIT = 50;
+
+interface MockState {
+  handle: MockServerHandle;
+  spec: string;
+  log: Array<MockRequestLogEntry & { at: number }>;
+}
+
 export interface ApiContext {
   dir: string;
+  /** Mutable: set while a mock server started from the UI is running. */
+  mock?: MockState;
+}
+
+interface MockStatusJson {
+  running: boolean;
+  spec?: string;
+  port?: number;
+  url?: string;
+  routes?: number;
+}
+
+function mockStatusJson(ctx: ApiContext): MockStatusJson {
+  return {
+    running: !!ctx.mock,
+    spec: ctx.mock?.spec,
+    port: ctx.mock?.handle.port,
+    url: ctx.mock?.handle.url,
+    routes: ctx.mock?.handle.routes,
+  };
 }
 
 export interface ApiResult {
@@ -55,7 +87,9 @@ function buildState(ctx: ApiContext) {
         name: req.name,
         method: req.method,
         url: req.url,
-        operation: req.spec?.operationId ?? req.spec?.operation,
+        // Same priority `driftReport` uses to build its `removed` refs (operation ?? operationId ?? name)
+        // so the UI can match a request against drift output without a second round-trip.
+        specRef: req.spec ? (req.spec.operation ?? req.spec.operationId ?? req.name) : undefined,
         assertions: req.assertions.length,
       });
     } catch (e) {
@@ -109,9 +143,14 @@ export async function handleApi(
     return { status: 200, json: { ok: true, path: relative(ctx.dir, abs) } };
   }
   if (method === "POST" && pathname === "/api/run") {
-    const b = (body ?? {}) as { target?: string; env?: string };
+    const b = (body ?? {}) as { target?: string; env?: string; spec?: string };
     const target = b.target ? confinePath(ctx.dir, b.target) : ctx.dir;
-    return { status: 200, json: await runPath(target, { env: b.env || undefined, cwd: ctx.dir }) };
+    // Mirrors `truspec run --spec`: every spec-linked request gets its response validated
+    // against the OpenAPI operation, even without an explicit `{ type: schema }` assertion.
+    return {
+      status: 200,
+      json: await runPath(target, { env: b.env || undefined, cwd: ctx.dir, spec: b.spec || undefined }),
+    };
   }
   if (method === "POST" && pathname === "/api/drift") {
     const b = (body ?? {}) as { spec?: string };
@@ -122,6 +161,53 @@ export async function handleApi(
     const b = (body ?? {}) as { spec?: string };
     if (!b.spec) return { status: 400, json: { error: "spec required" } };
     return { status: 200, json: coverageReport(ctx.dir, confinePath(ctx.dir, b.spec)) };
+  }
+  if (method === "GET" && pathname === "/api/mock/status") {
+    return { status: 200, json: mockStatusJson(ctx) };
+  }
+  if (method === "POST" && pathname === "/api/mock/start") {
+    const b = (body ?? {}) as { spec?: string; port?: number };
+    if (!b.spec) return { status: 400, json: { error: "spec required" } };
+    let specPath: string;
+    try {
+      specPath = confinePath(ctx.dir, b.spec);
+    } catch (e) {
+      return { status: 200, json: { ok: false, error: (e as Error).message } };
+    }
+    if (ctx.mock) await ctx.mock.handle.close(); // restart on a new spec/port
+    let specText: string;
+    try {
+      specText = readFileSync(specPath, "utf8");
+    } catch (e) {
+      ctx.mock = undefined;
+      return { status: 200, json: { ok: false, error: (e as Error).message } };
+    }
+    const log: MockState["log"] = [];
+    try {
+      const handle = await startMockServer(specText, {
+        port: b.port ?? DEFAULT_MOCK_PORT,
+        validate: true,
+        onRequest: (entry) => {
+          log.unshift({ ...entry, at: Date.now() });
+          log.length = Math.min(log.length, MOCK_LOG_LIMIT);
+        },
+      });
+      ctx.mock = { handle, spec: b.spec, log };
+    } catch (e) {
+      ctx.mock = undefined;
+      return { status: 200, json: { ok: false, error: (e as Error).message } };
+    }
+    return { status: 200, json: { ok: true, ...mockStatusJson(ctx) } };
+  }
+  if (method === "POST" && pathname === "/api/mock/stop") {
+    if (ctx.mock) {
+      await ctx.mock.handle.close();
+      ctx.mock = undefined;
+    }
+    return { status: 200, json: { ok: true } };
+  }
+  if (method === "GET" && pathname === "/api/mock/log") {
+    return { status: 200, json: { log: ctx.mock?.log ?? [] } };
   }
   return { status: 404, json: { error: "not found" } };
 }

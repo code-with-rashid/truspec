@@ -32,7 +32,11 @@ export const test = base.extend<{ app: App }>({
     writeFileSync(join(dir, "evil.tspec.yaml"), 'tspec: "0.1"\nname: "<img src=x onerror=\\"window.__xss=true\\">"\nmethod: GET\nurl: "{{baseUrl}}/x"\nassertions: []\n');
     writeFileSync(join(dir, "openapi.yaml"), 'openapi: 3.0.3\ninfo: { title: T, version: "1" }\npaths:\n  /pets/{id}: { get: { operationId: getPet, responses: { "200": {} } } }\n  /other: { get: { responses: { "200": {} } } }\n');
 
-    const web = await startWebServer({ dir, port: 0, clientDir: `${ROOT}/packages/web/dist/client` });
+    // `join` (not string interpolation) so the result uses one consistent OS separator — the
+    // server's static-file confinement check compares this path against a `normalize`d one, and a
+    // mixed `C:\...\dist/client` (backslash root + forward-slash tail, as `${ROOT}/...` produces on
+    // Windows) never matches, 403ing every asset request.
+    const web = await startWebServer({ dir, port: 0, clientDir: join(ROOT, "packages", "web", "dist", "client") });
     await use({ url: web.url, dir });
     await web.close();
     await new Promise((r) => mock.close(() => r(undefined)));
