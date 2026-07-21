@@ -21,9 +21,10 @@ import {
   type RunResult,
   type WorkspaceState,
 } from "./api";
+import { FlowView } from "./FlowView";
 
 type Theme = "dark" | "light";
-type View = "workspace" | "spec" | "mock";
+type View = "workspace" | "spec" | "mock" | "flow";
 type EditMode = "edit" | "new";
 type ReqTab = "params" | "headers" | "body" | "auth" | "assert";
 type RespTab = "body" | "headers";
@@ -280,7 +281,9 @@ export function App() {
           for (const res of r.results) if (res.filePath) next.set(normPath(res.filePath), res);
           return next;
         });
-        setView("workspace");
+        // A run triggered from the Flow view should stay there — only workspace-triggered
+        // runs (or the top-bar "run all") jump to the runs rail.
+        setView((v) => (v === "flow" ? v : "workspace"));
         setRailTab("runs");
       } catch (e) {
         setError(String(e));
@@ -375,7 +378,7 @@ export function App() {
     if (p.get("theme") === "light") setTheme("light");
     if (p.get("run") === "all") void doRun(undefined);
     const v = p.get("view");
-    if (v === "spec" || v === "mock") setView(v);
+    if (v === "spec" || v === "mock" || v === "flow") setView(v);
     if (p.get("new") === "1") openNew();
   }, [state, booted, doRun, openNew]);
 
@@ -463,6 +466,9 @@ export function App() {
         <nav className="nav">
           <button className={`nav-btn ${view === "workspace" ? "active" : ""}`} onClick={() => setView("workspace")}>
             workspace
+          </button>
+          <button className={`nav-btn ${view === "flow" ? "active" : ""}`} onClick={() => setView("flow")}>
+            flow
           </button>
           <button className={`nav-btn ${view === "spec" ? "active" : ""}`} onClick={() => setView("spec")}>
             spec
@@ -593,6 +599,18 @@ export function App() {
               onCancel={() => {
                 setEditing(null);
                 setEditorErr(null);
+              }}
+            />
+          ) : view === "flow" ? (
+            <FlowView
+              env={env}
+              running={running}
+              onRun={() => doRun(undefined)}
+              getResult={(path) => ranResults.get(resultKey(path))}
+              onImported={() => {
+                getState()
+                  .then(setState)
+                  .catch((e: unknown) => setError(String(e)));
               }}
             />
           ) : view === "spec" ? (

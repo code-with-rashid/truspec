@@ -1,9 +1,18 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { parse } from "@truspec/core/format";
+import { importBrunoFiles, importPostman, type ImportedFile, type ImportResult } from "@truspec/core/importers";
 import { type MockRequestLogEntry, type MockServerHandle, startMockServer } from "@truspec/core/mock";
+import { resolveRequest } from "@truspec/core/runner";
 import { coverageReport, driftReport } from "@truspec/core/spec";
-import { confinePath, discoverRequests, runPath, walkDirSafe } from "@truspec/core/workspace";
+import {
+  confinePath,
+  discoverRequests,
+  findWorkspaceRoot,
+  loadFolderChain,
+  runPath,
+  walkDirSafe,
+} from "@truspec/core/workspace";
 
 /** Default mock server port, matching `truspec mock`'s CLI default. */
 const DEFAULT_MOCK_PORT = 4000;
@@ -105,6 +114,72 @@ function buildState(ctx: ApiContext) {
   };
 }
 
+/**
+ * Ordered flow steps for the Flow view: each step's `capture` names, plus its `consumes`
+ * names — the `{{var}}` references it needs resolved — computed by resolving the request
+ * against an *empty* var map and reading `EffectiveRequest.missing`, exactly the set of names
+ * `runPath` would need chained in from an earlier step (or an environment) to actually run.
+ * No separate "which vars does this reference" extractor needed; this is the real resolver.
+ */
+function buildFlow(ctx: ApiContext) {
+  const root = findWorkspaceRoot(ctx.dir);
+  const steps: Array<Record<string, unknown>> = [];
+  const errors: Array<{ path: string; error: string }> = [];
+  const parsed: Array<{ file: string; path: string; req: ReturnType<typeof parse.request.parse> }> = [];
+  for (const file of discoverRequests(ctx.dir)) {
+    const path = relative(ctx.dir, file);
+    try {
+      parsed.push({ file, path, req: parse.request.parse(readFileSync(file, "utf8")) });
+    } catch (e) {
+      errors.push({ path, error: (e as Error).message });
+    }
+  }
+  // Same ordering `runPath` uses to chain captures forward, so the list IS the run order.
+  parsed.sort((a, b) => (a.req.order ?? 0) - (b.req.order ?? 0) || a.file.localeCompare(b.file));
+  for (const { file, path, req } of parsed) {
+    const folder = loadFolderChain(dirname(file), root);
+    let consumes: string[] = [];
+    try {
+      consumes = resolveRequest(req, { folder, vars: {} }).missing;
+    } catch {
+      // A pathologically nested body would throw here; drop consumes rather than failing the
+      // whole flow view over one request the runner itself would also refuse to send.
+    }
+    steps.push({
+      path,
+      name: req.name,
+      method: req.method,
+      url: req.url,
+      order: req.order ?? 0,
+      docs: req.docs,
+      assertions: req.assertions.length,
+      captures: Object.keys(req.capture ?? {}),
+      consumes,
+      specRef: req.spec ? (req.spec.operation ?? req.spec.operationId ?? req.name) : undefined,
+    });
+  }
+  return { dir: ctx.dir, steps, errors };
+}
+
+/**
+ * Write an import result under `targetDir`, confining every file's path first (rejecting the
+ * whole import atomically if any escapes) — unlike core's `writeImport`, which trusts its
+ * caller. Bruno import paths here originate from a browser file picker, i.e. client-supplied
+ * strings, so `../../etc/whatever.bru` must not reach disk outside the workspace.
+ */
+function writeImportConfined(result: ImportResult, targetDir: string): string[] {
+  // `confinePath` resolves its *root* with `realpathSync` unconditionally (only the target side
+  // tolerates not-yet-existing paths), so a brand-new target directory must exist before it's
+  // usable as that root.
+  mkdirSync(targetDir, { recursive: true });
+  const targets = result.files.map((f) => ({ abs: confinePath(targetDir, f.path), content: f.content }));
+  for (const t of targets) {
+    mkdirSync(dirname(t.abs), { recursive: true });
+    writeFileSync(t.abs, t.content);
+  }
+  return targets.map((t) => relative(targetDir, t.abs));
+}
+
 export async function handleApi(
   method: string,
   pathname: string,
@@ -114,6 +189,9 @@ export async function handleApi(
 ): Promise<ApiResult> {
   if (method === "GET" && pathname === "/api/state") {
     return { status: 200, json: buildState(ctx) };
+  }
+  if (method === "GET" && pathname === "/api/flow") {
+    return { status: 200, json: buildFlow(ctx) };
   }
   if (method === "GET" && pathname === "/api/request") {
     const p = query.get("path");
@@ -141,6 +219,54 @@ export async function handleApi(
     mkdirSync(dirname(abs), { recursive: true });
     writeFileSync(abs, b.content);
     return { status: 200, json: { ok: true, path: relative(ctx.dir, abs) } };
+  }
+  if (method === "POST" && pathname === "/api/import/postman") {
+    const b = (body ?? {}) as { json?: unknown; targetDir?: string };
+    if (b.json === undefined) return { status: 400, json: { error: "json required" } };
+    let target: string;
+    try {
+      target = b.targetDir ? confinePath(ctx.dir, b.targetDir) : ctx.dir;
+    } catch (e) {
+      return { status: 200, json: { ok: false, error: (e as Error).message } };
+    }
+    let result: ImportResult;
+    try {
+      result = importPostman(b.json);
+    } catch (e) {
+      return { status: 200, json: { ok: false, error: (e as Error).message } };
+    }
+    try {
+      const written = writeImportConfined(result, target);
+      return { status: 200, json: { ok: true, stats: result.stats, warnings: result.warnings, files: written } };
+    } catch (e) {
+      return { status: 200, json: { ok: false, error: (e as Error).message } };
+    }
+  }
+  if (method === "POST" && pathname === "/api/import/bruno") {
+    const b = (body ?? {}) as { files?: Array<{ path?: string; content?: string }>; targetDir?: string };
+    if (!Array.isArray(b.files) || b.files.length === 0) {
+      return { status: 400, json: { error: "files required" } };
+    }
+    const files: ImportedFile[] = [];
+    for (const f of b.files) {
+      if (typeof f.path !== "string" || typeof f.content !== "string") {
+        return { status: 400, json: { error: "each file needs a path and content" } };
+      }
+      files.push({ path: f.path, content: f.content });
+    }
+    let target: string;
+    try {
+      target = b.targetDir ? confinePath(ctx.dir, b.targetDir) : ctx.dir;
+    } catch (e) {
+      return { status: 200, json: { ok: false, error: (e as Error).message } };
+    }
+    const result = importBrunoFiles(files);
+    try {
+      const written = writeImportConfined(result, target);
+      return { status: 200, json: { ok: true, stats: result.stats, warnings: result.warnings, files: written } };
+    } catch (e) {
+      return { status: 200, json: { ok: false, error: (e as Error).message } };
+    }
   }
   if (method === "POST" && pathname === "/api/run") {
     const b = (body ?? {}) as { target?: string; env?: string; spec?: string };
