@@ -24,6 +24,13 @@ qa/mutation-report.json
 test-results/
 playwright-report/
 
+# Tauri desktop app: Rust build output + staged-at-build-time artifacts
+# (portable Node runtime, web client/sidecar resources — see scripts/prepare-sidecar.mjs)
+packages/desktop/src-tauri/target/
+packages/desktop/src-tauri/gen/
+packages/desktop/src-tauri/binaries/
+packages/desktop/src-tauri/resources/
+
 # Transient QA outputs (regenerated)
 qa/fuzz/findings.jsonl
 qa/mut-*.json
