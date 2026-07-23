@@ -22,9 +22,10 @@
   },
   "files": ["dist"],
   "scripts": {
-    "build": "pnpm run build:client && pnpm run build:server",
+    "build": "pnpm run build:client && pnpm run build:server && pnpm run build:sidecar",
     "build:client": "vite build",
     "build:server": "tsup",
+    "build:sidecar": "tsup --config tsup.sidecar.config.ts",
     "dev": "vite",
     "typecheck": "tsc --noEmit"
   },
