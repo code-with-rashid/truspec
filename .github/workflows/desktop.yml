@@ -68,11 +68,17 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # @truspec/web's sidecar bundle force-inlines @truspec/core (unlike its published-library
+      # server build, which correctly leaves it external) — so esbuild needs core's actual dist/
+      # output on disk to resolve into the bundle, not just its source.
+      - name: Build @truspec/core
+        run: pnpm --filter @truspec/core build
+
       - name: Build the web client/server/sidecar bundles
         run: pnpm --filter @truspec/web build
 
       - name: Build the desktop app (stages the sidecar, then tauri build)
-        run: pnpm --filter @truspec/desktop build
+        run: pnpm --filter @truspec/desktop run tauri:build
 
       - name: Upload installer artifacts
         uses: actions/upload-artifact@v4

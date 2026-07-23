@@ -14,7 +14,7 @@
   "scripts": {
     "prepare-sidecar": "node scripts/prepare-sidecar.mjs",
     "dev": "node scripts/prepare-sidecar.mjs && tauri dev",
-    "build": "node scripts/prepare-sidecar.mjs && tauri build",
+    "tauri:build": "node scripts/prepare-sidecar.mjs && tauri build",
     "typecheck": "true"
   },
   "dependencies": {
