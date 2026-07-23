@@ -27,10 +27,13 @@ struct Ready {
 /// and from the "File > Open Collection…" menu item (`force_picker = true`).
 pub fn open_collection_flow(app: AppHandle, force_picker: bool) {
     let persisted = if force_picker { None } else { config::get_last_dir(&app) };
+    log::info!("sidecar: open_collection_flow force_picker={force_picker} persisted={persisted:?}");
     match persisted {
         Some(dir) => start(app, dir),
         None => {
+            let app_for_closure = app.clone();
             app.dialog().file().pick_folder(move |folder| {
+                log::info!("sidecar: folder picker result={folder:?}");
                 let Some(path) = folder else {
                     return; // user cancelled the picker — leave things as they are
                 };
@@ -38,8 +41,8 @@ pub fn open_collection_flow(app: AppHandle, force_picker: bool) {
                     return;
                 };
                 let dir = dir_path.to_string_lossy().to_string();
-                config::set_last_dir(&app, &dir);
-                start(app, dir);
+                config::set_last_dir(&app_for_closure, &dir);
+                start(app_for_closure, dir);
             });
         }
     }
@@ -56,6 +59,7 @@ fn start(app: AppHandle, dir: String) {
         .path()
         .resolve("client", BaseDirectory::Resource)
         .expect("bundled client assets missing from app resources");
+    log::info!("sidecar: starting with dir={dir} script={script:?} client_dir={client_dir:?}");
 
     let args: Vec<String> = vec![
         script.to_string_lossy().to_string(),
@@ -74,23 +78,38 @@ fn start(app: AppHandle, dir: String) {
         .args(args)
         .spawn()
         .expect("failed to spawn the desktop sidecar");
+    log::info!("sidecar: spawned pid={}", child.pid());
 
     app.state::<Mutex<SidecarState>>().lock().unwrap().child = Some(child);
 
     let app_handle = app.clone();
     tauri::async_runtime::spawn(async move {
         while let Some(event) = rx.recv().await {
-            if let CommandEvent::Stdout(line) = event {
-                if let Ok(ready) = serde_json::from_slice::<Ready>(&line) {
-                    navigate_to(&app_handle, &ready.url);
+            match event {
+                CommandEvent::Stdout(line) => {
+                    log::info!("sidecar stdout: {}", String::from_utf8_lossy(&line));
+                    if let Ok(ready) = serde_json::from_slice::<Ready>(&line) {
+                        navigate_to(&app_handle, &ready.url);
+                    }
+                    // keep draining rx after the ready line so the sidecar's stdout pipe never backs up
                 }
-                // keep draining rx after the ready line so the sidecar's stdout pipe never backs up
+                CommandEvent::Stderr(line) => {
+                    log::info!("sidecar stderr: {}", String::from_utf8_lossy(&line));
+                }
+                CommandEvent::Error(err) => {
+                    log::info!("sidecar error event: {err}");
+                }
+                CommandEvent::Terminated(payload) => {
+                    log::info!("sidecar terminated: {payload:?}");
+                }
+                _ => {}
             }
         }
     });
 }
 
 fn navigate_to(app: &AppHandle, url: &str) {
+    log::info!("sidecar: navigating to {url}");
     let Ok(url) = url.parse() else { return };
     match app.get_webview_window("main") {
         Some(w) => {

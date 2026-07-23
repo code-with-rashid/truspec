@@ -1,0 +1,83 @@
+name: Desktop app (Tauri)
+
+# Cross-platform build matrix for the installable desktop app (packages/desktop). Kept separate
+# from ci.yml, which only runs pure-Node checks on ubuntu-latest — this job needs a Rust
+# toolchain and per-OS runners, and is slow enough that it shouldn't gate every unrelated PR.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/desktop/**"
+      - "packages/web/**"
+      - "packages/core/**"
+      - ".github/workflows/desktop.yml"
+      - "pnpm-lock.yaml"
+  pull_request:
+    paths:
+      - "packages/desktop/**"
+      - "packages/web/**"
+      - "packages/core/**"
+      - ".github/workflows/desktop.yml"
+      - "pnpm-lock.yaml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+          - os: macos-latest # Apple Silicon (arm64)
+          - os: macos-13 # Intel (x86_64)
+          # Pinned below ubuntu-latest on purpose: AppImages/bundled binaries are only
+          # forward-compatible with glibc, so building on an older LTS keeps the glibc floor
+          # older than whatever ubuntu-latest happens to track.
+          - os: ubuntu-22.04
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux build dependencies (webkit2gtk, AppIndicator, etc.)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the web client/server/sidecar bundles
+        run: pnpm --filter @truspec/web build
+
+      - name: Build the desktop app (stages the sidecar, then tauri build)
+        run: pnpm --filter @truspec/desktop build
+
+      - name: Upload installer artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: truspec-desktop-${{ matrix.os }}
+          path: |
+            packages/desktop/src-tauri/target/release/bundle/**
+          if-no-files-found: error
