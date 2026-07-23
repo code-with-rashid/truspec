@@ -36,12 +36,14 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-          - os: macos-latest # Apple Silicon (arm64)
-          - os: macos-13 # Intel (x86_64)
+          - os: macos-latest # Apple Silicon (arm64); runs fine on Intel Macs too, under Rosetta 2
           # Pinned below ubuntu-latest on purpose: AppImages/bundled binaries are only
           # forward-compatible with glibc, so building on an older LTS keeps the glibc floor
           # older than whatever ubuntu-latest happens to track.
           - os: ubuntu-22.04
+          # Note: macos-13 (Intel) is deliberately not in this matrix. GitHub's hosted x86_64
+          # macOS runners have effectively no free-tier capacity — a build queued here sat for
+          # ~4 hours with zero runner assigned before being cancelled. Revisit if that changes.
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
