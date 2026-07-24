@@ -123,6 +123,35 @@ export interface MockStartResult extends MockStatus {
   error?: string;
 }
 
+export interface FlowStep {
+  path: string;
+  name: string;
+  method: string;
+  url: string;
+  order: number;
+  docs?: string;
+  assertions: number;
+  /** Var names this step's `capture:` block saves. */
+  captures: string[];
+  /** `{{var}}` names this step references (url/headers/query/body/auth, folder-inherited too). */
+  consumes: string[];
+  specRef?: string;
+}
+
+export interface FlowState {
+  dir: string;
+  steps: FlowStep[];
+  errors: Array<{ path: string; error: string }>;
+}
+
+export interface ImportApiResult {
+  ok: boolean;
+  error?: string;
+  stats?: { requests: number; folders: number };
+  warnings?: string[];
+  files?: string[];
+}
+
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, { headers: { "content-type": "application/json" }, ...init });
   if (!res.ok) throw new Error(`${path} → HTTP ${res.status}`);
@@ -130,6 +159,11 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const getState = () => api<WorkspaceState>("/api/state");
+export const getFlow = () => api<FlowState>("/api/flow");
+export const importPostman = (json: unknown, targetDir?: string) =>
+  api<ImportApiResult>("/api/import/postman", { method: "POST", body: JSON.stringify({ json, targetDir }) });
+export const importBruno = (files: Array<{ path: string; content: string }>, targetDir?: string) =>
+  api<ImportApiResult>("/api/import/bruno", { method: "POST", body: JSON.stringify({ files, targetDir }) });
 export const getRequest = (path: string) =>
   api<RequestDetail>(`/api/request?path=${encodeURIComponent(path)}`);
 export const run = (target: string | undefined, env: string | undefined, spec?: string) =>

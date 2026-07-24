@@ -7,6 +7,7 @@ import {
   bruToRequest,
   extractBlocks,
   importBrunoDir,
+  importBrunoFiles,
   importPostman,
   importPostmanFile,
 } from "../src/importers";
@@ -143,5 +144,36 @@ describe("importBrunoDir", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("importBrunoFiles", () => {
+  const brunoContent = readFileSync(resolve(imports, "bruno", "get-user.bru"), "utf8");
+
+  it("converts in-memory .bru file contents without touching disk (web UI upload path)", () => {
+    const result = importBrunoFiles([
+      { path: "users/get-user.bru", content: brunoContent },
+      { path: "collection.bru", content: "meta { seq: 1 }" }, // metadata, not a request
+    ]);
+    expect(result.stats.requests).toBe(1);
+    expect(result.files).toEqual([
+      { path: "users/get-user.tspec.yaml", content: expect.any(String) },
+    ]);
+    parse.request.parse(result.files[0]?.content ?? "");
+  });
+
+  it("skips folder.bru metadata and normalizes backslash paths to forward slashes", () => {
+    const result = importBrunoFiles([
+      { path: "a\\folder.bru", content: "meta { seq: 1 }" },
+      { path: "a\\get-user.bru", content: brunoContent },
+    ]);
+    expect(result.stats.requests).toBe(1);
+    expect(result.files[0]?.path).toBe("a/get-user.tspec.yaml");
+  });
+
+  it("importBrunoDir is equivalent to reading the directory and passing files through importBrunoFiles", () => {
+    const viaDir = importBrunoDir(resolve(imports, "bruno"));
+    const viaFiles = importBrunoFiles([{ path: "get-user.bru", content: brunoContent }]);
+    expect(viaFiles).toEqual(viaDir);
   });
 });
