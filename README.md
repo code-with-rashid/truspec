@@ -155,7 +155,7 @@ The CLI runs on Node ≥ 22. A Bun-compiled single binary for zero-install distr
 ## Status & roadmap
 
 **Shipped:** format + JSON Schema · runner (REST + GraphQL, auth, request chaining/capture, **post-response scripts**) · CLI (`run` [+ JUnit], `drift`, `coverage`, `contract`, `gen`, `import`, `mock`, `serve`) · OpenAPI drift (added/removed/**changed** + **`--live`** API probe) + coverage + **response contract validation** (`{ type: schema }` · `run --spec` · `contract`) · **local mock server** (latency + **request validation**) · `.env` + secrets (**masked in run output**) · Postman/Bruno import · MCP server (11 tools) · **web UI** (`truspec serve`) · **VS Code extension** (CodeLens + results view, pre-release).
-**Next:** publish v0.5.0 to npm + the extension to the Marketplace · **Bun single-binary** distribution · **in-UI request editing** · **pre-request scripting**.
+**Next:** publish v0.5.0 to npm + the extension to the Marketplace · **installable desktop app** (Tauri, wraps `truspec serve` — unsigned installers for Windows/macOS/Linux; see [#23](https://github.com/code-with-rashid/truspec/issues/23)) · **Bun single-binary** distribution · **in-UI request editing** · **pre-request scripting**.
 
 Deferred by design (not bloat): hosted dashboards, visual flow builders, exotic protocols, mandatory cloud sync.
 

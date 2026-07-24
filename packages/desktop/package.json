@@ -1,0 +1,26 @@
+{
+  "name": "@truspec/desktop",
+  "version": "0.7.1",
+  "description": "TruSpec desktop app (Tauri) — a native window over the truspec serve web UI.",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "author": "Rashid Mahmood",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/code-with-rashid/truspec.git",
+    "directory": "packages/desktop"
+  },
+  "scripts": {
+    "prepare-sidecar": "node scripts/prepare-sidecar.mjs",
+    "dev": "node scripts/prepare-sidecar.mjs && tauri dev",
+    "tauri:build": "node scripts/prepare-sidecar.mjs && tauri build",
+    "typecheck": "true"
+  },
+  "dependencies": {
+    "@truspec/web": "workspace:*"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}
