@@ -1878,3 +1878,205 @@ select:focus {
 .editor-hint {
   font-size: 11px;
 }
+
+/* ---- Flow view ---- */
+.flow {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+.flow-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+.flow-errors {
+  padding: 10px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--dim);
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in oklab, var(--red) 6%, transparent);
+}
+.flow-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.flow-graph {
+  flex: 1;
+  display: flex;
+  padding: 16px 0 16px 8px;
+}
+.flow-rail {
+  flex-shrink: 0;
+}
+.edge {
+  fill: none;
+  stroke: var(--line-2);
+  stroke-width: 1.5;
+  opacity: 0.6;
+}
+.edge.broken {
+  stroke: var(--red);
+  stroke-dasharray: 3 3;
+}
+.edge.ok {
+  opacity: 0.85;
+}
+.edge.hi {
+  stroke: var(--lime);
+  stroke-width: 2.5;
+  opacity: 1;
+}
+.flow-steps {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding-right: 18px;
+}
+.flow-node {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 0 12px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+}
+.flow-node:hover {
+  background: var(--panel-2);
+}
+.flow-node.active {
+  background: var(--panel-3);
+  border-color: var(--line-2);
+}
+.flow-node-order {
+  width: 18px;
+  flex-shrink: 0;
+  text-align: right;
+  font-size: 11px;
+  color: var(--dimmer);
+}
+.flow-node-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.flow-node-name {
+  font-size: 12.5px;
+  color: var(--text);
+}
+.flow-node-url {
+  font-size: 11px;
+  color: var(--dimmer);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.flow-detail {
+  width: 340px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--line);
+  background: color-mix(in oklab, var(--panel) 60%, transparent);
+}
+.flow-detail-inner {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.flow-detail-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.flow-detail-name {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.flow-detail-url {
+  font-size: 11.5px;
+  color: var(--dim);
+  word-break: break-all;
+}
+.flow-detail-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.flow-detail-label {
+  font-size: 10.5px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.flow-assertions {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* Generic centered modal, used by the Flow view's import dialog. */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: color-mix(in oklab, #000 55%, transparent);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.modal {
+  width: 440px;
+  max-width: 92vw;
+  background: var(--panel);
+  border: 1px solid var(--line-2);
+  border-radius: 14px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  animation: grow 0.16s both;
+}
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+  font-weight: 600;
+}
+.modal-body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.modal-actions {
+  display: flex;
+  gap: 10px;
+}
+.modal-actions .btn {
+  flex: 1;
+}

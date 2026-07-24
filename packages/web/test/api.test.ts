@@ -164,6 +164,114 @@ describe("web server api — mock server control", () => {
   });
 });
 
+describe("web server api — flow view (GET /api/flow)", () => {
+  let dir: string;
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "truspec-web-flow-"));
+    mkdirSync(join(dir, "sub"), { recursive: true });
+    writeFileSync(join(dir, "folder.tspec.yaml"), 'tspec: "0.1"\nname: root\nbaseUrl: "http://x"\n');
+    writeFileSync(
+      join(dir, "01-login.tspec.yaml"),
+      'tspec: "0.1"\nname: Login\nmethod: POST\nurl: "/login"\norder: 1\ncapture:\n  token: "$.access_token"\nassertions: []\n',
+    );
+    writeFileSync(
+      join(dir, "sub", "02-call.tspec.yaml"),
+      'tspec: "0.1"\nname: Call\nmethod: GET\nurl: "/call"\norder: 2\nauth: { type: bearer, token: "{{token}}" }\nassertions: []\n',
+    );
+    writeFileSync(join(dir, "broken.tspec.yaml"), "this: is: not: valid\n[}");
+  });
+  afterAll(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("returns steps in run order with captures/consumes derived from the request (no execution)", async () => {
+    const r = await handleApi("GET", "/api/flow", noQuery, undefined, { dir });
+    expect(r.status).toBe(200);
+    const flow = r.json as { steps: Array<Record<string, unknown>>; errors: Array<{ path: string }> };
+    expect(flow.steps.map((s) => s.name)).toEqual(["Login", "Call"]);
+    expect(flow.steps[0]).toMatchObject({ order: 1, captures: ["token"], consumes: [] });
+    // "Call" only sets auth (no relative-URL baseUrl join happens without a leading folder check
+    // failing), and its bearer token references {{token}} — the exact var `Login` captures.
+    expect(flow.steps[1]).toMatchObject({ order: 2, captures: [], consumes: ["token"] });
+    expect(flow.errors.map((e) => e.path)).toContain("broken.tspec.yaml");
+  });
+});
+
+describe("web server api — import from the UI", () => {
+  const imports = resolve(repoRoot, "examples", "imports");
+
+  it("POST /api/import/postman converts and writes a collection into the workspace", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "truspec-web-import-pm-"));
+    try {
+      const json = JSON.parse(readFileSync(join(imports, "postman-collection.json"), "utf8"));
+      const r = await handleApi("POST", "/api/import/postman", noQuery, { json, targetDir: "imported" }, { dir });
+      const body = r.json as { ok: boolean; stats: { requests: number }; files: string[] };
+      expect(body.ok).toBe(true);
+      expect(body.stats.requests).toBeGreaterThan(0);
+      for (const f of body.files) expect(existsSync(join(dir, "imported", f))).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("POST /api/import/postman reports a graceful error for a non-collection JSON body", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "truspec-web-import-pm-bad-"));
+    try {
+      const r = await handleApi("POST", "/api/import/postman", noQuery, { json: { not: "a collection" } }, { dir });
+      expect(r.status).toBe(200);
+      expect((r.json as { ok: boolean }).ok).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("POST /api/import/bruno converts uploaded file contents (no real directory) and writes them", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "truspec-web-import-bru-"));
+    try {
+      const content = readFileSync(join(imports, "bruno", "get-user.bru"), "utf8");
+      const r = await handleApi(
+        "POST",
+        "/api/import/bruno",
+        noQuery,
+        { files: [{ path: "users/get-user.bru", content }], targetDir: "imported" },
+        { dir },
+      );
+      const body = r.json as { ok: boolean; stats: { requests: number }; files: string[] };
+      expect(body.ok).toBe(true);
+      expect(body.stats.requests).toBe(1);
+      expect(body.files.map((p) => p.replace(/\\/g, "/"))).toEqual(["users/get-user.tspec.yaml"]);
+      expect(existsSync(join(dir, "imported", "users", "get-user.tspec.yaml"))).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("POST /api/import/bruno refuses a client-supplied path that escapes the workspace", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "truspec-web-import-bru-escape-"));
+    try {
+      const content = readFileSync(join(imports, "bruno", "get-user.bru"), "utf8");
+      const r = await handleApi(
+        "POST",
+        "/api/import/bruno",
+        noQuery,
+        { files: [{ path: "../../evil.bru", content }] },
+        { dir },
+      );
+      const body = r.json as { ok: boolean; error: string };
+      expect(body.ok).toBe(false);
+      expect(body.error).toMatch(/escapes/);
+      expect(existsSync(join(dir, "..", "..", "evil.tspec.yaml"))).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("POST /api/import/bruno rejects a request with no files", async () => {
+    const r = await handleApi("POST", "/api/import/bruno", noQuery, { files: [] }, { dir: ctx.dir });
+    expect(r.status).toBe(400);
+  });
+});
+
 describe("web server api — spec-aware run (contract validation)", () => {
   it("passing spec to /api/run auto-validates a spec-linked request's response", async () => {
     const upstream = createServer((_req, res) => {
