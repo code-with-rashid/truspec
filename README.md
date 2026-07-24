@@ -85,6 +85,22 @@ Point the same commands at **your own** collection — a folder of `.tspec.yaml`
 
 Every command speaks `--json` for machines, and exits non-zero on failure so it drops straight into CI.
 
+## Download
+
+Prefer a GUI over the CLI? **TruSpec Desktop** is a native app (built with Tauri) that wraps the same `truspec serve` web UI in an installable window — no Node install required.
+
+Grab the installer for your OS from **[the latest release](https://github.com/code-with-rashid/truspec/releases/latest)**:
+
+- **Windows** — `TruSpec_<version>_x64-setup.exe` (or the `.msi`)
+- **macOS** — `TruSpec_<version>_aarch64.dmg` (Apple Silicon; runs on Intel Macs too, under Rosetta 2)
+- **Linux** — `.AppImage`, `.deb`, or `.rpm`
+
+These are **unsigned** builds for now (no code-signing cert or Apple notarization yet), so your OS will warn on first launch:
+
+- **Windows**: SmartScreen shows "unknown publisher" — click **More info → Run anyway**.
+- **macOS**: Gatekeeper quarantines the download — run `xattr -cr /Applications/TruSpec.app` once, then open it.
+- **Linux**: no equivalent warning.
+
 ## Use it from an AI agent (MCP)
 
 TruSpec ships a first-party [MCP](https://modelcontextprotocol.io) server so agents like Claude Code can author, run, and sync collections directly.
@@ -154,8 +170,8 @@ The CLI runs on Node ≥ 22. A Bun-compiled single binary for zero-install distr
 
 ## Status & roadmap
 
-**Shipped:** format + JSON Schema · runner (REST + GraphQL, auth, request chaining/capture, **post-response scripts**) · CLI (`run` [+ JUnit], `drift`, `coverage`, `contract`, `gen`, `import`, `mock`, `serve`) · OpenAPI drift (added/removed/**changed** + **`--live`** API probe) + coverage + **response contract validation** (`{ type: schema }` · `run --spec` · `contract`) · **local mock server** (latency + **request validation**) · `.env` + secrets (**masked in run output**) · Postman/Bruno import · MCP server (11 tools) · **web UI** (`truspec serve`) · **VS Code extension** (CodeLens + results view, pre-release).
-**Next:** publish v0.5.0 to npm + the extension to the Marketplace · **installable desktop app** (Tauri, wraps `truspec serve` — unsigned installers for Windows/macOS/Linux; see [#23](https://github.com/code-with-rashid/truspec/issues/23)) · **Bun single-binary** distribution · **in-UI request editing** · **pre-request scripting**.
+**Shipped:** format + JSON Schema · runner (REST + GraphQL, auth, request chaining/capture, **pre-/post-request scripts**) · CLI (`run` [+ JUnit], `drift`, `coverage`, `contract`, `gen`, `import`, `mock`, `serve`) · OpenAPI drift (added/removed/**changed** + **`--live`** API probe) + coverage + **response contract validation** (`{ type: schema }` · `run --spec` · `contract`) · **local mock server** (latency + **request validation**) · `.env` + secrets (**masked in run output**) · Postman/Bruno import · MCP server (11 tools) · **web UI** (`truspec serve`, with a **Flow view** for visualizing + running request chains as a graph) · **installable desktop app** (Tauri; unsigned installers for Windows/macOS/Linux — see [Download](#download)) · **VS Code extension** (CodeLens + results view, pre-release).
+**Next:** publish to the Marketplace · **Bun single-binary** distribution · **in-UI request editing**.
 
 Deferred by design (not bloat): hosted dashboards, visual flow builders, exotic protocols, mandatory cloud sync.
 
