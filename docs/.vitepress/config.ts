@@ -50,7 +50,7 @@ export default defineConfig({
           { text: "Scripting", link: "/scripting" },
           { text: "CI/CD", link: "/ci" },
           { text: "AI agents (MCP)", link: "/mcp" },
-          { text: "Editors", link: "/editors" },
+          { text: "Editors & desktop app", link: "/editors" },
         ],
       },
       { text: "npm", link: "https://www.npmjs.com/package/truspec" },
@@ -82,7 +82,7 @@ export default defineConfig({
           { text: "Scripting", link: "/scripting" },
           { text: "CI/CD integration", link: "/ci" },
           { text: "AI agents (MCP)", link: "/mcp" },
-          { text: "Editors: Web UI & VS Code", link: "/editors" },
+          { text: "Editors: Web UI, Desktop app & VS Code", link: "/editors" },
         ],
       },
       {
