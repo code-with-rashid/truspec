@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import {
   coverage as apiCoverage,
   drift as apiDrift,
@@ -45,6 +52,53 @@ const folderOf = (path: string): string => {
   const i = p.lastIndexOf("/");
   return i === -1 ? "·" : p.slice(0, i);
 };
+
+const baseName = (dir: string): string => {
+  const parts = normPath(dir).split("/").filter(Boolean);
+  return parts[parts.length - 1] ?? dir;
+};
+
+interface FolderNode {
+  name: string;
+  path: string;
+  folders: FolderNode[];
+  requests: RequestSummary[];
+}
+
+/** Real nested tree (not a flat "a/b/c" label) so the sidebar can show a collapsible hierarchy like Bruno's. */
+function buildFolderTree(requests: RequestSummary[]): FolderNode {
+  const root: FolderNode = { name: "", path: "", folders: [], requests: [] };
+  const index = new Map<string, FolderNode>([["", root]]);
+  for (const r of requests) {
+    const p = normPath(r.path);
+    const slash = p.lastIndexOf("/");
+    const dir = slash === -1 ? "" : p.slice(0, slash);
+    const segments = dir ? dir.split("/") : [];
+    let parent = root;
+    let acc = "";
+    for (const seg of segments) {
+      acc = acc ? `${acc}/${seg}` : seg;
+      let node = index.get(acc);
+      if (!node) {
+        node = { name: seg, path: acc, folders: [], requests: [] };
+        index.set(acc, node);
+        parent.folders.push(node);
+      }
+      parent = node;
+    }
+    parent.requests.push(r);
+  }
+  const sortRec = (n: FolderNode): void => {
+    n.folders.sort((a, b) => a.name.localeCompare(b.name));
+    n.folders.forEach(sortRec);
+  };
+  sortRec(root);
+  return root;
+}
+
+function countRequests(node: FolderNode): number {
+  return node.requests.length + node.folders.reduce((sum, f) => sum + countRequests(f), 0);
+}
 
 const statusClass = (code: number): string => {
   if (code >= 500) return "s5";
@@ -133,6 +187,48 @@ interface SpecOpRow {
   badge: "tested" | "changed" | "untested";
 }
 
+const MIN_SIDEBAR = 200;
+const MAX_SIDEBAR = 480;
+const MIN_RAIL = 260;
+const MAX_RAIL = 560;
+
+/** Drag-to-resize for a grid column's pixel width, persisted across sessions. */
+function usePanelWidth(storageKey: string, initial: number, min: number, max: number, invert: boolean) {
+  const [size, setSize] = useState<number>(() => {
+    const saved = Number(window.localStorage.getItem(storageKey));
+    return Number.isFinite(saved) && saved >= min && saved <= max ? saved : initial;
+  });
+
+  useEffect(() => {
+    window.localStorage.setItem(storageKey, String(size));
+  }, [storageKey, size]);
+
+  const onDragStart = useCallback(
+    (e: ReactPointerEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      const startX = e.clientX;
+      const startSize = size;
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+      const onMove = (ev: PointerEvent): void => {
+        const delta = ev.clientX - startX;
+        setSize(Math.min(max, Math.max(min, startSize + (invert ? -delta : delta))));
+      };
+      const onUp = (): void => {
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    },
+    [size, min, max, invert],
+  );
+
+  return [size, onDragStart] as const;
+}
+
 export function App() {
   const [state, setState] = useState<WorkspaceState | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -163,6 +259,9 @@ export function App() {
   const [mockEntries, setMockEntries] = useState<MockLogEntry[]>([]);
   const [mockBusy, setMockBusy] = useState(false);
   const [mockErr, setMockErr] = useState<string | null>(null);
+  const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set());
+  const [sidebarW, sidebarDrag] = usePanelWidth("truspec.sidebarWidth", 270, MIN_SIDEBAR, MAX_SIDEBAR, false);
+  const [railW, railDrag] = usePanelWidth("truspec.railWidth", 340, MIN_RAIL, MAX_RAIL, true);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -258,16 +357,17 @@ export function App() {
 
   const resultKey = useCallback((path: string) => normPath(state ? `${state.dir}/${path}` : path), [state]);
 
-  const grouped = useMemo(() => {
-    const map = new Map<string, RequestSummary[]>();
-    for (const r of state?.requests ?? []) {
-      const f = folderOf(r.path);
-      const list = map.get(f) ?? [];
-      list.push(r);
-      map.set(f, list);
-    }
-    return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  }, [state]);
+  const tree = useMemo(() => buildFolderTree(state?.requests ?? []), [state]);
+  const collectionName = state ? baseName(state.dir) : "";
+
+  const toggleFolder = useCallback((path: string) => {
+    setCollapsedFolders((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  }, []);
 
   const doRun = useCallback(
     async (target?: string) => {
@@ -521,41 +621,42 @@ export function App() {
         </button>
       </header>
 
-      <div className={`workspace ${showRail ? "" : "no-rail"}`}>
+      <div
+        className={`workspace ${showRail ? "" : "no-rail"}`}
+        style={{
+          gridTemplateColumns: showRail
+            ? `${sidebarW}px 5px minmax(0, 1fr) 5px ${railW}px`
+            : `${sidebarW}px 5px minmax(0, 1fr)`,
+        }}
+      >
         <aside className="sidebar">
-          <div className="rail-head">
-            collections <span className="count">{state?.requests.length ?? 0}</span>
+          <div className="rail-head collection-head" title={state?.dir}>
+            <span className="collection-glyph">▣</span>
+            <span className="collection-text">
+              <span className="collection-name">{collectionName || "collection"}</span>
+              <span className="collection-sub">{state?.requests.length ?? 0} requests</span>
+            </span>
             <button className="newreq" onClick={openNew} title="new request">
               + new
             </button>
           </div>
           <div className="tree">
-            {grouped.map(([folder, reqs]) => (
-              <div key={folder}>
-                <div className="group-name">{folder}</div>
-                {reqs.map((r, i) => {
-                  const res = ranResults.get(resultKey(r.path));
-                  return (
-                    <button
-                      key={r.path}
-                      className={`req ${selected === r.path ? "sel" : ""}`}
-                      style={{ animationDelay: `${i * 18}ms` }}
-                      onClick={() => {
-                        setSelected(r.path);
-                        setView("workspace");
-                        setTab("params");
-                        setRespTab("body");
-                      }}
-                    >
-                      <span className={`m m-${r.method}`}>{r.method}</span>
-                      <span className="rname">{r.name}</span>
-                      {!!driftRep?.removed.includes(r.specRef ?? "") && <span className="stale-tag">stale</span>}
-                      {res && <span className={`dot ${res.ok ? "ok" : "bad"}`} />}
-                    </button>
-                  );
-                })}
-              </div>
-            ))}
+            <FolderTree
+              node={tree}
+              depth={0}
+              collapsed={collapsedFolders}
+              onToggle={toggleFolder}
+              selected={selected}
+              driftRep={driftRep}
+              ranResults={ranResults}
+              resultKey={resultKey}
+              onSelect={(path) => {
+                setSelected(path);
+                setView("workspace");
+                setTab("params");
+                setRespTab("body");
+              }}
+            />
           </div>
 
           <div className="sidebar-foot">
@@ -585,6 +686,14 @@ export function App() {
             )}
           </div>
         </aside>
+
+        <div
+          className="resize-handle"
+          onPointerDown={sidebarDrag}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="resize sidebar"
+        />
 
         <main className="main">
           {editing ? (
@@ -653,6 +762,15 @@ export function App() {
           )}
         </main>
 
+        {showRail && (
+          <div
+            className="resize-handle"
+            onPointerDown={railDrag}
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="resize spec intelligence panel"
+          />
+        )}
         {showRail && (
           <section className="rail" aria-label="spec intelligence">
             <div className="rail-head">
@@ -875,6 +993,81 @@ function CommandPalette({
         </div>
       </div>
     </div>
+  );
+}
+
+function FolderTree({
+  node,
+  depth,
+  collapsed,
+  onToggle,
+  selected,
+  driftRep,
+  ranResults,
+  resultKey,
+  onSelect,
+}: {
+  node: FolderNode;
+  depth: number;
+  collapsed: Set<string>;
+  onToggle: (path: string) => void;
+  selected: string | null;
+  driftRep: DriftReport | null;
+  ranResults: Map<string, RunResult>;
+  resultKey: (path: string) => string;
+  onSelect: (path: string) => void;
+}) {
+  const indent = 8 + depth * 14;
+  return (
+    <>
+      {node.folders.map((f) => {
+        const isCollapsed = collapsed.has(f.path);
+        return (
+          <div key={f.path}>
+            <button
+              className="folder-row"
+              style={{ paddingLeft: indent }}
+              onClick={() => onToggle(f.path)}
+              title={f.path}
+            >
+              <span className={`folder-chev ${isCollapsed ? "" : "open"}`}>▸</span>
+              <span className="folder-icon">▤</span>
+              <span className="folder-name">{f.name}</span>
+              <span className="folder-count">{countRequests(f)}</span>
+            </button>
+            {!isCollapsed && (
+              <FolderTree
+                node={f}
+                depth={depth + 1}
+                collapsed={collapsed}
+                onToggle={onToggle}
+                selected={selected}
+                driftRep={driftRep}
+                ranResults={ranResults}
+                resultKey={resultKey}
+                onSelect={onSelect}
+              />
+            )}
+          </div>
+        );
+      })}
+      {node.requests.map((r, i) => {
+        const res = ranResults.get(resultKey(r.path));
+        return (
+          <button
+            key={r.path}
+            className={`req ${selected === r.path ? "sel" : ""}`}
+            style={{ paddingLeft: indent + 8, animationDelay: `${i * 18}ms` }}
+            onClick={() => onSelect(r.path)}
+          >
+            <span className={`m m-${r.method}`}>{r.method}</span>
+            <span className="rname">{r.name}</span>
+            {!!driftRep?.removed.includes(r.specRef ?? "") && <span className="stale-tag">stale</span>}
+            {res && <span className={`dot ${res.ok ? "ok" : "bad"}`} />}
+          </button>
+        );
+      })}
+    </>
   );
 }
 

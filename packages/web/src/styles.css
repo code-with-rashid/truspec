@@ -342,6 +342,25 @@ select:focus {
   min-height: 0;
   overflow: auto;
 }
+.resize-handle {
+  position: relative;
+  cursor: col-resize;
+  background: transparent;
+  touch-action: none;
+  overflow: visible;
+}
+.resize-handle::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  right: -3px;
+}
+.resize-handle:hover,
+.resize-handle:active {
+  background: var(--line-2);
+}
 .sidebar {
   border-right: 1px solid var(--line);
   background: color-mix(in oklab, var(--panel) 70%, transparent);
@@ -374,18 +393,79 @@ select:focus {
   padding: 6px;
   flex: 1;
 }
-.group-name {
-  padding: 10px 8px 4px;
-  font-size: 11px;
+.collection-head {
+  align-items: center;
+  gap: 9px;
+}
+.collection-glyph {
+  color: var(--lime);
+  font-size: 13px;
+  flex-shrink: 0;
+}
+.collection-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow: hidden;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.collection-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.collection-sub {
+  font-size: 10px;
   color: var(--dimmer);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.folder-row {
+  width: 100%;
   display: flex;
   align-items: center;
   gap: 6px;
+  padding: 6px 8px 6px 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--dim);
+  font-size: 11.5px;
+  border-radius: 6px;
+  text-align: left;
 }
-.group-name::before {
-  content: "▾";
-  color: var(--line-2);
+.folder-row:hover {
+  background: var(--panel-3);
+  color: var(--fg);
+}
+.folder-chev {
+  display: inline-block;
   font-size: 9px;
+  color: var(--line-2);
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+.folder-chev.open {
+  transform: rotate(90deg);
+}
+.folder-icon {
+  color: var(--dimmer);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.folder-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.folder-count {
+  color: var(--dimmer);
+  font-size: 10px;
 }
 .req {
   position: relative;
