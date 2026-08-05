@@ -48,6 +48,57 @@ pub fn open_collection_flow(app: AppHandle, force_picker: bool) {
     }
 }
 
+/// "File > New Collection…" — unlike "Open Collection", the picked folder is scaffolded with a
+/// minimal `folder.tspec.yaml` + `environments/local.env.yaml` (if not already present) before
+/// switching to it, so a brand-new empty directory is immediately a usable collection.
+pub fn new_collection_flow(app: AppHandle) {
+    let app_for_closure = app.clone();
+    app.dialog().file().pick_folder(move |folder| {
+        log::info!("sidecar: new-collection folder picker result={folder:?}");
+        let Some(path) = folder else {
+            return; // user cancelled the picker
+        };
+        let Ok(dir_path) = path.into_path() else {
+            return;
+        };
+        if let Err(e) = scaffold_collection(&dir_path) {
+            log::info!("sidecar: failed to scaffold new collection at {dir_path:?}: {e}");
+            return;
+        }
+        let dir = dir_path.to_string_lossy().to_string();
+        config::set_last_dir(&app_for_closure, &dir);
+        start(app_for_closure, dir);
+    });
+}
+
+/// Writes just enough for the directory to parse as a collection — `folder.tspec.yaml` (schema
+/// version + a `name` derived from the directory) and a starter `local` environment. Leaves any
+/// existing files alone (an already-populated folder picked via "New Collection" isn't touched).
+fn scaffold_collection(dir: &std::path::Path) -> std::io::Result<()> {
+    use std::fs;
+
+    let name = dir.file_name().and_then(|n| n.to_str()).unwrap_or("collection");
+    // JSON string escaping doubles as valid YAML double-quoted-scalar escaping, so this stays
+    // correct for names with quotes/backslashes without pulling in a YAML-writing crate.
+    let name_yaml = serde_json::to_string(name).unwrap_or_else(|_| "\"collection\"".to_string());
+
+    let folder_cfg = dir.join("folder.tspec.yaml");
+    if !folder_cfg.exists() {
+        fs::write(&folder_cfg, format!("tspec: \"0.1\"\nname: {name_yaml}\n"))?;
+    }
+
+    let env_dir = dir.join("environments");
+    fs::create_dir_all(&env_dir)?;
+    let env_file = env_dir.join("local.env.yaml");
+    if !env_file.exists() {
+        fs::write(
+            &env_file,
+            "tspec: \"0.1\"\nname: local\nvariables:\n  baseUrl: \"http://localhost:3000\"\n",
+        )?;
+    }
+    Ok(())
+}
+
 fn start(app: AppHandle, dir: String) {
     kill_sidecar(&app);
 
