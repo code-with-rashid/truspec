@@ -4,38 +4,63 @@ import {
   useMemo,
   useRef,
   useState,
+  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import {
   coverage as apiCoverage,
+  createFolder,
+  deletePath,
   drift as apiDrift,
+  duplicatePath,
+  exportPostman,
   getRequest,
   getState,
   mockLog as apiMockLog,
   mockStart as apiMockStart,
   mockStatus as apiMockStatus,
   mockStop as apiMockStop,
+  renamePath,
   run as apiRun,
   saveRequest,
+  saveRequestObject,
   type CoverageReport,
   type DriftReport,
   type MockLogEntry,
   type MockStatus,
-  type RequestAuth,
-  type RequestBody,
   type RequestDetail,
   type RequestSummary,
   type RunResult,
   type WorkspaceState,
 } from "./api";
+import { CommandPalette } from "./components/CommandPalette";
+import { ConfirmModal } from "./components/ConfirmModal";
+import { ContextMenu, type ContextMenuItem, type ContextMenuState } from "./components/ContextMenu";
+import { Editor, type EditMode } from "./components/Editor";
+import { EnvironmentModal } from "./components/EnvironmentModal";
+import { FolderSettingsModal } from "./components/FolderSettingsModal";
+import { FolderTree, type RowAction, type RowActionsController, type RowKind } from "./components/FolderTree";
+import { contractInfo, RequestWorkspace, specRefOf, type ReqTab, type RespTab } from "./components/RequestWorkspace";
+import { TabStrip } from "./components/TabStrip";
+import { statusClass } from "./format-utils";
 import { FlowView } from "./FlowView";
+import { baseName, buildFolderTree, countRequests, filterTree, normPath, shortDir, type FolderNode } from "./tree";
 
 type Theme = "dark" | "light";
 type View = "workspace" | "spec" | "mock" | "flow";
-type EditMode = "edit" | "new";
-type ReqTab = "params" | "headers" | "body" | "auth" | "assert";
-type RespTab = "body" | "headers";
 type RailTab = "spec" | "runs";
+
+/** One open request tab. `detail`/`draft` are null while the tab's content is still loading.
+ * Draft/dirty live here (per tab), not in a shared hook, so a background tab keeps its unsaved
+ * edits and dirty flag even while a different tab is mounted in the workspace pane. */
+interface OpenTab {
+  path: string;
+  detail: RequestDetail | null;
+  draft: RequestDetail | null;
+  dirty: boolean;
+  tab: ReqTab;
+  respTab: RespTab;
+}
 
 const NEW_TEMPLATE = `name: New request
 method: GET
@@ -43,142 +68,6 @@ url: "{{baseUrl}}/path"
 assertions:
   - { type: status, equals: 200 }
 `;
-
-/** Server paths are OS-native (`\` on Windows); normalize before splitting/comparing on the client. */
-const normPath = (path: string): string => path.replace(/\\/g, "/");
-
-const folderOf = (path: string): string => {
-  const p = normPath(path);
-  const i = p.lastIndexOf("/");
-  return i === -1 ? "·" : p.slice(0, i);
-};
-
-const baseName = (dir: string): string => {
-  const parts = normPath(dir).split("/").filter(Boolean);
-  return parts[parts.length - 1] ?? dir;
-};
-
-interface FolderNode {
-  name: string;
-  path: string;
-  folders: FolderNode[];
-  requests: RequestSummary[];
-}
-
-/** Real nested tree (not a flat "a/b/c" label) so the sidebar can show a collapsible hierarchy like Bruno's. */
-function buildFolderTree(requests: RequestSummary[]): FolderNode {
-  const root: FolderNode = { name: "", path: "", folders: [], requests: [] };
-  const index = new Map<string, FolderNode>([["", root]]);
-  for (const r of requests) {
-    const p = normPath(r.path);
-    const slash = p.lastIndexOf("/");
-    const dir = slash === -1 ? "" : p.slice(0, slash);
-    const segments = dir ? dir.split("/") : [];
-    let parent = root;
-    let acc = "";
-    for (const seg of segments) {
-      acc = acc ? `${acc}/${seg}` : seg;
-      let node = index.get(acc);
-      if (!node) {
-        node = { name: seg, path: acc, folders: [], requests: [] };
-        index.set(acc, node);
-        parent.folders.push(node);
-      }
-      parent = node;
-    }
-    parent.requests.push(r);
-  }
-  const sortRec = (n: FolderNode): void => {
-    n.folders.sort((a, b) => a.name.localeCompare(b.name));
-    n.folders.forEach(sortRec);
-  };
-  sortRec(root);
-  return root;
-}
-
-function countRequests(node: FolderNode): number {
-  return node.requests.length + node.folders.reduce((sum, f) => sum + countRequests(f), 0);
-}
-
-const statusClass = (code: number): string => {
-  if (code >= 500) return "s5";
-  if (code >= 400) return "s4";
-  if (code >= 300) return "s3";
-  if (code >= 200) return "s2";
-  return "s0";
-};
-
-const prettyBody = (text: string): string => {
-  try {
-    return JSON.stringify(JSON.parse(text), null, 2);
-  } catch {
-    return text;
-  }
-};
-
-interface Token {
-  t: string;
-  cls: string;
-}
-
-/** Lightweight JSON syntax highlighter — keys/strings/numbers/booleans/punctuation get a color. */
-function tokenize(src: string): Token[] {
-  const out: Token[] = [];
-  const re = /("(?:\\.|[^"\\])*"\s*:)|("(?:\\.|[^"\\])*")|(-?\d+\.?\d*(?:[eE][+-]?\d+)?)|(true|false|null)|([{}[\],])|(\s+)|([^\s]+)/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(src)) !== null) {
-    let cls = "tok-plain";
-    if (m[1]) cls = "tok-key";
-    else if (m[2]) cls = "tok-str";
-    else if (m[3]) cls = "tok-num";
-    else if (m[4]) cls = "tok-bool";
-    else if (m[5]) cls = "tok-punct";
-    out.push({ t: m[0], cls });
-    if (m.index === re.lastIndex) re.lastIndex++;
-  }
-  return out;
-}
-
-function JsonBlock({ text }: { text: string }) {
-  const tokens = useMemo(() => tokenize(text), [text]);
-  return (
-    <pre className="body">
-      {tokens.map((tok, i) => (
-        <span key={i} className={tok.cls}>
-          {tok.t}
-        </span>
-      ))}
-    </pre>
-  );
-}
-
-function describeAssertion(a: Record<string, unknown>): string {
-  const { type: _type, ...rest } = a;
-  const parts = Object.entries(rest).map(([k, v]) => `${k}: ${JSON.stringify(v)}`);
-  return parts.join(", ") || "—";
-}
-
-/** A request's tie to its spec operation is the same string `driftReport` uses for `removed`. */
-function specRefOf(detail: Pick<RequestDetail, "spec" | "name"> | null): string | undefined {
-  if (!detail?.spec) return undefined;
-  return detail.spec.operation ?? detail.spec.operationId ?? detail.name;
-}
-
-interface ContractInfo {
-  state: "ok" | "fail" | "none";
-  note: string;
-}
-
-/** Mirrors `truspec run --spec`: derive the contract badge from the auto-injected `schema` assertion. */
-function contractInfo(detail: RequestDetail | null, result?: RunResult): ContractInfo {
-  if (!detail?.spec) return { state: "none", note: "no spec operation linked" };
-  const schemaResult = result?.assertions.find((a) => a.type === "schema");
-  if (!schemaResult) return { state: "none", note: "not yet validated — select a spec, then run" };
-  if (schemaResult.ok && schemaResult.message.includes("(skipped)")) {
-    return { state: "none", note: schemaResult.message };
-  }
-  return { state: schemaResult.ok ? "ok" : "fail", note: schemaResult.message };
-}
 
 interface SpecOpRow {
   key: string;
@@ -232,8 +121,8 @@ function usePanelWidth(storageKey: string, initial: number, min: number, max: nu
 export function App() {
   const [state, setState] = useState<WorkspaceState | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [selected, setSelected] = useState<string | null>(null);
-  const [detail, setDetail] = useState<RequestDetail | null>(null);
+  const [tabs, setTabs] = useState<OpenTab[]>([]);
+  const [activeTabPath, setActiveTabPath] = useState<string | null>(null);
   const [env, setEnv] = useState("");
   const [spec, setSpec] = useState("");
   const [running, setRunning] = useState(false);
@@ -250,8 +139,6 @@ export function App() {
   const [editorText, setEditorText] = useState("");
   const [editorErr, setEditorErr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [tab, setTab] = useState<ReqTab>("params");
-  const [respTab, setRespTab] = useState<RespTab>("body");
   const [railTab, setRailTab] = useState<RailTab>("spec");
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteQ, setPaletteQ] = useState("");
@@ -260,8 +147,26 @@ export function App() {
   const [mockBusy, setMockBusy] = useState(false);
   const [mockErr, setMockErr] = useState<string | null>(null);
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set());
+  const [collectionCollapsed, setCollectionCollapsed] = useState(false);
+  const [creatingFolder, setCreatingFolder] = useState(false);
+  const [newFolderPath, setNewFolderPath] = useState("");
+  const [folderErr, setFolderErr] = useState<string | null>(null);
+  const [folderBusy, setFolderBusy] = useState(false);
+  const [renamingPath, setRenamingPath] = useState<string | null>(null);
+  const [renamingKind, setRenamingKind] = useState<RowKind>("request");
+  const [renameValue, setRenameValue] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<{ path: string; kind: RowKind } | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteErr, setDeleteErr] = useState<string | null>(null);
+  const [dragging, setDragging] = useState<{ path: string; kind: RowKind } | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const [envModalOpen, setEnvModalOpen] = useState(false);
+  const [ctxMenu, setCtxMenu] = useState<ContextMenuState | null>(null);
+  const [folderSettingsPath, setFolderSettingsPath] = useState<string | null>(null);
   const [sidebarW, sidebarDrag] = usePanelWidth("truspec.sidebarWidth", 270, MIN_SIDEBAR, MAX_SIDEBAR, false);
   const [railW, railDrag] = usePanelWidth("truspec.railWidth", 340, MIN_RAIL, MAX_RAIL, true);
+
+  const activeTab = tabs.find((t) => t.path === activeTabPath) ?? null;
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -280,23 +185,27 @@ export function App() {
       .catch(() => {});
   }, []);
 
+  // Fetch content for any tab that doesn't have it yet (freshly opened). A ref-tracked in-flight
+  // set (rather than relying purely on `detail === null`) stops a second fetch from firing for the
+  // same path while the first is still resolving, across the effect re-running as `tabs` changes.
+  const loadingTabsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    if (!selected) {
-      setDetail(null);
-      return;
+    for (const t of tabs) {
+      if (t.detail !== null || loadingTabsRef.current.has(t.path)) continue;
+      loadingTabsRef.current.add(t.path);
+      getRequest(t.path)
+        .then((d) => {
+          setTabs((prev) => prev.map((x) => (x.path === t.path ? { ...x, detail: d, draft: d } : x)));
+        })
+        .catch(() => {
+          setTabs((prev) => prev.filter((x) => x.path !== t.path));
+          setActiveTabPath((prev) => (prev === t.path ? null : prev));
+        })
+        .finally(() => {
+          loadingTabsRef.current.delete(t.path);
+        });
     }
-    let ignore = false;
-    getRequest(selected)
-      .then((d) => {
-        if (!ignore) setDetail(d);
-      })
-      .catch(() => {
-        if (!ignore) setDetail(null);
-      });
-    return () => {
-      ignore = true;
-    };
-  }, [selected]);
+  }, [tabs]);
 
   // A chosen spec drives the header badge, the right rail, and the spec dashboard — analyze it
   // as soon as it's picked rather than waiting for the user to open the spec tab.
@@ -357,7 +266,15 @@ export function App() {
 
   const resultKey = useCallback((path: string) => normPath(state ? `${state.dir}/${path}` : path), [state]);
 
-  const tree = useMemo(() => buildFolderTree(state?.requests ?? []), [state]);
+  const fullTree = useMemo(() => buildFolderTree(state?.requests ?? [], state?.folders ?? []), [state]);
+  const [treeQuery, setTreeQuery] = useState("");
+  const filteredTree = useMemo(() => filterTree(fullTree, treeQuery), [fullTree, treeQuery]);
+  const tree = filteredTree ?? { ...fullTree, folders: [], requests: [] };
+  const treeNoMatches = treeQuery.trim() !== "" && filteredTree === null;
+  // An active search overrides manual collapse state without mutating it, so clearing the
+  // search reverts to whatever was collapsed before — the filtered tree only contains matching
+  // folders anyway, so there's nothing to hide.
+  const visibleCollapsed = treeQuery.trim() ? new Set<string>() : collapsedFolders;
   const collectionName = state ? baseName(state.dir) : "";
 
   const toggleFolder = useCallback((path: string) => {
@@ -368,6 +285,336 @@ export function App() {
       return next;
     });
   }, []);
+
+  const openNewFolder = useCallback((prefix?: string) => {
+    setFolderErr(null);
+    setNewFolderPath(prefix ? `${prefix}/` : "");
+    setCreatingFolder(true);
+  }, []);
+
+  const closeNewFolder = useCallback(() => {
+    setCreatingFolder(false);
+    setNewFolderPath("");
+    setFolderErr(null);
+  }, []);
+
+  const doCreateFolder = useCallback(async () => {
+    const p = newFolderPath.trim();
+    if (!p) return;
+    setFolderBusy(true);
+    setFolderErr(null);
+    try {
+      const res = await createFolder(p);
+      if (!res.ok) {
+        setFolderErr(res.error ?? "failed to create folder");
+        return;
+      }
+      setState(await getState());
+      closeNewFolder();
+    } catch (e) {
+      setFolderErr(String(e));
+    } finally {
+      setFolderBusy(false);
+    }
+  }, [newFolderPath, closeNewFolder]);
+
+  // Open-or-focus a request tab. Reused by the tree, the command palette, run results, and the
+  // raw-YAML editor's save flow.
+  const openTab = useCallback((path: string) => {
+    setActiveTabPath(path);
+    setTabs((prev) => {
+      if (prev.some((t) => t.path === path)) return prev;
+      return [...prev, { path, detail: null, draft: null, dirty: false, tab: "params", respTab: "body" }];
+    });
+  }, []);
+
+  const closeTab = useCallback(
+    (path: string) => {
+      setTabs((prev) => {
+        const idx = prev.findIndex((t) => t.path === path);
+        if (idx === -1) return prev;
+        const next = prev.filter((t) => t.path !== path);
+        if (activeTabPath === path) {
+          const neighbor = next[Math.min(idx, next.length - 1)];
+          setActiveTabPath(neighbor?.path ?? null);
+        }
+        return next;
+      });
+    },
+    [activeTabPath],
+  );
+
+  const updateActiveTab = useCallback(
+    (patch: Partial<OpenTab>) => {
+      setTabs((prev) => prev.map((t) => (t.path === activeTabPath ? { ...t, ...patch } : t)));
+    },
+    [activeTabPath],
+  );
+
+  const setActiveTabField = useCallback(
+    <K extends keyof RequestDetail>(key: K, value: RequestDetail[K]) => {
+      setTabs((prev) =>
+        prev.map((t) => {
+          if (t.path !== activeTabPath || !t.draft || !t.detail) return t;
+          const draft = { ...t.draft, [key]: value };
+          const dirty = JSON.stringify(draft) !== JSON.stringify(t.detail);
+          return { ...t, draft, dirty };
+        }),
+      );
+    },
+    [activeTabPath],
+  );
+
+  const resetActiveTabDraft = useCallback(() => {
+    setTabs((prev) => prev.map((t) => (t.path === activeTabPath ? { ...t, draft: t.detail, dirty: false } : t)));
+  }, [activeTabPath]);
+
+  const startRename = useCallback((path: string, kind: RowKind) => {
+    const norm = normPath(path);
+    const slash = norm.lastIndexOf("/");
+    const leaf = slash === -1 ? norm : norm.slice(slash + 1);
+    setRenamingPath(path);
+    setRenamingKind(kind);
+    setRenameValue(kind === "request" ? leaf.replace(/\.tspec\.yaml$/, "") : leaf);
+  }, []);
+
+  const cancelRename = useCallback(() => {
+    setRenamingPath(null);
+    setRenameValue("");
+  }, []);
+
+  const doRename = useCallback(
+    async (oldPath: string, newPath: string, kind: RowKind) => {
+      const res = await renamePath(oldPath, newPath);
+      if (!res.ok) {
+        setError(res.error ?? "rename failed");
+        setRenamingPath(null);
+        return;
+      }
+      const finalPath = res.path ?? newPath;
+      const oldNorm = normPath(oldPath);
+      const finalNorm = normPath(finalPath);
+      // A request rename only ever changes one path; a folder rename can move a whole prefix —
+      // remap `tabs`/`activeTabPath`/`ranResults`/`collapsedFolders` so in-flight state survives either.
+      const remap = (p: string): string => {
+        const pn = normPath(p);
+        if (pn === oldNorm) return finalNorm;
+        if (kind === "folder" && pn.startsWith(`${oldNorm}/`)) return finalNorm + pn.slice(oldNorm.length);
+        return p;
+      };
+      setTabs((prev) => prev.map((t) => ({ ...t, path: remap(t.path) })));
+      setActiveTabPath((prev) => (prev !== null ? remap(prev) : prev));
+      setRanResults((prev) => {
+        const oldKey = resultKey(oldPath);
+        const newKey = resultKey(finalPath);
+        const next = new Map<string, RunResult>();
+        for (const [k, v] of prev) {
+          if (k === oldKey) next.set(newKey, v);
+          else if (kind === "folder" && k.startsWith(`${oldKey}/`)) next.set(newKey + k.slice(oldKey.length), v);
+          else next.set(k, v);
+        }
+        return next;
+      });
+      setCollapsedFolders((prev) => new Set([...prev].map(remap)));
+      setRenamingPath(null);
+      setRenameValue("");
+      setState(await getState());
+    },
+    [resultKey],
+  );
+
+  // Only called via handleFolderDrop, which already checks canDropAt — so the target is
+  // guaranteed valid (not the item's current folder, not the item's own subtree) by the time
+  // this runs.
+  const doMove = useCallback(
+    (draggedPath: string, kind: RowKind, targetFolderPath: string) => {
+      const leaf = baseName(normPath(draggedPath));
+      const newPath = targetFolderPath ? `${targetFolderPath}/${leaf}` : leaf;
+      void doRename(draggedPath, newPath, kind);
+    },
+    [doRename],
+  );
+
+  const handleRowDragStart = useCallback((path: string, kind: RowKind) => {
+    setDragging({ path, kind });
+  }, []);
+
+  const handleRowDragEnd = useCallback(() => {
+    setDragging(null);
+    setDropTarget(null);
+  }, []);
+
+  const canDropAt = useCallback(
+    (targetFolderPath: string): boolean => {
+      if (!dragging) return false;
+      const norm = normPath(dragging.path);
+      const slash = norm.lastIndexOf("/");
+      const currentParent = slash === -1 ? "" : norm.slice(0, slash);
+      if (targetFolderPath === currentParent) return false;
+      if (dragging.kind === "folder" && (targetFolderPath === norm || targetFolderPath.startsWith(`${norm}/`))) {
+        return false;
+      }
+      return true;
+    },
+    [dragging],
+  );
+
+  const handleFolderDragEnter = useCallback(
+    (path: string) => {
+      if (canDropAt(path)) setDropTarget(path);
+    },
+    [canDropAt],
+  );
+
+  const handleFolderDragLeave = useCallback((path: string) => {
+    setDropTarget((prev) => (prev === path ? null : prev));
+  }, []);
+
+  const handleFolderDrop = useCallback(
+    (targetFolderPath: string) => {
+      if (dragging && canDropAt(targetFolderPath)) doMove(dragging.path, dragging.kind, targetFolderPath);
+      setDragging(null);
+      setDropTarget(null);
+    },
+    [dragging, canDropAt, doMove],
+  );
+
+  const submitRename = useCallback(() => {
+    if (!renamingPath) return;
+    const trimmed = renameValue.trim();
+    if (!trimmed) {
+      cancelRename();
+      return;
+    }
+    const norm = normPath(renamingPath);
+    const slash = norm.lastIndexOf("/");
+    const dir = slash === -1 ? "" : norm.slice(0, slash);
+    const leaf = renamingKind === "request" ? `${trimmed}.tspec.yaml` : trimmed;
+    const newPath = dir ? `${dir}/${leaf}` : leaf;
+    if (newPath === norm) {
+      cancelRename();
+      return;
+    }
+    void doRename(renamingPath, newPath, renamingKind);
+  }, [renamingPath, renameValue, renamingKind, doRename, cancelRename]);
+
+  const doDuplicate = useCallback(async (path: string) => {
+    try {
+      const res = await duplicatePath(path);
+      if (!res.ok) {
+        setError(res.error ?? "duplicate failed");
+        return;
+      }
+      setState(await getState());
+    } catch (e) {
+      setError(String(e));
+    }
+  }, []);
+
+  const doExport = useCallback(async () => {
+    try {
+      const result = await exportPostman();
+      const failure = result as { ok?: boolean; error?: string };
+      if (failure.ok === false) {
+        setError(failure.error ?? "export failed");
+        return;
+      }
+      const blob = new Blob([JSON.stringify(result, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${collectionName || "collection"}.postman_collection.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError(String(e));
+    }
+  }, [collectionName]);
+
+  const handleRowAction = useCallback(
+    (action: RowAction, path: string, kind: RowKind) => {
+      if (action === "rename") startRename(path, kind);
+      else if (action === "duplicate") void doDuplicate(path);
+      else if (action === "delete") {
+        setDeleteErr(null);
+        setDeleteTarget({ path, kind });
+      }
+    },
+    [startRename, doDuplicate],
+  );
+
+  const rowActions: RowActionsController = {
+    renamingPath,
+    renameValue,
+    onRenameChange: setRenameValue,
+    onRenameSubmit: submitRename,
+    onRenameCancel: cancelRename,
+    onAction: handleRowAction,
+  };
+
+  const doDelete = useCallback(async () => {
+    if (!deleteTarget) return;
+    setDeleteBusy(true);
+    setDeleteErr(null);
+    try {
+      const res = await deletePath(deleteTarget.path);
+      if (!res.ok) {
+        setDeleteErr(res.error ?? "delete failed");
+        return;
+      }
+      const { path, kind } = deleteTarget;
+      const norm = normPath(path);
+      const under = (p: string): boolean => {
+        const pn = normPath(p);
+        return pn === norm || (kind === "folder" && pn.startsWith(`${norm}/`));
+      };
+      const remainingTabs = tabs.filter((t) => !under(t.path));
+      setTabs(remainingTabs);
+      if (activeTabPath !== null && under(activeTabPath)) {
+        setActiveTabPath(remainingTabs[remainingTabs.length - 1]?.path ?? null);
+      }
+      setRanResults((prev) => {
+        const key = resultKey(path);
+        const next = new Map<string, RunResult>();
+        for (const [k, v] of prev) {
+          if (k === key) continue;
+          if (kind === "folder" && k.startsWith(`${key}/`)) continue;
+          next.set(k, v);
+        }
+        return next;
+      });
+      setCollapsedFolders((prev) => new Set([...prev].filter((p) => !under(p))));
+      if (editing === "edit" && under(editorPath)) setEditing(null);
+      setDeleteTarget(null);
+      setState(await getState());
+    } catch (e) {
+      setDeleteErr(String(e));
+    } finally {
+      setDeleteBusy(false);
+    }
+  }, [deleteTarget, tabs, activeTabPath, resultKey, editing, editorPath]);
+
+  const deleteCount = useMemo(() => {
+    if (!deleteTarget || deleteTarget.kind !== "folder") return 0;
+    const find = (node: FolderNode): FolderNode | null => {
+      if (node.path === deleteTarget.path) return node;
+      for (const f of node.folders) {
+        const found = find(f);
+        if (found) return found;
+      }
+      return null;
+    };
+    const node = find(fullTree);
+    return node ? countRequests(node) : 0;
+  }, [deleteTarget, fullTree]);
+
+  const deleteEnvironment = useCallback((name: string) => deletePath(`environments/${name}.env.yaml`), []);
+
+  const onEnvironmentsChanged = useCallback(async () => {
+    const s = await getState();
+    setState(s);
+    if (env && !s.environments.includes(env)) setEnv(s.environments[0] ?? "");
+  }, [env]);
 
   const doRun = useCallback(
     async (target?: string) => {
@@ -395,21 +642,63 @@ export function App() {
   );
 
   const openEdit = useCallback(() => {
-    if (!detail || !selected) return;
-    setEditorPath(selected);
-    setEditorText(detail.raw ?? "");
+    if (!activeTab?.detail) return;
+    setEditorPath(activeTab.path);
+    setEditorText(activeTab.detail.raw ?? "");
     setEditorErr(null);
     setEditorKey((k) => k + 1);
     setEditing("edit");
-  }, [detail, selected]);
+  }, [activeTab]);
 
-  const openNew = useCallback(() => {
-    setEditorPath("new-request.tspec.yaml");
+  const openNew = useCallback((prefix?: string) => {
+    setEditorPath(prefix ? `${prefix}/new-request.tspec.yaml` : "new-request.tspec.yaml");
     setEditorText(NEW_TEMPLATE);
     setEditorErr(null);
     setEditorKey((k) => k + 1);
     setEditing("new");
   }, []);
+
+  const handleRowContextMenu = useCallback(
+    (x: number, y: number, path: string, kind: RowKind) => {
+      const items: ContextMenuItem[] = [];
+      if (kind === "folder") {
+        items.push(
+          { label: "new request", onSelect: () => openNew(path) },
+          { label: "new folder", onSelect: () => openNewFolder(path) },
+          { label: "settings", onSelect: () => setFolderSettingsPath(path) },
+        );
+      }
+      items.push(
+        { label: "rename", onSelect: () => startRename(path, kind) },
+        { label: "duplicate", onSelect: () => void doDuplicate(path) },
+        {
+          label: "delete",
+          danger: true,
+          onSelect: () => {
+            setDeleteErr(null);
+            setDeleteTarget({ path, kind });
+          },
+        },
+      );
+      setCtxMenu({ x, y, items });
+    },
+    [openNew, openNewFolder, startRename, doDuplicate],
+  );
+
+  const handleTreeContextMenu = useCallback(
+    (e: ReactMouseEvent) => {
+      e.preventDefault();
+      setCtxMenu({
+        x: e.clientX,
+        y: e.clientY,
+        items: [
+          { label: "new request", onSelect: () => openNew() },
+          { label: "new folder", onSelect: () => openNewFolder() },
+        ],
+      });
+    },
+    [openNew, openNewFolder],
+  );
 
   const doSave = useCallback(async (path: string, text: string) => {
     setSaving(true);
@@ -422,8 +711,16 @@ export function App() {
       }
       const saved = res.path ?? path;
       setState(await getState()); // refresh sidebar (picks up a new file)
-      setDetail(await getRequest(saved)); // refresh the open request
-      setSelected(saved);
+      const freshDetail = await getRequest(saved);
+      setTabs((prev) => {
+        if (prev.some((t) => t.path === saved)) {
+          return prev.map((t) =>
+            t.path === saved ? { ...t, detail: freshDetail, draft: freshDetail, dirty: false } : t,
+          );
+        }
+        return [...prev, { path: saved, detail: freshDetail, draft: freshDetail, dirty: false, tab: "params", respTab: "body" }];
+      });
+      setActiveTabPath(saved);
       setView("workspace");
       setEditing(null);
     } catch (e) {
@@ -431,6 +728,22 @@ export function App() {
     } finally {
       setSaving(false);
     }
+  }, []);
+
+  const doSaveInline = useCallback(async (path: string, request: Record<string, unknown>) => {
+    const res = await saveRequestObject(path, request);
+    if (res.ok) {
+      const saved = res.path ?? path;
+      setState(await getState());
+      const freshDetail = await getRequest(saved);
+      setTabs((prev) =>
+        prev.map((t) =>
+          t.path === path ? { ...t, path: saved, detail: freshDetail, draft: freshDetail, dirty: false } : t,
+        ),
+      );
+      setActiveTabPath((prev) => (prev === path ? saved : prev));
+    }
+    return res;
   }, []);
 
   const doMockStart = useCallback(async () => {
@@ -482,7 +795,7 @@ export function App() {
     if (p.get("new") === "1") openNew();
   }, [state, booted, doRun, openNew]);
 
-  const selectedResult = selected ? ranResults.get(resultKey(selected)) : undefined;
+  const selectedResult = activeTab ? ranResults.get(resultKey(activeTab.path)) : undefined;
 
   const runRows = useMemo(() => {
     if (!state) return [];
@@ -497,11 +810,11 @@ export function App() {
         status: res.response?.status,
         ms: res.response?.durationMs,
         onSelect: () => {
-          setSelected(r.path);
+          openTab(r.path);
           setView("workspace");
         },
       }));
-  }, [state, ranResults, resultKey]);
+  }, [state, ranResults, resultKey, openTab]);
 
   const runStats = useMemo(() => {
     let passed = 0;
@@ -531,22 +844,23 @@ export function App() {
       .sort((a, b) => a.key.localeCompare(b.key));
   }, [covRep, driftRep]);
 
-  const activeSpecRef = specRefOf(detail);
+  const activeSpecRef = specRefOf(activeTab?.detail ?? null);
   const isStale = !!activeSpecRef && !!driftRep?.removed.includes(activeSpecRef);
-  const contract = contractInfo(detail, selectedResult);
+  const contract = contractInfo(activeTab?.detail ?? null, selectedResult);
 
   const paletteItems = useMemo(() => {
     const q = paletteQ.trim().toLowerCase();
     return (state?.requests ?? []).filter((r) => !q || `${r.name} ${r.method} ${r.url}`.toLowerCase().includes(q));
   }, [state, paletteQ]);
 
-  const jumpTo = useCallback((path: string) => {
-    setSelected(path);
-    setView("workspace");
-    setTab("params");
-    setRespTab("body");
-    setPaletteOpen(false);
-  }, []);
+  const jumpTo = useCallback(
+    (path: string) => {
+      openTab(path);
+      setView("workspace");
+      setPaletteOpen(false);
+    },
+    [openTab],
+  );
 
   const showRail = view === "workspace" && !editing;
 
@@ -602,6 +916,9 @@ export function App() {
             ))}
           </select>
         </label>
+        <button className="btn ghost" onClick={() => setEnvModalOpen(true)} title="manage environments">
+          ⚙
+        </button>
 
         {covRep && (
           <button className="spec-chip" title="OpenAPI coverage" onClick={() => setView("spec")}>
@@ -630,34 +947,129 @@ export function App() {
         }}
       >
         <aside className="sidebar">
-          <div className="rail-head collection-head" title={state?.dir}>
-            <span className="collection-glyph">▣</span>
-            <span className="collection-text">
-              <span className="collection-name">{collectionName || "collection"}</span>
-              <span className="collection-sub">{state?.requests.length ?? 0} requests</span>
-            </span>
-            <button className="newreq" onClick={openNew} title="new request">
-              + new
-            </button>
-          </div>
-          <div className="tree">
-            <FolderTree
-              node={tree}
-              depth={0}
-              collapsed={collapsedFolders}
-              onToggle={toggleFolder}
-              selected={selected}
-              driftRep={driftRep}
-              ranResults={ranResults}
-              resultKey={resultKey}
-              onSelect={(path) => {
-                setSelected(path);
-                setView("workspace");
-                setTab("params");
-                setRespTab("body");
+          <div className="collection-block">
+            <div
+              className="rail-head collection-head"
+              title={state?.dir}
+              role="button"
+              tabIndex={0}
+              onClick={() => setCollectionCollapsed((v) => !v)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setCollectionCollapsed((v) => !v);
+                }
               }}
-            />
+            >
+              <span className={`collection-chev ${collectionCollapsed ? "" : "open"}`}>▸</span>
+              <span className="collection-glyph">▣</span>
+              <span className="collection-name">{collectionName || "collection"}</span>
+              <span className="count">{state?.requests.length ?? 0}</span>
+            </div>
+            <div className="collection-actions">
+              <button className="newreq" onClick={() => openNewFolder()} title="new folder">
+                + folder
+              </button>
+              <button className="newreq" onClick={() => openNew()} title="new request">
+                + new
+              </button>
+              <button className="newreq" onClick={() => void doExport()} title="export as a Postman collection">
+                ⇩ export
+              </button>
+            </div>
           </div>
+          {creatingFolder && (
+            <div className="new-folder-row">
+              <input
+                autoFocus
+                className="new-folder-input"
+                placeholder="folder/subfolder"
+                spellCheck={false}
+                value={newFolderPath}
+                onChange={(e) => setNewFolderPath(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void doCreateFolder();
+                  else if (e.key === "Escape") closeNewFolder();
+                }}
+              />
+              <button className="btn ghost small" onClick={closeNewFolder} disabled={folderBusy}>
+                cancel
+              </button>
+              <button
+                className="btn run small"
+                onClick={() => void doCreateFolder()}
+                disabled={folderBusy || !newFolderPath.trim()}
+              >
+                create
+              </button>
+            </div>
+          )}
+          {folderErr && <div className="new-folder-err">{folderErr}</div>}
+          {!collectionCollapsed && (
+            <>
+              <div className="tree-search">
+                <input
+                  aria-label="filter requests"
+                  placeholder="filter requests…"
+                  spellCheck={false}
+                  value={treeQuery}
+                  onChange={(e) => setTreeQuery(e.target.value)}
+                />
+                {treeQuery && (
+                  <button className="tree-search-clear" title="clear filter" onClick={() => setTreeQuery("")}>
+                    ✕
+                  </button>
+                )}
+              </div>
+              <div
+                className={`tree ${dragging && dropTarget === "" ? "drop-target-root" : ""}`}
+                onContextMenu={handleTreeContextMenu}
+                onDragOver={(e) => {
+                  if (!dragging) return;
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "move";
+                }}
+                onDragEnter={(e) => {
+                  if (!dragging) return;
+                  e.preventDefault();
+                  if (canDropAt("")) setDropTarget("");
+                }}
+                onDrop={(e) => {
+                  if (!dragging) return;
+                  e.preventDefault();
+                  handleFolderDrop("");
+                }}
+              >
+                {treeNoMatches ? (
+                  <div className="muted pad">no requests match "{treeQuery.trim()}".</div>
+                ) : (
+                  <FolderTree
+                    node={tree}
+                    depth={0}
+                    collapsed={visibleCollapsed}
+                    onToggle={toggleFolder}
+                    selected={activeTabPath}
+                    driftRep={driftRep}
+                    ranResults={ranResults}
+                    resultKey={resultKey}
+                    onSelect={(path) => {
+                      openTab(path);
+                      setView("workspace");
+                    }}
+                    actions={rowActions}
+                    onContextMenu={handleRowContextMenu}
+                    dragging={dragging}
+                    dropTarget={dropTarget}
+                    onDragStart={handleRowDragStart}
+                    onDragEnd={handleRowDragEnd}
+                    onFolderDragEnter={handleFolderDragEnter}
+                    onFolderDragLeave={handleFolderDragLeave}
+                    onFolderDrop={handleFolderDrop}
+                  />
+                )}
+              </div>
+            </>
+          )}
 
           <div className="sidebar-foot">
             <div className="spec-pick">
@@ -696,6 +1108,22 @@ export function App() {
         />
 
         <main className="main">
+          {!editing && tabs.length > 0 && (
+            <TabStrip
+              tabs={tabs.map((t) => ({
+                path: t.path,
+                name: t.detail?.name ?? baseName(t.path),
+                method: t.detail?.method ?? "GET",
+                dirty: t.dirty,
+              }))}
+              activePath={activeTabPath}
+              onSelect={(path) => {
+                setActiveTabPath(path);
+                setView("workspace");
+              }}
+              onClose={closeTab}
+            />
+          )}
           {editing ? (
             <Editor
               key={editorKey}
@@ -734,28 +1162,38 @@ export function App() {
               onToggle={toggleMock}
               ops={specOps}
             />
-          ) : detail ? (
-            <RequestWorkspace
-              detail={detail}
-              result={selectedResult}
-              running={running}
-              tab={tab}
-              respTab={respTab}
-              activeSpecRef={activeSpecRef}
-              isStale={isStale}
-              contract={contract}
-              onRun={() => selected && doRun(selected)}
-              onEdit={openEdit}
-              onTab={setTab}
-              onRespTab={setRespTab}
-              onGotoSpec={() => setView("spec")}
-            />
+          ) : activeTab ? (
+            activeTab.detail && activeTab.draft ? (
+              <RequestWorkspace
+                key={activeTab.path}
+                detail={activeTab.detail}
+                draft={activeTab.draft}
+                dirty={activeTab.dirty}
+                result={selectedResult}
+                running={running}
+                tab={activeTab.tab}
+                respTab={activeTab.respTab}
+                activeSpecRef={activeSpecRef}
+                isStale={isStale}
+                contract={contract}
+                onRun={() => doRun(activeTab.path)}
+                onEdit={openEdit}
+                onFieldChange={setActiveTabField}
+                onDiscard={resetActiveTabDraft}
+                onSave={(request) => doSaveInline(activeTab.path, request)}
+                onTab={(t) => updateActiveTab({ tab: t })}
+                onRespTab={(t) => updateActiveTab({ respTab: t })}
+                onGotoSpec={() => setView("spec")}
+              />
+            ) : (
+              <div className="empty muted">loading…</div>
+            )
           ) : (
             <div className="empty">
               <div className="empty-mark">◢◤</div>
               <p>select a request, or run the whole collection.</p>
               <p className="muted">requests execute server-side via @truspec/core — no CORS, fully local.</p>
-              <button className="btn small" onClick={openNew}>
+              <button className="btn small" onClick={() => openNew()}>
                 + new request
               </button>
             </div>
@@ -836,7 +1274,7 @@ export function App() {
 
             {railTab === "spec" ? (
               <div className="rail-panel">
-                {!detail ? (
+                {!activeTab?.detail ? (
                   <div className="muted pad">select a request to see its spec status.</div>
                 ) : !activeSpecRef ? (
                   <div className="muted pad">
@@ -853,8 +1291,8 @@ export function App() {
                 ) : (
                   <div className="spec-op-card">
                     <div className="spec-op-head">
-                      <span className={`m m-${detail.method}`}>{detail.method}</span>
-                      <code>{detail.spec?.operationId ?? detail.spec?.operation}</code>
+                      <span className={`m m-${activeTab.detail.method}`}>{activeTab.detail.method}</span>
+                      <code>{activeTab.detail.spec?.operationId ?? activeTab.detail.spec?.operation}</code>
                     </div>
                     <div className="spec-op-body">
                       {contract.state === "ok" && <span className="c-green" style={{ fontSize: 11.5, fontWeight: 600 }}>✓ contract passes</span>}
@@ -933,416 +1371,50 @@ export function App() {
           onClose={() => setPaletteOpen(false)}
         />
       )}
+
+      {deleteTarget && (
+        <ConfirmModal
+          title={`delete ${deleteTarget.kind}`}
+          body={
+            deleteTarget.kind === "folder"
+              ? `Delete "${baseName(deleteTarget.path)}" and ${deleteCount} request${deleteCount === 1 ? "" : "s"} inside it? This cannot be undone.`
+              : `Delete "${baseName(deleteTarget.path)}"? This cannot be undone.`
+          }
+          confirmLabel="delete"
+          danger
+          busy={deleteBusy}
+          error={deleteErr}
+          onConfirm={() => void doDelete()}
+          onCancel={() => {
+            setDeleteTarget(null);
+            setDeleteErr(null);
+          }}
+        />
+      )}
+
+      {envModalOpen && (
+        <EnvironmentModal
+          environments={state?.environments ?? []}
+          onClose={() => setEnvModalOpen(false)}
+          onDelete={deleteEnvironment}
+          onChanged={() => void onEnvironmentsChanged()}
+        />
+      )}
+
+      <ContextMenu state={ctxMenu} onClose={() => setCtxMenu(null)} />
+
+      {folderSettingsPath && (
+        <FolderSettingsModal
+          path={folderSettingsPath}
+          onClose={() => setFolderSettingsPath(null)}
+          onSaved={() => {
+            getState()
+              .then(setState)
+              .catch((e: unknown) => setError(String(e)));
+          }}
+        />
+      )}
     </div>
-  );
-}
-
-function CommandPalette({
-  query,
-  onQuery,
-  items,
-  total,
-  onSelect,
-  onClose,
-}: {
-  query: string;
-  onQuery: (q: string) => void;
-  items: RequestSummary[];
-  total: number;
-  onSelect: (path: string) => void;
-  onClose: () => void;
-}) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
-  return (
-    <div className="palette-overlay" onClick={onClose}>
-      <div className="palette" onClick={(e) => e.stopPropagation()}>
-        <div className="palette-head">
-          <span className="glyph">⌕</span>
-          <input
-            ref={inputRef}
-            className="palette-input"
-            value={query}
-            onChange={(e) => onQuery(e.target.value)}
-            placeholder="jump to a request, run, or view…"
-          />
-          <kbd>esc</kbd>
-        </div>
-        <div className="palette-list">
-          {items.map((r) => (
-            <button key={r.path} className="palette-item" onClick={() => onSelect(r.path)}>
-              <span className={`m m-${r.method}`}>{r.method}</span>
-              <span className="palette-item-main">
-                <span className="palette-item-name">{r.name}</span>
-                <code className="palette-item-url">{r.url}</code>
-              </span>
-              <span className="palette-item-folder">{folderOf(r.path)}</span>
-            </button>
-          ))}
-          {items.length === 0 && <div className="palette-empty">no matches.</div>}
-        </div>
-        <div className="palette-foot">
-          <span>
-            <span className="n">{total}</span> requests
-          </span>
-          <span className="spacer" />
-          <span>↵ open</span>
-          <span>local-first · no telemetry</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function FolderTree({
-  node,
-  depth,
-  collapsed,
-  onToggle,
-  selected,
-  driftRep,
-  ranResults,
-  resultKey,
-  onSelect,
-}: {
-  node: FolderNode;
-  depth: number;
-  collapsed: Set<string>;
-  onToggle: (path: string) => void;
-  selected: string | null;
-  driftRep: DriftReport | null;
-  ranResults: Map<string, RunResult>;
-  resultKey: (path: string) => string;
-  onSelect: (path: string) => void;
-}) {
-  const indent = 8 + depth * 14;
-  return (
-    <>
-      {node.folders.map((f) => {
-        const isCollapsed = collapsed.has(f.path);
-        return (
-          <div key={f.path}>
-            <button
-              className="folder-row"
-              style={{ paddingLeft: indent }}
-              onClick={() => onToggle(f.path)}
-              title={f.path}
-            >
-              <span className={`folder-chev ${isCollapsed ? "" : "open"}`}>▸</span>
-              <span className="folder-icon">▤</span>
-              <span className="folder-name">{f.name}</span>
-              <span className="folder-count">{countRequests(f)}</span>
-            </button>
-            {!isCollapsed && (
-              <FolderTree
-                node={f}
-                depth={depth + 1}
-                collapsed={collapsed}
-                onToggle={onToggle}
-                selected={selected}
-                driftRep={driftRep}
-                ranResults={ranResults}
-                resultKey={resultKey}
-                onSelect={onSelect}
-              />
-            )}
-          </div>
-        );
-      })}
-      {node.requests.map((r, i) => {
-        const res = ranResults.get(resultKey(r.path));
-        return (
-          <button
-            key={r.path}
-            className={`req ${selected === r.path ? "sel" : ""}`}
-            style={{ paddingLeft: indent + 8, animationDelay: `${i * 18}ms` }}
-            onClick={() => onSelect(r.path)}
-          >
-            <span className={`m m-${r.method}`}>{r.method}</span>
-            <span className="rname">{r.name}</span>
-            {!!driftRep?.removed.includes(r.specRef ?? "") && <span className="stale-tag">stale</span>}
-            {res && <span className={`dot ${res.ok ? "ok" : "bad"}`} />}
-          </button>
-        );
-      })}
-    </>
-  );
-}
-
-function RequestWorkspace({
-  detail,
-  result,
-  running,
-  tab,
-  respTab,
-  activeSpecRef,
-  isStale,
-  contract,
-  onRun,
-  onEdit,
-  onTab,
-  onRespTab,
-  onGotoSpec,
-}: {
-  detail: RequestDetail;
-  result?: RunResult;
-  running: boolean;
-  tab: ReqTab;
-  respTab: RespTab;
-  activeSpecRef?: string;
-  isStale: boolean;
-  contract: ContractInfo;
-  onRun: () => void;
-  onEdit: () => void;
-  onTab: (t: ReqTab) => void;
-  onRespTab: (t: RespTab) => void;
-  onGotoSpec: () => void;
-}) {
-  const headers = detail.headers ?? {};
-  const query = detail.query ?? {};
-  const assertions = detail.assertions ?? [];
-  const captured = result?.captured ? Object.entries(result.captured) : [];
-
-  return (
-    <div className="reqview">
-      <div className="req-top">
-        <div className="url-bar">
-          <span className={`m m-${detail.method}`}>{detail.method}</span>
-          <code className="url">{detail.url}</code>
-        </div>
-        <button className="btn ghost" onClick={onEdit} title="edit YAML source">
-          ✎ edit
-        </button>
-        <button className="btn run" disabled={running} onClick={onRun}>
-          {running ? "…" : "▶ send"}
-        </button>
-      </div>
-
-      <div className="req-meta">
-        <span className="req-name">{detail.name}</span>
-        {activeSpecRef && !isStale && (
-          <button className="badge-link" onClick={onGotoSpec} title="linked OpenAPI operation">
-            ⇄ {detail.spec?.operationId ?? detail.spec?.operation}
-          </button>
-        )}
-        {isStale && <span className="badge-stale">⚠ not in current spec</span>}
-      </div>
-      {detail.docs && <p className="docs">{detail.docs}</p>}
-
-      <div className="tabs">
-        <button className={`tab ${tab === "params" ? "active" : ""}`} onClick={() => onTab("params")}>
-          params <span className="tab-count">{Object.keys(query).length}</span>
-        </button>
-        <button className={`tab ${tab === "headers" ? "active" : ""}`} onClick={() => onTab("headers")}>
-          headers <span className="tab-count">{Object.keys(headers).length}</span>
-        </button>
-        <button className={`tab ${tab === "body" ? "active" : ""}`} onClick={() => onTab("body")}>
-          body
-        </button>
-        <button className={`tab ${tab === "auth" ? "active" : ""}`} onClick={() => onTab("auth")}>
-          auth
-        </button>
-        <button className={`tab ${tab === "assert" ? "active" : ""}`} onClick={() => onTab("assert")}>
-          assertions <span className="tab-count">{assertions.length}</span>
-        </button>
-      </div>
-
-      {tab === "params" && (
-        <div className="tabpanel">{Object.keys(query).length > 0 ? <KV obj={query} /> : <div className="muted pad">no query params.</div>}</div>
-      )}
-      {tab === "headers" && (
-        <div className="tabpanel">
-          {Object.keys(headers).length > 0 ? <KV obj={headers} /> : <div className="muted pad">no headers set on this request.</div>}
-        </div>
-      )}
-      {tab === "body" && (
-        <div className="tabpanel">
-          <BodyView body={detail.body} />
-        </div>
-      )}
-      {tab === "auth" && (
-        <div className="tabpanel">
-          <AuthView auth={detail.auth} />
-        </div>
-      )}
-      {tab === "assert" && (
-        <div className="tabpanel">
-          {assertions.length > 0 ? (
-            <div className="asserts">
-              {assertions.map((a, i) => (
-                <div key={i} className="assert-def">
-                  <span className="atype">{String(a.type)}</span>
-                  <code>{describeAssertion(a)}</code>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="muted pad">no assertions on this request.</div>
-          )}
-        </div>
-      )}
-
-      <div className="response">
-        <div className="response-head">
-          <span className="response-label">response</span>
-          {result?.response ? (
-            <>
-              <span className={`pill ${statusClass(result.response.status)}`}>
-                {result.response.status} {result.response.statusText}
-              </span>
-              <span className="time">{result.response.durationMs}ms</span>
-              <span className="bytes">{result.response.bodyText.length}b</span>
-            </>
-          ) : result?.error ? (
-            <span className="err" style={{ margin: 0 }}>
-              {result.error}
-            </span>
-          ) : (
-            <span className="muted">not sent yet.</span>
-          )}
-          <span className="spacer" />
-          {contract.state === "ok" && <span className="contract-badge ok">✓ contract</span>}
-          {contract.state === "fail" && <span className="contract-badge fail">✗ contract</span>}
-          {contract.state === "none" && <span className="contract-badge none">no schema linked</span>}
-        </div>
-
-        {result?.response && (
-          <>
-            <div className="tabs">
-              <button className={`tab ${respTab === "body" ? "active" : ""}`} onClick={() => onRespTab("body")}>
-                body
-              </button>
-              <button className={`tab ${respTab === "headers" ? "active" : ""}`} onClick={() => onRespTab("headers")}>
-                headers <span className="tab-count">{Object.keys(result.response.headers).length}</span>
-              </button>
-            </div>
-            <div className="response-body-wrap">
-              {respTab === "body" ? (
-                <JsonBlock text={prettyBody(result.response.bodyText)} />
-              ) : (
-                <KV obj={result.response.headers} />
-              )}
-
-              {result.assertions.length > 0 && (
-                <div className="results-block">
-                  <div className="results-title">assertions</div>
-                  <div className="asserts">
-                    {result.assertions.map((a, i) => (
-                      <div key={i} className={`assert ${a.ok ? "ok" : "bad"}`}>
-                        <span className="tick">{a.ok ? "✓" : "✗"}</span>
-                        <span className="atype">{a.type}</span>
-                        <span className="amsg">{a.message}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {captured.length > 0 && (
-                <div className="captured">
-                  <span className="captured-title">captured</span>
-                  {captured.map(([k, v]) => (
-                    <span key={k} className="captured-chip">
-                      <span className="k">{k}</span>
-                      <span className="muted">=</span>
-                      <span className="v">{String(v)}</span>
-                    </span>
-                  ))}
-                  <span className="captured-hint">→ available to later requests</span>
-                </div>
-              )}
-            </div>
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function BodyView({ body }: { body?: RequestBody }) {
-  if (!body || body.type === "none") return <div className="muted pad">no request body.</div>;
-  if (body.type === "form") {
-    return (
-      <>
-        <div className="type-row">
-          <span className="type-label">type</span>
-          <span className="type-chip">form</span>
-        </div>
-        <KV obj={body.content} />
-      </>
-    );
-  }
-  const text =
-    body.type === "graphql"
-      ? body.query + (body.variables ? "\n\n" + JSON.stringify(body.variables, null, 2) : "")
-      : body.type === "text"
-        ? body.content
-        : JSON.stringify(body.content, null, 2);
-  return (
-    <>
-      <div className="type-row">
-        <span className="type-label">type</span>
-        <span className="type-chip">{body.type}</span>
-      </div>
-      <JsonBlock text={text} />
-    </>
-  );
-}
-
-function AuthView({ auth }: { auth?: RequestAuth }) {
-  if (!auth || auth.type === "none") return <div className="muted pad">none — inherits from folder config if present.</div>;
-  return (
-    <>
-      <div className="type-row">
-        <span className="type-label">scheme</span>
-        <span className="scheme-chip">{auth.type}</span>
-      </div>
-      {auth.type === "bearer" && (
-        <>
-          <div className="kv">
-            <div className="kv-row">
-              <span className="kv-k">token</span>
-              <span className="kv-v" style={{ color: "var(--lime)" }}>
-                {auth.token}
-              </span>
-            </div>
-          </div>
-          <p className="captured-hint" style={{ marginTop: 9 }}>
-            resolved from a captured variable at run time · secrets are masked in output.
-          </p>
-        </>
-      )}
-      {auth.type === "basic" && (
-        <div className="kv">
-          <div className="kv-row">
-            <span className="kv-k">username</span>
-            <span className="kv-v">{auth.username}</span>
-          </div>
-          <div className="kv-row">
-            <span className="kv-k">password</span>
-            <span className="kv-v">{auth.password}</span>
-          </div>
-        </div>
-      )}
-      {auth.type === "apikey" && (
-        <div className="kv">
-          <div className="kv-row">
-            <span className="kv-k">name</span>
-            <span className="kv-v">{auth.name}</span>
-          </div>
-          <div className="kv-row">
-            <span className="kv-k">value</span>
-            <span className="kv-v">{auth.value}</span>
-          </div>
-          <div className="kv-row">
-            <span className="kv-k">in</span>
-            <span className="kv-v">{auth.in}</span>
-          </div>
-        </div>
-      )}
-    </>
   );
 }
 
@@ -1633,103 +1705,3 @@ function MockView({
     </div>
   );
 }
-
-function Editor({
-  mode,
-  initialPath,
-  initialText,
-  err,
-  saving,
-  onSave,
-  onCancel,
-}: {
-  mode: EditMode;
-  initialPath: string;
-  initialText: string;
-  err: string | null;
-  saving: boolean;
-  onSave: (path: string, text: string) => void;
-  onCancel: () => void;
-}) {
-  // Draft lives here (seeded once per mount via key) so keystrokes don't re-render App.
-  const [path, setPath] = useState(initialPath);
-  const [text, setText] = useState(initialText);
-  const save = () => {
-    const p = path.trim();
-    if (p) onSave(p, text);
-  };
-  // "Esc to cancel" / "⌘/Ctrl+Enter to save" (per the hint) must work the moment the editor is open —
-  // not only when the textarea happens to be focused. A keydown handler scoped to the textarea misses
-  // the path input, the buttons, and the just-opened state (focus still on the "+ new" button). A
-  // document-level listener covers all of those; refs keep it calling the latest save/cancel without
-  // re-binding on every keystroke.
-  const saveRef = useRef(save);
-  saveRef.current = save;
-  const cancelRef = useRef(onCancel);
-  cancelRef.current = onCancel;
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        cancelRef.current();
-      } else if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-        e.preventDefault();
-        saveRef.current();
-      }
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, []);
-  return (
-    <div className="editor">
-      <div className="editor-bar">
-        <span className="editor-title">{mode === "new" ? "new request" : "edit request"}</span>
-        {mode === "new" ? (
-          <input
-            className="path-input"
-            aria-label="file path"
-            value={path}
-            spellCheck={false}
-            placeholder="folder/name.tspec.yaml"
-            onChange={(e) => setPath(e.target.value)}
-          />
-        ) : (
-          <code className="path-fixed">{path}</code>
-        )}
-        <span className="grow" />
-        <button className="btn ghost small" onClick={onCancel} disabled={saving}>
-          cancel
-        </button>
-        <button className="btn run small" onClick={save} disabled={saving || !path.trim()}>
-          {saving ? "saving…" : "save"}
-        </button>
-      </div>
-      <textarea
-        className="editor-text"
-        aria-label="request YAML"
-        value={text}
-        spellCheck={false}
-        onChange={(e) => setText(e.target.value)}
-      />
-      {err ? <div className="editor-err">{err}</div> : <div className="editor-hint muted">validated against the schema on save · ⌘/Ctrl+Enter to save · Esc to cancel</div>}
-    </div>
-  );
-}
-
-function KV({ obj }: { obj: Record<string, string | number | boolean> }) {
-  return (
-    <div className="kv">
-      {Object.entries(obj).map(([k, v]) => (
-        <div className="kv-row" key={k}>
-          <span className="kv-k">{k}</span>
-          <span className="kv-v">{String(v)}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-const shortDir = (dir: string): string => {
-  const parts = normPath(dir).split("/").filter(Boolean);
-  return parts.length <= 2 ? dir : `…/${parts.slice(-2).join("/")}`;
-};

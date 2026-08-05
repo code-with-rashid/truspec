@@ -40,6 +40,10 @@
       "types": "./dist/importers/index.d.ts",
       "import": "./dist/importers/index.js"
     },
+    "./exporters": {
+      "types": "./dist/exporters/index.d.ts",
+      "import": "./dist/exporters/index.js"
+    },
     "./mock": {
       "types": "./dist/mock/index.d.ts",
       "import": "./dist/mock/index.js"

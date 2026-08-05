@@ -1,6 +1,7 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { parse } from "@truspec/core/format";
+import { exportPostman } from "@truspec/core/exporters";
 import { importBrunoFiles, importPostman, type ImportedFile, type ImportResult } from "@truspec/core/importers";
 import { type MockRequestLogEntry, type MockServerHandle, startMockServer } from "@truspec/core/mock";
 import { resolveRequest } from "@truspec/core/runner";
@@ -63,6 +64,22 @@ function listEnvironments(dir: string): string[] {
     .sort();
 }
 
+/** Every directory with a `folder.tspec.yaml`, relative to the workspace root — including ones
+ * with no requests yet, so a freshly created empty folder still shows up in the sidebar tree. */
+function listFolders(dir: string): string[] {
+  const out: string[] = [];
+  walkDirSafe(
+    dir,
+    (full, name) => {
+      if (name !== "folder.tspec.yaml") return;
+      const rel = relative(dir, dirname(full));
+      if (rel) out.push(rel);
+    },
+    { skip: ["environments"] },
+  );
+  return out.sort();
+}
+
 function listSpecs(dir: string): string[] {
   const out: string[] = [];
   walkDirSafe(
@@ -109,6 +126,7 @@ function buildState(ctx: ApiContext) {
     dir: ctx.dir,
     requests,
     errors,
+    folders: listFolders(ctx.dir),
     environments: listEnvironments(ctx.dir),
     specs: listSpecs(ctx.dir),
   };
@@ -180,6 +198,38 @@ function writeImportConfined(result: ImportResult, targetDir: string): string[] 
   return targets.map((t) => relative(targetDir, t.abs));
 }
 
+/** Confines both sides, refuses to clobber an existing destination, then renames (works across
+ * directories under the confined root — a "move" is just a rename to a different parent). */
+function movePath(ctx: ApiContext, fromRel: string, toRel: string): string {
+  const src = confinePath(ctx.dir, fromRel);
+  if (!existsSync(src)) throw new Error(`Not found: ${fromRel}`);
+  const dest = confinePath(ctx.dir, toRel);
+  if (existsSync(dest)) throw new Error(`Already exists: ${toRel}`);
+  mkdirSync(dirname(dest), { recursive: true });
+  renameSync(src, dest);
+  return relative(ctx.dir, dest);
+}
+
+function removeConfined(ctx: ApiContext, rel: string): void {
+  const abs = confinePath(ctx.dir, rel);
+  if (abs === resolve(ctx.dir)) throw new Error("Cannot delete the workspace root");
+  if (!existsSync(abs)) throw new Error(`Not found: ${rel}`);
+  rmSync(abs, { recursive: true, force: false }); // force:false so a locked file surfaces an error instead of failing silently
+}
+
+/** `<name>-copy`, then `<name>-copy-2`, `<name>-copy-3`, ... until an unused path is found. */
+function deriveCopyPath(ctx: ApiContext, relPath: string, isDir: boolean): string {
+  const suffix = isDir ? "" : ".tspec.yaml";
+  const base = isDir ? relPath : relPath.slice(0, -suffix.length);
+  let n = 1;
+  let candidate = `${base}-copy${suffix}`;
+  while (existsSync(confinePath(ctx.dir, candidate))) {
+    n++;
+    candidate = `${base}-copy-${n}${suffix}`;
+  }
+  return candidate;
+}
+
 export async function handleApi(
   method: string,
   pathname: string,
@@ -219,6 +269,167 @@ export async function handleApi(
     mkdirSync(dirname(abs), { recursive: true });
     writeFileSync(abs, b.content);
     return { status: 200, json: { ok: true, path: relative(ctx.dir, abs) } };
+  }
+  if (method === "POST" && pathname === "/api/request/object") {
+    // Structured counterpart to the raw-YAML POST /api/request above: the client sends the full
+    // parsed request object (as returned by GET /api/request, minus `raw`) rather than YAML text,
+    // so inline field editing doesn't need to round-trip through client-side YAML stringification.
+    const b = (body ?? {}) as { path?: string; request?: unknown };
+    if (!b.path || b.request === undefined) {
+      return { status: 400, json: { error: "path and request required" } };
+    }
+    if (!b.path.endsWith(".tspec.yaml") || b.path.endsWith("folder.tspec.yaml")) {
+      return { status: 200, json: { ok: false, error: "Path must be a request file ending in .tspec.yaml" } };
+    }
+    const validation = parse.request.validate(b.request);
+    if (!validation.ok || !validation.data) return { status: 200, json: { ok: false, error: validation.error } };
+    let abs: string;
+    try {
+      abs = confinePath(ctx.dir, b.path);
+    } catch (e) {
+      return { status: 200, json: { ok: false, error: (e as Error).message } };
+    }
+    mkdirSync(dirname(abs), { recursive: true });
+    writeFileSync(abs, parse.request.serialize(validation.data));
+    return { status: 200, json: { ok: true, path: relative(ctx.dir, abs) } };
+  }
+  if (method === "POST" && pathname === "/api/folder") {
+    const b = (body ?? {}) as { path?: string; name?: string };
+    const p = b.path?.trim();
+    if (!p) return { status: 400, json: { error: "path required" } };
+    let abs: string;
+    try {
+      abs = confinePath(ctx.dir, p);
+    } catch (e) {
+      return { status: 200, json: { ok: false, error: (e as Error).message } };
+    }
+    mkdirSync(abs, { recursive: true });
+    const cfgPath = join(abs, "folder.tspec.yaml");
+    if (!existsSync(cfgPath)) {
+      const name = b.name?.trim() || basename(abs);
+      writeFileSync(cfgPath, parse.folderConfig.serialize({ tspec: "0.1", name }));
+    }
+    return { status: 200, json: { ok: true, path: relative(ctx.dir, abs) } };
+  }
+  if (method === "GET" && pathname === "/api/folder") {
+    const p = query.get("path");
+    if (!p) return { status: 400, json: { error: "path required" } };
+    const cfgPath = join(confinePath(ctx.dir, p), "folder.tspec.yaml");
+    const text = existsSync(cfgPath) ? readFileSync(cfgPath, "utf8") : parse.folderConfig.serialize({ tspec: "0.1" });
+    return { status: 200, json: { ...parse.folderConfig.parse(text), raw: text } };
+  }
+  if (method === "POST" && pathname === "/api/folder/object") {
+    // Always-overwrite structured save for folder settings — distinct from POST /api/folder
+    // (create-if-absent, used by "+ folder") since editing settings needs a real overwrite.
+    const b = (body ?? {}) as { path?: string; config?: unknown };
+    if (!b.path || b.config === undefined) return { status: 400, json: { error: "path and config required" } };
+    const validation = parse.folderConfig.validate(b.config);
+    if (!validation.ok || !validation.data) return { status: 200, json: { ok: false, error: validation.error } };
+    let abs: string;
+    try {
+      abs = confinePath(ctx.dir, b.path);
+    } catch (e) {
+      return { status: 200, json: { ok: false, error: (e as Error).message } };
+    }
+    mkdirSync(abs, { recursive: true });
+    writeFileSync(join(abs, "folder.tspec.yaml"), parse.folderConfig.serialize(validation.data));
+    return { status: 200, json: { ok: true, path: relative(ctx.dir, abs) } };
+  }
+  if (method === "GET" && pathname === "/api/environment") {
+    const name = query.get("name");
+    if (!name) return { status: 400, json: { error: "name required" } };
+    const abs = confinePath(ctx.dir, join("environments", `${name}.env.yaml`));
+    const text = readFileSync(abs, "utf8");
+    return { status: 200, json: { ...parse.environment.parse(text), raw: text } };
+  }
+  if (method === "POST" && pathname === "/api/environment") {
+    const b = (body ?? {}) as {
+      name?: string;
+      variables?: Record<string, string | number | boolean>;
+      secrets?: string[];
+    };
+    const name = b.name?.trim();
+    if (!name) return { status: 400, json: { error: "name required" } };
+    const validation = parse.environment.validate({
+      tspec: "0.1",
+      name,
+      variables: b.variables ?? {},
+      secrets: b.secrets ?? [],
+    });
+    if (!validation.ok || !validation.data) return { status: 200, json: { ok: false, error: validation.error } };
+    let abs: string;
+    try {
+      abs = confinePath(ctx.dir, join("environments", `${name}.env.yaml`));
+    } catch (e) {
+      return { status: 200, json: { ok: false, error: (e as Error).message } };
+    }
+    mkdirSync(dirname(abs), { recursive: true });
+    writeFileSync(abs, parse.environment.serialize(validation.data));
+    return { status: 200, json: { ok: true, name } };
+  }
+  if (method === "POST" && pathname === "/api/rename") {
+    const b = (body ?? {}) as { path?: string; newPath?: string };
+    const from = b.path?.trim();
+    const to = b.newPath?.trim();
+    if (!from || !to) return { status: 400, json: { error: "path and newPath required" } };
+    if (from.endsWith(".tspec.yaml") && (!to.endsWith(".tspec.yaml") || to.endsWith("folder.tspec.yaml"))) {
+      return { status: 200, json: { ok: false, error: "New path must be a request file ending in .tspec.yaml" } };
+    }
+    try {
+      return { status: 200, json: { ok: true, path: movePath(ctx, from, to) } };
+    } catch (e) {
+      return { status: 200, json: { ok: false, error: (e as Error).message } };
+    }
+  }
+  if (method === "POST" && pathname === "/api/delete") {
+    const b = (body ?? {}) as { path?: string };
+    const p = b.path?.trim();
+    if (!p) return { status: 400, json: { error: "path required" } };
+    try {
+      removeConfined(ctx, p);
+      return { status: 200, json: { ok: true } };
+    } catch (e) {
+      return { status: 200, json: { ok: false, error: (e as Error).message } };
+    }
+  }
+  if (method === "POST" && pathname === "/api/duplicate") {
+    const b = (body ?? {}) as { path?: string; newPath?: string };
+    const p = b.path?.trim();
+    if (!p) return { status: 400, json: { error: "path required" } };
+    let src: string;
+    try {
+      src = confinePath(ctx.dir, p);
+    } catch (e) {
+      return { status: 200, json: { ok: false, error: (e as Error).message } };
+    }
+    if (!existsSync(src)) return { status: 200, json: { ok: false, error: `Not found: ${p}` } };
+    const isDir = statSync(src).isDirectory();
+    const destRel = b.newPath?.trim() || deriveCopyPath(ctx, p, isDir);
+    let dest: string;
+    try {
+      dest = confinePath(ctx.dir, destRel);
+    } catch (e) {
+      return { status: 200, json: { ok: false, error: (e as Error).message } };
+    }
+    if (existsSync(dest)) return { status: 200, json: { ok: false, error: `Already exists: ${destRel}` } };
+    try {
+      if (isDir) {
+        cpSync(src, dest, { recursive: true });
+      } else if (p.endsWith(".tspec.yaml") && !p.endsWith("folder.tspec.yaml")) {
+        // A duplicated request also gets its internal name: field suffixed, so two similarly
+        // named requests are easy to tell apart in the tree, not just by file path.
+        const req = parse.request.parse(readFileSync(src, "utf8"));
+        req.name = `${req.name} (copy)`;
+        mkdirSync(dirname(dest), { recursive: true });
+        writeFileSync(dest, parse.request.serialize(req));
+      } else {
+        mkdirSync(dirname(dest), { recursive: true });
+        writeFileSync(dest, readFileSync(src));
+      }
+    } catch (e) {
+      return { status: 200, json: { ok: false, error: (e as Error).message } };
+    }
+    return { status: 200, json: { ok: true, path: relative(ctx.dir, dest) } };
   }
   if (method === "POST" && pathname === "/api/import/postman") {
     const b = (body ?? {}) as { json?: unknown; targetDir?: string };
@@ -267,6 +478,19 @@ export async function handleApi(
     } catch (e) {
       return { status: 200, json: { ok: false, error: (e as Error).message } };
     }
+  }
+  if (method === "POST" && pathname === "/api/export/postman") {
+    const b = (body ?? {}) as { path?: string };
+    let target: string;
+    try {
+      target = b.path ? confinePath(ctx.dir, b.path) : ctx.dir;
+    } catch (e) {
+      return { status: 200, json: { ok: false, error: (e as Error).message } };
+    }
+    if (!existsSync(target)) return { status: 200, json: { ok: false, error: `Not found: ${b.path}` } };
+    // Success returns the raw Postman collection, not the usual `{ok:true,...}` envelope — the
+    // client hands this straight to a Blob for download, and wrapping it would corrupt the file.
+    return { status: 200, json: exportPostman(target).collection };
   }
   if (method === "POST" && pathname === "/api/run") {
     const b = (body ?? {}) as { target?: string; env?: string; spec?: string };
