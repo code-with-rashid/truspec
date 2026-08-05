@@ -11,6 +11,8 @@ export interface RequestSummary {
 export interface WorkspaceState {
   dir: string;
   requests: RequestSummary[];
+  /** Relative paths of folders that have a `folder.tspec.yaml`, including empty ones (no requests yet). */
+  folders: string[];
   environments: string[];
   specs: string[];
 }
@@ -90,6 +92,7 @@ export interface RequestDetail {
   auth?: RequestAuth;
   capture?: Record<string, CaptureSource>;
   order?: number;
+  script?: { pre?: string; post?: string };
   docs?: string;
   spec?: { operation?: string; operationId?: string };
   /** Raw YAML source of the file, for the editor. */
@@ -100,6 +103,52 @@ export interface SaveResult {
   ok: boolean;
   path?: string;
   error?: string;
+}
+
+export interface CreateFolderResult {
+  ok: boolean;
+  path?: string;
+  error?: string;
+}
+
+export interface RenameResult {
+  ok: boolean;
+  path?: string;
+  error?: string;
+}
+
+export interface DeleteResult {
+  ok: boolean;
+  error?: string;
+}
+
+export interface DuplicateResult {
+  ok: boolean;
+  path?: string;
+  error?: string;
+}
+
+export interface EnvironmentDetail {
+  tspec: string;
+  name: string;
+  variables: Record<string, string | number | boolean>;
+  secrets: string[];
+  raw?: string;
+}
+
+export interface EnvSaveResult {
+  ok: boolean;
+  name?: string;
+  error?: string;
+}
+
+export interface FolderConfigDetail {
+  tspec: string;
+  name?: string;
+  baseUrl?: string;
+  headers?: Record<string, string | number | boolean>;
+  auth?: RequestAuth;
+  raw?: string;
 }
 
 export interface MockStatus {
@@ -152,6 +201,9 @@ export interface ImportApiResult {
   files?: string[];
 }
 
+/** Success is the raw Postman collection (no `ok` field); failure is `{ok:false,error}`. */
+export type ExportPostmanResult = Record<string, unknown>;
+
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, { headers: { "content-type": "application/json" }, ...init });
   if (!res.ok) throw new Error(`${path} → HTTP ${res.status}`);
@@ -174,6 +226,29 @@ export const coverage = (spec: string) =>
   api<CoverageReport>("/api/coverage", { method: "POST", body: JSON.stringify({ spec }) });
 export const saveRequest = (path: string, content: string) =>
   api<SaveResult>("/api/request", { method: "POST", body: JSON.stringify({ path, content }) });
+export const saveRequestObject = (path: string, request: Record<string, unknown>) =>
+  api<SaveResult>("/api/request/object", { method: "POST", body: JSON.stringify({ path, request }) });
+export const createFolder = (path: string) =>
+  api<CreateFolderResult>("/api/folder", { method: "POST", body: JSON.stringify({ path }) });
+export const renamePath = (path: string, newPath: string) =>
+  api<RenameResult>("/api/rename", { method: "POST", body: JSON.stringify({ path, newPath }) });
+export const deletePath = (path: string) =>
+  api<DeleteResult>("/api/delete", { method: "POST", body: JSON.stringify({ path }) });
+export const duplicatePath = (path: string, newPath?: string) =>
+  api<DuplicateResult>("/api/duplicate", { method: "POST", body: JSON.stringify({ path, newPath }) });
+export const getEnvironment = (name: string) =>
+  api<EnvironmentDetail>(`/api/environment?name=${encodeURIComponent(name)}`);
+export const saveEnvironment = (
+  name: string,
+  variables: Record<string, string | number | boolean>,
+  secrets: string[],
+) => api<EnvSaveResult>("/api/environment", { method: "POST", body: JSON.stringify({ name, variables, secrets }) });
+export const getFolderConfig = (path: string) =>
+  api<FolderConfigDetail>(`/api/folder?path=${encodeURIComponent(path)}`);
+export const saveFolderConfig = (path: string, config: Record<string, unknown>) =>
+  api<SaveResult>("/api/folder/object", { method: "POST", body: JSON.stringify({ path, config }) });
+export const exportPostman = (path?: string) =>
+  api<ExportPostmanResult>("/api/export/postman", { method: "POST", body: JSON.stringify({ path }) });
 
 export const mockStatus = () => api<MockStatus>("/api/mock/status");
 export const mockStart = (spec: string, port?: number) =>

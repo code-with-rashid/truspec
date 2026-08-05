@@ -6,8 +6,8 @@ import { test, expect } from "./fixtures";
 test.describe("editor interactions (real browser)", () => {
   test("valid save writes the file and updates the sidebar", async ({ app, page }) => {
     await page.goto(`${app.url}/`, { waitUntil: "networkidle" });
-    await page.waitForSelector(".newreq");
-    await page.click(".newreq");
+    await page.waitForSelector(".new-request");
+    await page.click(".new-request");
     await page.fill(".editor .path-input", "folderx/created.tspec.yaml");
     await page.fill(".editor .editor-text", 'tspec: "0.1"\nname: Created Req\nmethod: POST\nurl: "http://x/y"\nassertions: []\n');
     await page.click(".editor .btn.run");
@@ -18,7 +18,7 @@ test.describe("editor interactions (real browser)", () => {
 
   test("BUG-O: Esc cancels the editor from the path input (not only the textarea)", async ({ app, page }) => {
     await page.goto(`${app.url}/`, { waitUntil: "networkidle" });
-    await page.click(".newreq");
+    await page.click(".new-request");
     await page.click(".editor .path-input");
     await page.keyboard.press("Escape");
     await page.waitForTimeout(300);
@@ -27,7 +27,7 @@ test.describe("editor interactions (real browser)", () => {
 
   test("BUG-O: Ctrl+Enter saves from anywhere in the editor", async ({ app, page }) => {
     await page.goto(`${app.url}/`, { waitUntil: "networkidle" });
-    await page.click(".newreq");
+    await page.click(".new-request");
     await page.fill(".editor .path-input", "kbd.tspec.yaml");
     await page.fill(".editor .editor-text", 'tspec: "0.1"\nname: Kbd\nurl: "http://x"\nassertions: []\n');
     await page.click(".editor .editor-text");
@@ -38,7 +38,7 @@ test.describe("editor interactions (real browser)", () => {
 
   test("a traversal save path is refused and writes nothing outside the workspace", async ({ app, page }) => {
     await page.goto(`${app.url}/`, { waitUntil: "networkidle" });
-    await page.click(".newreq");
+    await page.click(".new-request");
     await page.fill(".editor .path-input", "../../../../tmp/tspec-e2e-escape.tspec.yaml");
     await page.fill(".editor .editor-text", 'tspec: "0.1"\nname: Evil\nurl: "http://x"\nassertions: []\n');
     await page.click(".editor .btn.run");
@@ -49,7 +49,7 @@ test.describe("editor interactions (real browser)", () => {
 
   test("double-click save produces one uncorrupted file (re-entrancy)", async ({ app, page }) => {
     await page.goto(`${app.url}/`, { waitUntil: "networkidle" });
-    await page.click(".newreq");
+    await page.click(".new-request");
     await page.fill(".editor .path-input", "dbl.tspec.yaml");
     await page.fill(".editor .editor-text", 'tspec: "0.1"\nname: Dbl\nurl: "http://x"\nassertions: []\n');
     const save = page.locator(".editor .btn.run");
