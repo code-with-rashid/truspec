@@ -420,7 +420,15 @@ select:focus {
 .tree-search input {
   width: 100%;
   font-size: 12px;
-  padding-right: 24px;
+  padding: 5px 24px 5px 9px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text);
+}
+.tree-search input:focus {
+  border-color: var(--lime);
+  outline: none;
 }
 .tree-search-clear {
   position: absolute;
@@ -571,6 +579,10 @@ select:focus {
   min-width: 0;
   font-size: 12.5px;
   padding: 1px 5px;
+  background: var(--panel-2);
+  border: 1px solid var(--line-2);
+  border-radius: 4px;
+  color: var(--text);
 }
 .req {
   position: relative;
@@ -710,6 +722,15 @@ select:focus {
   flex: 1;
   min-width: 0;
   font-size: 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 9px;
+  color: var(--text);
+}
+.new-folder-input:focus {
+  border-color: var(--lime);
+  outline: none;
 }
 .new-folder-err {
   padding: 6px 10px;

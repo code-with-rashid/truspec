@@ -967,13 +967,17 @@ export function App() {
               <span className="count">{state?.requests.length ?? 0}</span>
             </div>
             <div className="collection-actions">
-              <button className="newreq" onClick={() => openNewFolder()} title="new folder">
+              <button className="newreq new-folder" onClick={() => openNewFolder()} title="new folder">
                 + folder
               </button>
-              <button className="newreq" onClick={() => openNew()} title="new request">
+              <button className="newreq new-request" onClick={() => openNew()} title="new request">
                 + new
               </button>
-              <button className="newreq" onClick={() => void doExport()} title="export as a Postman collection">
+              <button
+                className="newreq export-postman"
+                onClick={() => void doExport()}
+                title="export as a Postman collection"
+              >
                 ⇩ export
               </button>
             </div>
