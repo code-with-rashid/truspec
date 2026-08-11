@@ -1,0 +1,99 @@
+name: Desktop app release
+
+# Builds installers for every OS and attaches them to a GitHub Release as a draft. Triggered by
+# pushing a version tag (see RELEASING.md) — deliberately has no `paths` filter, unlike
+# desktop.yml's CI matrix, since a release tag should always produce installers regardless of
+# which files happened to change in that commit.
+#
+# The release is opened as a draft, not published automatically: a human still writes the
+# highlights and confirms the unsigned-build OS warnings are called out (RELEASING.md) before
+# hitting publish.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+          - os: macos-latest # Apple Silicon (arm64); runs fine on Intel Macs too, under Rosetta 2
+          - os: ubuntu-22.04 # pinned below ubuntu-latest for the glibc floor — see desktop.yml
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux build dependencies (webkit2gtk, AppIndicator, etc.)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build @truspec/core
+        run: pnpm --filter @truspec/core build
+
+      - name: Build the web client/server/sidecar bundles
+        run: pnpm --filter @truspec/web build
+
+      - name: Build the desktop app (stages the sidecar, then tauri build)
+        run: pnpm --filter @truspec/desktop run tauri:build
+
+      - name: Collect installer files
+        shell: bash
+        run: |
+          mkdir -p dist-installers
+          find packages/desktop/src-tauri/target/release/bundle -maxdepth 2 -type f \
+            \( -name "*.dmg" -o -name "*.exe" -o -name "*.msi" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" \) \
+            -exec cp {} dist-installers/ \;
+
+      - name: Upload installer artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: truspec-desktop-${{ matrix.os }}
+          path: dist-installers/*
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all installer artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: truspec-desktop-*
+          path: dist-installers
+          merge-multiple: true
+
+      - name: Create draft GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          generate_release_notes: true
+          files: dist-installers/*

@@ -1,6 +1,6 @@
 {
   "name": "@truspec/desktop",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "TruSpec desktop app (Tauri) — a native window over the truspec serve web UI.",
   "private": true,
   "type": "module",
