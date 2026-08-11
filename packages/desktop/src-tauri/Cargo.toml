@@ -1,6 +1,6 @@
 [package]
 name = "truspec-desktop"
-version = "0.8.0"
+version = "0.8.1"
 description = "TruSpec desktop app — a native window over the truspec serve web UI"
 authors = ["Rashid Mahmood"]
 license = "MIT"

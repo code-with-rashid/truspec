@@ -22,11 +22,23 @@ To bump: edit `version` in each package's `package.json` (keep them in lockstep)
 treatment as `packages/vscode`, which publishes to the Marketplace separately). Its version field
 should still be bumped alongside the others for traceability, but there's nothing to `npm publish`.
 
-Installers are built per-OS by the `.github/workflows/desktop.yml` matrix (Windows/macOS/Linux) on
-every push to `main` — download them from that workflow run's artifacts and attach them to the
-GitHub Release manually alongside the version tag above. They're **unsigned** (no code-signing
-cert or Apple notarization yet — a deliberate v1 scope decision, see issue #23): call this out in
-the release notes so users aren't surprised by an OS warning on first launch:
+Pushing the `v<version>` tag (step 6 above) also triggers `.github/workflows/desktop-release.yml`,
+which builds installers for Windows/macOS/Linux and opens a **draft** GitHub Release with them
+attached, pre-filled with auto-generated notes from the merged PRs since the last tag. Someone
+still needs to:
+
+1. Open the draft release and write the actual highlights (what's in this release, why it
+   matters) — the auto-generated PR-title list is a starting point, not the release notes.
+2. Confirm the unsigned-build warning below is in there.
+3. Click **Publish release**.
+
+This is separate from `.github/workflows/desktop.yml`, which builds the same matrix on every push
+to `main`/PR for CI validation but only uploads ephemeral workflow artifacts — those aren't
+attached to a release and aren't what users download.
+
+They're **unsigned** (no code-signing cert or Apple notarization yet — a deliberate v1 scope
+decision, see issue #23): call this out in the release notes so users aren't surprised by an OS
+warning on first launch:
 
 - **Windows**: SmartScreen will show an "unknown publisher" warning — Run anyway.
 - **macOS**: Gatekeeper quarantines unsigned downloaded apps. Users need to run
