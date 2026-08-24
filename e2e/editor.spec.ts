@@ -47,6 +47,54 @@ test.describe("editor interactions (real browser)", () => {
     expect(existsSync("/tmp/tspec-e2e-escape.tspec.yaml")).toBe(false);
   });
 
+  test("renaming a request in the sidebar updates its displayed name, not just the file", async ({ app, page }) => {
+    await page.goto(`${app.url}/`, { waitUntil: "networkidle" });
+    const row = page.locator(".req", { hasText: "Get pet" });
+    await row.hover();
+    await row.locator('[title="rename request"]').click();
+    await page.locator(".rename-input").fill("Fetch one pet");
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(700);
+    // The sidebar (bound to the request's `name:` field) must reflect the typed value immediately —
+    // renaming only the file left the sidebar showing the stale old name.
+    await expect(page.locator(".rname", { hasText: "Fetch one pet" })).toHaveCount(1);
+    await expect(page.locator(".rname", { hasText: "Get pet" })).toHaveCount(0);
+    expect(existsSync(join(app.dir, "Fetch one pet.tspec.yaml"))).toBe(true);
+    expect(readFileSync(join(app.dir, "Fetch one pet.tspec.yaml"), "utf8")).toMatch(/name: Fetch one pet/);
+  });
+
+  test("command palette: Enter opens the top match (not just a mouse click)", async ({ app, page }) => {
+    await page.goto(`${app.url}/`, { waitUntil: "networkidle" });
+    await page.keyboard.press("Control+k");
+    await page.locator(".palette-input").fill("Get pet");
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".palette-overlay")).toHaveCount(0);
+    await expect(page.locator(".tab-strip-item", { hasText: "Get pet" })).toHaveCount(1);
+  });
+
+  test("closing a tab with unsaved changes asks for confirmation instead of discarding silently", async ({ app, page }) => {
+    await page.goto(`${app.url}/`, { waitUntil: "networkidle" });
+    await page.locator(".req", { hasText: "Get pet" }).click();
+    await page.locator(".tab", { hasText: "headers" }).click();
+    await page.locator(".editable-kv-add").click();
+    await page.locator(".editable-kv-key").fill("X-Dirty-Test");
+    const tab = page.locator(".tab-strip-item", { hasText: "Get pet" });
+    await expect(tab.locator(".tab-strip-dot")).toHaveCount(1);
+
+    // Cancelling the confirm must leave the tab open and still dirty.
+    await tab.locator(".tab-strip-close").click();
+    await expect(page.locator(".modal-head", { hasText: "discard unsaved changes" })).toHaveCount(1);
+    await page.locator(".modal .btn.ghost", { hasText: "cancel" }).click();
+    await expect(tab).toHaveCount(1);
+    await expect(tab.locator(".tab-strip-dot")).toHaveCount(1);
+
+    // Confirming discards the edit and closes the tab.
+    await tab.locator(".tab-strip-close").click();
+    await page.locator(".modal .btn.danger", { hasText: "discard" }).click();
+    await expect(page.locator(".tab-strip-item", { hasText: "Get pet" })).toHaveCount(0);
+    expect(readFileSync(join(app.dir, "get.tspec.yaml"), "utf8")).not.toMatch(/X-Dirty-Test/);
+  });
+
   test("double-click save produces one uncorrupted file (re-entrancy)", async ({ app, page }) => {
     await page.goto(`${app.url}/`, { waitUntil: "networkidle" });
     await page.click(".new-request");
