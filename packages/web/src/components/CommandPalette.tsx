@@ -31,6 +31,11 @@ export function CommandPalette({
             className="palette-input"
             value={query}
             onChange={(e) => onQuery(e.target.value)}
+            onKeyDown={(e) => {
+              // The footer advertises "↵ open" — Enter must open the top match, matching the
+              // mouse-click behavior on a `.palette-item`.
+              if (e.key === "Enter" && items[0]) onSelect(items[0].path);
+            }}
             placeholder="jump to a request, run, or view…"
           />
           <kbd>esc</kbd>

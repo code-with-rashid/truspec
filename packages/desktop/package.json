@@ -15,7 +15,7 @@
     "prepare-sidecar": "node scripts/prepare-sidecar.mjs",
     "dev": "node scripts/prepare-sidecar.mjs && tauri dev",
     "tauri:build": "node scripts/prepare-sidecar.mjs && tauri build",
-    "typecheck": "true"
+    "typecheck": "node -e \"\""
   },
   "dependencies": {
     "@truspec/web": "workspace:*"

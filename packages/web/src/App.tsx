@@ -130,6 +130,7 @@ export function App() {
   const [ranResults, setRanResults] = useState<Map<string, RunResult>>(new Map());
   const [driftRep, setDriftRep] = useState<DriftReport | null>(null);
   const [covRep, setCovRep] = useState<CoverageReport | null>(null);
+  const [specErr, setSpecErr] = useState<string | null>(null);
   const [view, setView] = useState<View>("workspace");
   const [theme, setTheme] = useState<Theme>("dark");
   const [booted, setBooted] = useState(false);
@@ -158,6 +159,7 @@ export function App() {
   const [deleteTarget, setDeleteTarget] = useState<{ path: string; kind: RowKind } | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteErr, setDeleteErr] = useState<string | null>(null);
+  const [closeTarget, setCloseTarget] = useState<string | null>(null);
   const [dragging, setDragging] = useState<{ path: string; kind: RowKind } | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [envModalOpen, setEnvModalOpen] = useState(false);
@@ -213,9 +215,11 @@ export function App() {
     if (!spec) {
       setDriftRep(null);
       setCovRep(null);
+      setSpecErr(null);
       return;
     }
     let ignore = false;
+    setSpecErr(null);
     Promise.all([apiDrift(spec), apiCoverage(spec)])
       .then(([d, c]) => {
         if (!ignore) {
@@ -224,7 +228,12 @@ export function App() {
         }
       })
       .catch((e: unknown) => {
-        if (!ignore) setError(String(e));
+        if (!ignore) {
+          // driftRep/covRep are left null so the dashboard and rail can tell "still analyzing"
+          // apart from "analysis failed" instead of both looking like a silent, permanent hang.
+          setSpecErr(String(e));
+          setError(String(e));
+        }
       });
     return () => {
       ignore = true;
@@ -244,6 +253,20 @@ export function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [paletteOpen]);
+
+  // The tab strip's dirty dot only protects against closing a tab from within the app (see
+  // requestCloseTab) — closing or reloading the browser tab/window itself bypasses that entirely,
+  // so guard it the standard way too whenever any open tab has unsaved edits.
+  useEffect(() => {
+    const anyDirty = tabs.some((t) => t.dirty);
+    if (!anyDirty) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent): void => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [tabs]);
 
   // Poll the request log while the mock view is open and the server is live.
   useEffect(() => {
@@ -344,6 +367,17 @@ export function App() {
     [activeTabPath],
   );
 
+  // The tab strip shows a "dirty" dot for unsaved edits, so closing one out from under the user
+  // without confirming would silently throw the edit away — ask first, exactly like delete does.
+  const requestCloseTab = useCallback(
+    (path: string) => {
+      const tab = tabs.find((t) => t.path === path);
+      if (tab?.dirty) setCloseTarget(path);
+      else closeTab(path);
+    },
+    [tabs, closeTab],
+  );
+
   const updateActiveTab = useCallback(
     (patch: Partial<OpenTab>) => {
       setTabs((prev) => prev.map((t) => (t.path === activeTabPath ? { ...t, ...patch } : t)));
@@ -384,7 +418,7 @@ export function App() {
   }, []);
 
   const doRename = useCallback(
-    async (oldPath: string, newPath: string, kind: RowKind) => {
+    async (oldPath: string, newPath: string, kind: RowKind, displayName?: string) => {
       const res = await renamePath(oldPath, newPath);
       if (!res.ok) {
         setError(res.error ?? "rename failed");
@@ -418,6 +452,21 @@ export function App() {
       setCollapsedFolders((prev) => new Set([...prev].map(remap)));
       setRenamingPath(null);
       setRenameValue("");
+      // Renaming a request via this UI action is presented (and typed into) as changing what the
+      // sidebar shows, not just the file's slug — so keep the `name:` field in step with the typed
+      // value. `doMove` (drag/drop) also calls doRename but never passes `displayName`, so a plain
+      // move never touches request content.
+      if (kind === "request" && displayName !== undefined) {
+        const detail = await getRequest(finalPath).catch(() => null);
+        if (detail && detail.name !== displayName) {
+          const renamed = { ...detail, name: displayName };
+          const { raw: _raw, ...requestObject } = renamed;
+          const saved = await saveRequestObject(finalPath, requestObject).catch(() => null);
+          if (saved?.ok) {
+            setTabs((prev) => prev.map((t) => (t.path === finalPath ? { ...t, detail: renamed, draft: renamed } : t)));
+          }
+        }
+      }
       setState(await getState());
     },
     [resultKey],
@@ -495,7 +544,7 @@ export function App() {
       cancelRename();
       return;
     }
-    void doRename(renamingPath, newPath, renamingKind);
+    void doRename(renamingPath, newPath, renamingKind, renamingKind === "request" ? trimmed : undefined);
   }, [renamingPath, renameValue, renamingKind, doRename, cancelRename]);
 
   const doDuplicate = useCallback(async (path: string) => {
@@ -1125,7 +1174,7 @@ export function App() {
                 setActiveTabPath(path);
                 setView("workspace");
               }}
-              onClose={closeTab}
+              onClose={requestCloseTab}
             />
           )}
           {editing ? (
@@ -1155,7 +1204,7 @@ export function App() {
               }}
             />
           ) : view === "spec" ? (
-            <SpecDashboard spec={spec} driftRep={driftRep} covRep={covRep} specOps={specOps} driftCount={driftCount} />
+            <SpecDashboard spec={spec} driftRep={driftRep} covRep={covRep} specOps={specOps} driftCount={driftCount} specErr={specErr} />
           ) : view === "mock" ? (
             <MockView
               spec={spec}
@@ -1227,13 +1276,13 @@ export function App() {
                   <div className="intel-card">
                     <div className="intel-card-head">
                       <span className="label">coverage</span>
-                      <span className="intel-num">{covRep ? `${covRep.percent}%` : "…"}</span>
+                      <span className="intel-num">{specErr ? "—" : covRep ? `${covRep.percent}%` : "…"}</span>
                     </div>
                     <div className="cov-bar">
                       <div className="cov-fill" style={{ width: `${covRep?.percent ?? 0}%` }} />
                     </div>
                     <div className="intel-sub">
-                      {covRep ? `${covRep.covered.length}/${covRep.total}` : "…"} spec operations tested
+                      {specErr ? "spec analysis failed" : covRep ? `${covRep.covered.length}/${covRep.total} spec operations tested` : "… spec operations tested"}
                     </div>
                   </div>
                   <div className="drift-card">
@@ -1246,20 +1295,29 @@ export function App() {
                           <span className="c-amber">{driftCount} to resolve</span>
                         ))}
                     </div>
-                    <div className="drift-mini-grid">
-                      <button className="drift-mini" onClick={() => setView("spec")}>
-                        <span className="n c-amber">{driftRep?.added.length ?? 0}</span>
-                        <span className="l">untracked</span>
+                    {specErr ? (
+                      // Rendering "0" for every bucket here would read as "spec analysis found no
+                      // drift" — indistinguishable from a real clean bill of health — when the
+                      // truth is analysis never ran at all.
+                      <button className="drift-mini" style={{ width: "100%" }} onClick={() => setView("spec")}>
+                        <span className="muted" style={{ fontSize: 11 }}>spec analysis failed — see spec view</span>
                       </button>
-                      <button className="drift-mini" onClick={() => setView("spec")}>
-                        <span className="n c-red">{driftRep?.removed.length ?? 0}</span>
-                        <span className="l">stale</span>
-                      </button>
-                      <button className="drift-mini" onClick={() => setView("spec")}>
-                        <span className="n c-violet">{driftRep?.changed.length ?? 0}</span>
-                        <span className="l">changed</span>
-                      </button>
-                    </div>
+                    ) : (
+                      <div className="drift-mini-grid">
+                        <button className="drift-mini" onClick={() => setView("spec")}>
+                          <span className="n c-amber">{driftRep?.added.length ?? 0}</span>
+                          <span className="l">untracked</span>
+                        </button>
+                        <button className="drift-mini" onClick={() => setView("spec")}>
+                          <span className="n c-red">{driftRep?.removed.length ?? 0}</span>
+                          <span className="l">stale</span>
+                        </button>
+                        <button className="drift-mini" onClick={() => setView("spec")}>
+                          <span className="n c-violet">{driftRep?.changed.length ?? 0}</span>
+                          <span className="l">changed</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </>
               ) : (
@@ -1396,6 +1454,20 @@ export function App() {
         />
       )}
 
+      {closeTarget && (
+        <ConfirmModal
+          title="discard unsaved changes?"
+          body={`"${tabs.find((t) => t.path === closeTarget)?.detail?.name ?? baseName(closeTarget)}" has unsaved changes. Close the tab and discard them?`}
+          confirmLabel="discard"
+          danger
+          onConfirm={() => {
+            closeTab(closeTarget);
+            setCloseTarget(null);
+          }}
+          onCancel={() => setCloseTarget(null)}
+        />
+      )}
+
       {envModalOpen && (
         <EnvironmentModal
           environments={state?.environments ?? []}
@@ -1446,18 +1518,29 @@ function SpecDashboard({
   covRep,
   specOps,
   driftCount,
+  specErr,
 }: {
   spec: string;
   driftRep: DriftReport | null;
   covRep: CoverageReport | null;
   specOps: SpecOpRow[];
   driftCount: number;
+  specErr: string | null;
 }) {
   if (!spec) {
     return (
       <div className="empty">
         <div className="empty-mark">◢◤</div>
         <p>choose an OpenAPI spec to analyze drift and coverage.</p>
+      </div>
+    );
+  }
+  if (specErr) {
+    return (
+      <div className="empty">
+        <div className="empty-mark">✕</div>
+        <p>couldn't analyze {spec}.</p>
+        <p className="editor-err">{specErr}</p>
       </div>
     );
   }
