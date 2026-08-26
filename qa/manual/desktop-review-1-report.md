@@ -17,7 +17,7 @@ hasn't run against this change yet, and I haven't seen it run. **Treat the two c
 as unverified — reviewed carefully against Tauri 2.11's documented API and Rust's standard library,
 but not compiled or executed.**
 
-## Findings (2 fixed, unverified; 3 reported only)
+## Findings (4 fixed, unverified; 1 left as a documented decision)
 
 ### 1. Fixed: the native window had no minimum size
 
@@ -49,33 +49,63 @@ but not compiled or executed.**
   directory at all" (the existing `None` branch), which already correctly falls through to the
   folder picker.
 
-### 3-5. Reported, not fixed — higher API-surface risk without a way to compile-check
+### 3. Fixed: no native "Edit" menu
 
-- **No "Edit" menu.** `menu.rs` builds only a "File" submenu (New/Open Collection…, Quit). Tauri
-  apps on macOS specifically need a native Edit menu with standard Cut/Copy/Paste/Undo/Redo/Select
-  All items (Tauri's `PredefinedMenuItem::copy`/`::cut`/`::paste`/etc.) for the OS to route the
-  corresponding `Cmd+C`/`Cmd+V`/etc. keyboard shortcuts into the webview at all — a well-documented
-  Tauri/Electron-class gotcha, not specific to this codebase. Worth adding, but building a second
-  submenu with several `PredefinedMenuItem` calls has more surface area to get subtly wrong (exact
-  item constructors, accelerator defaults) than the two single-line fixes above, and I have no way
-  to catch a mistake before it reaches a real build. Left as a recommendation rather than a
-  patch — happy to implement given either explicit sign-off to ship unverified Rust, or a way to
-  compile-check it first.
-- **No "About"/version info anywhere in the app.** There's no menu item or in-app surface showing
-  which version is installed — makes bug reports and support harder to triage ("which version are
-  you on?" has no answer inside the app itself).
-- **`tauri.conf.json`'s `security.csp` is explicitly `null`.** Disables Tauri's own webview CSP
-  injection entirely. Likely intentional and probably fine in practice — the web UI already carries
-  its own HTTP-level protections (`X-Frame-Options: DENY`, a `frame-ancestors 'none'` CSP header
-  set server-side, and the XSS-escaping this session's `e2e/security.spec.ts` already covers) — but
-  flagging it since a `null` CSP is a real reduction in defense-in-depth for the webview layer
-  specifically, and it's not obvious from the surrounding code whether that was a deliberate
-  trade-off or an unset default. Not touched.
+- **Where:** [`packages/desktop/src-tauri/src/menu.rs`](../../packages/desktop/src-tauri/src/menu.rs).
+- **Symptom:** `menu.rs` built only a "File" submenu (New/Open Collection…, Quit). Tauri apps on
+  macOS specifically need a native Edit menu with standard Cut/Copy/Paste/Undo/Redo/Select All
+  items for the OS to route the corresponding `Cmd+C`/`Cmd+V`/etc. keyboard shortcuts into the
+  webview at all — a well-documented Tauri/Electron-class gotcha, not specific to this codebase.
+- **Fix:** Added an "Edit" submenu using `SubmenuBuilder`'s predefined-item convenience methods
+  (`.undo() .redo() .cut() .copy() .paste() .select_all()`) — the same builder already used for
+  the "File" menu, so no new API surface beyond methods on a type this file already calls.
+  Deliberately avoided the lower-level `PredefinedMenuItem::*` constructors (which take an
+  `Option<&str>` label override) since the zero-arg builder methods have less room to get a
+  parameter wrong.
+
+### 4. Fixed: no "About"/version info anywhere in the app
+
+- **Where:** [`packages/desktop/src-tauri/src/menu.rs`](../../packages/desktop/src-tauri/src/menu.rs).
+- **Symptom:** No menu item or in-app surface showed which version was installed — makes bug
+  reports and support harder to triage ("which version are you on?" had no answer inside the app
+  itself).
+- **Fix:** Added a "Help" submenu with an "About TruSpec" item. Its handler shows a message dialog
+  (`app.dialog().message(...).title("About TruSpec").show(...)`) with the app name and version
+  pulled from `app.package_info().version` (Tauri's own build-time package metadata, already
+  synced from `tauri.conf.json`'s `version: "0.8.1"` — nothing hand-duplicated). Chose a dialog
+  over `PredefinedMenuItem::about` + `AboutMetadata` deliberately: the dialog plugin
+  (`tauri_plugin_dialog`) and its callback-based `.show(|_| {})` shape are already proven working
+  in this exact codebase (`sidecar.rs`'s folder picker uses the identical pattern), whereas
+  `AboutMetadata`'s exact field/builder shape across Tauri 2.x point releases was the part of this
+  finding I was least sure of from memory — reusing an already-working pattern instead of a new
+  one I couldn't verify was the lower-risk choice.
+
+### 5. Left as a documented decision, not touched: `tauri.conf.json`'s `security.csp` is `null`
+
+- Tauri's `app.security.csp` setting injects a CSP into HTML served through the **`tauri://`
+  asset protocol** (bundled frontend files). This app's window never uses that protocol — `main.rs`
+  → `sidecar.rs::navigate_to` always opens `WebviewWindowBuilder::new(app, "main",
+  WebviewUrl::External(url))` pointing at the sidecar's own `http://localhost:<port>`. Per my
+  understanding of Tauri's docs, an externally-loaded URL like that is governed by *that server's*
+  own HTTP response headers, not this config key — and the web UI's server already sets those
+  (`X-Frame-Options: DENY`, a `frame-ancestors 'none'` CSP header, covered by `e2e/security.spec.ts`).
+  If that understanding is right, `csp: null` here is inert either way and there's nothing to fix.
+- I did **not** flip it to a non-null value despite that reasoning, for one concrete reason: it's
+  the one change in this whole review where being wrong has a *silent, unrecoverable-without-a-
+  compiler* failure mode. If Tauri's CSP injection turns out to apply more broadly than I believe,
+  an over-strict policy (e.g. blocking inline styles Vite's production bundle may emit) would
+  render a blank window with no console access in a packaged build, and I have no way to catch
+  that before it reaches a user. The Edit-menu and About fixes above fail loud (a compile error CI
+  will catch) if I got something wrong; this one wouldn't. That asymmetry, not the underlying
+  question of whether it's a real gap, is why it's still untouched — worth a deliberate decision
+  by someone who can build and click through the packaged app, not a guess from me.
 
 ## Verdict
 
-Two small, standard-library/well-documented-API fixes applied and clearly marked unverified;
-three further findings reported for the user's own judgment rather than risking unverifiable Rust
-changes stacking up. If you'd like these compiled and confirmed (or the Edit-menu fix attempted),
-the desktop CI workflow (`.github/workflows/desktop.yml`) or a local Rust toolchain would need to
-actually run against this branch.
+Four small fixes applied and clearly marked unverified — two (window min-size, stale-folder
+fallback) from the first pass, two more (Edit menu, About) from this one, all reviewed against
+Tauri 2.11's documented API and reusing patterns already proven elsewhere in this same codebase
+where possible. One finding (CSP) deliberately left untouched rather than guessed at, given its
+uniquely silent failure mode. If you'd like all four compiled and confirmed, the desktop CI
+workflow (`.github/workflows/desktop.yml`) or a local Rust toolchain would need to actually run
+against this branch.
