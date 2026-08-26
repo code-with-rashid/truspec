@@ -157,6 +157,7 @@ export interface MockStatus {
   port?: number;
   url?: string;
   routes?: number;
+  delayMs?: number;
 }
 
 export interface MockLogEntry {
@@ -251,7 +252,7 @@ export const exportPostman = (path?: string) =>
   api<ExportPostmanResult>("/api/export/postman", { method: "POST", body: JSON.stringify({ path }) });
 
 export const mockStatus = () => api<MockStatus>("/api/mock/status");
-export const mockStart = (spec: string, port?: number) =>
-  api<MockStartResult>("/api/mock/start", { method: "POST", body: JSON.stringify({ spec, port }) });
+export const mockStart = (spec: string, port?: number, delayMs?: number) =>
+  api<MockStartResult>("/api/mock/start", { method: "POST", body: JSON.stringify({ spec, port, delayMs }) });
 export const mockStop = () => api<{ ok: boolean }>("/api/mock/stop", { method: "POST" });
 export const mockLog = () => api<{ log: MockLogEntry[] }>("/api/mock/log");

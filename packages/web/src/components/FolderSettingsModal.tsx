@@ -2,15 +2,20 @@ import { useEffect, useState } from "react";
 import { getFolderConfig, saveFolderConfig, type RequestAuth } from "../api";
 import { AuthEditor } from "./AuthEditor";
 import { EditableKV, objectToRows, rowsToObject, type KVRow } from "./EditableKV";
+import { VarAwareInput } from "./VarAwareInput";
 
 export function FolderSettingsModal({
   path,
   onClose,
   onSaved,
+  envVarNames,
 }: {
   path: string;
   onClose: () => void;
   onSaved: () => void;
+  /** Environment variable names, for `{{...}}` autocomplete in headers/auth values — a folder's
+   * base URL, headers, and auth are just as likely to reference a variable as a request's own. */
+  envVarNames: string[];
 }) {
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState("");
@@ -88,21 +93,33 @@ export function FolderSettingsModal({
                 value={name}
                 onChange={(e) => setName(e.target.value)}
               />
-              <input
-                className="path-input"
-                aria-label="base url"
-                placeholder="base url, e.g. {{baseUrl}}"
-                spellCheck={false}
-                value={baseUrl}
-                onChange={(e) => setBaseUrl(e.target.value)}
-              />
+              {envVarNames.length > 0 ? (
+                <VarAwareInput
+                  className="path-input"
+                  ariaLabel="base url"
+                  placeholder="base url, e.g. {{baseUrl}}"
+                  spellCheck={false}
+                  value={baseUrl}
+                  onChange={setBaseUrl}
+                  suggestions={envVarNames}
+                />
+              ) : (
+                <input
+                  className="path-input"
+                  aria-label="base url"
+                  placeholder="base url, e.g. {{baseUrl}}"
+                  spellCheck={false}
+                  value={baseUrl}
+                  onChange={(e) => setBaseUrl(e.target.value)}
+                />
+              )}
               <div>
                 <div className="env-section-label">headers (inherited by requests in this folder)</div>
-                <EditableKV rows={headerRows} onChange={setHeaderRows} keyPlaceholder="header" />
+                <EditableKV rows={headerRows} onChange={setHeaderRows} keyPlaceholder="header" varSuggestions={envVarNames} />
               </div>
               <div>
                 <div className="env-section-label">auth (inherited unless a request sets its own)</div>
-                <AuthEditor auth={auth} onChange={setAuth} />
+                <AuthEditor auth={auth} onChange={setAuth} envVarNames={envVarNames} />
               </div>
               {err && <div className="editor-err">{err}</div>}
               <div className="modal-actions">

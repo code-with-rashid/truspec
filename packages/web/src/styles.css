@@ -78,7 +78,10 @@ body,
 body {
   background: var(--ink);
   color: var(--text);
-  font-family: var(--mono);
+  /* --sans for UI chrome (labels, buttons, names, prose) — --mono stays reserved for genuinely
+     technical strings (URLs, file paths, request/response bodies, the YAML editor), the same
+     distinction Postman/Bruno both make. Previously the whole app read as monospace, everywhere. */
+  font-family: var(--sans);
   font-size: 13px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
@@ -127,10 +130,11 @@ pre {
 /* ---- Top bar ---- */
 .topbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 16px;
-  padding: 0 14px;
-  height: 50px;
+  gap: 10px 16px;
+  padding: 8px 14px;
+  min-height: 50px;
   border-bottom: 1px solid var(--line);
   background: var(--panel);
   position: relative;
@@ -345,11 +349,12 @@ select:focus {
 /* ---- Workspace ---- */
 .workspace {
   display: grid;
-  grid-template-columns: 270px minmax(0, 1fr) 340px;
+  grid-template-columns: 270px minmax(500px, 1fr) 340px;
   min-height: 0;
+  overflow-x: auto;
 }
 .workspace.no-rail {
-  grid-template-columns: 270px minmax(0, 1fr);
+  grid-template-columns: 270px minmax(500px, 1fr);
 }
 .workspace > * {
   min-height: 0;
@@ -373,6 +378,17 @@ select:focus {
 .resize-handle:hover,
 .resize-handle:active {
   background: var(--line-2);
+}
+.resize-handle.horiz {
+  cursor: row-resize;
+  flex-shrink: 0;
+  height: 1px;
+}
+.resize-handle.horiz::after {
+  top: -3px;
+  bottom: -3px;
+  left: 0;
+  right: 0;
 }
 .sidebar {
   border-right: 1px solid var(--line);
@@ -710,35 +726,6 @@ select:focus {
   color: var(--lime);
   border-color: var(--lime);
 }
-.new-folder-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--line);
-  background: var(--panel-2);
-}
-.new-folder-input {
-  flex: 1;
-  min-width: 0;
-  font-size: 12px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 5px 9px;
-  color: var(--text);
-}
-.new-folder-input:focus {
-  border-color: var(--lime);
-  outline: none;
-}
-.new-folder-err {
-  padding: 6px 10px;
-  font-size: 11px;
-  color: var(--red);
-  border-bottom: 1px solid var(--line);
-  background: var(--panel-2);
-}
 .editable-kv {
   display: flex;
   flex-direction: column;
@@ -874,6 +861,18 @@ select:focus {
 /* ---- Main panel ---- */
 .main {
   padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+/* Scroll lives here (not on .main) so a request tab can size its own split to exactly this
+   pane's height instead of the split math being relative to `.main`'s sticky tab-strip sibling. */
+.main-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
 }
 .empty {
   height: 100%;
@@ -956,11 +955,19 @@ select:focus {
 }
 
 .reqview {
-  padding: 18px 22px 0;
   max-width: 1040px;
+  width: 100%;
+  height: 100%;
   display: flex;
   flex-direction: column;
-  min-height: 100%;
+}
+/* The request-builder half of the split: grows to fill whatever space the resizable response
+   dock below isn't using, and scrolls internally instead of pushing the response off-screen. */
+.reqview-top {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 18px 22px 16px;
 }
 .req-top {
   display: flex;
@@ -994,11 +1001,83 @@ select:focus {
   flex: 1;
   min-width: 0;
   padding: 0 12px;
+  font-family: var(--mono);
   font-size: 13.5px;
   color: var(--text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+/* The method + URL are inline-editable (a select + input, not static text) — the two most-edited
+   fields on a request, matching Postman/Bruno's basic compose loop instead of forcing a trip to
+   the raw YAML editor for something as routine as changing GET to POST or fixing a typo'd path. */
+.url-bar .method-select {
+  background: transparent;
+  cursor: pointer;
+  border-radius: 0;
+}
+.url-bar .method-select:hover {
+  background: var(--panel-2);
+}
+.url-bar .method-select:focus-visible {
+  outline-offset: -2px;
+}
+.url-input {
+  border: 0;
+  outline: none;
+  background: transparent;
+}
+.url-input:focus {
+  background: var(--panel-2);
+}
+/* ---- {{var}} autocomplete (VarAwareInput) ---- */
+.var-input-wrap {
+  position: relative;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+/* Flex sizing is context-specific — VarAwareInput's wrapper div sits one level deeper than the
+   plain <input> it replaces, so the ratio the replaced element had in its own parent (url-bar's
+   1 flex-share, editable-kv-row's 2 of 1:2 key:value) has to be reapplied to the wrapper. */
+.url-bar .var-input-wrap {
+  flex: 1;
+  min-width: 140px;
+}
+.editable-kv-row .var-input-wrap {
+  flex: 2;
+}
+.var-input-wrap .url,
+.var-input-wrap .editable-kv-value {
+  width: 100%;
+}
+.var-suggest {
+  position: fixed;
+  background: var(--panel);
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px color-mix(in oklab, #000 40%, transparent);
+  z-index: 30;
+  max-height: 220px;
+  overflow: auto;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.var-suggest-item {
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 6px 9px;
+  border-radius: 5px;
+  font-size: 12.5px;
+  color: var(--cyan);
+  cursor: pointer;
+}
+.var-suggest-item.active,
+.var-suggest-item:hover {
+  background: var(--panel-3);
 }
 .req-top .btn {
   height: 40px;
@@ -1052,13 +1131,74 @@ select:focus {
   border-radius: 20px;
   padding: 3px 11px;
 }
-.docs {
-  margin-top: 9px;
+.order-add {
+  font-size: 11px;
+  color: var(--dimmer);
+  background: none;
+  border: 1px dashed var(--line-2);
+  border-radius: 20px;
+  padding: 3px 11px;
+  cursor: pointer;
+}
+.order-add:hover {
   color: var(--dim);
+  border-color: var(--dim);
+}
+.order-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--dimmer);
+  border: 1px solid var(--line-2);
+  border-radius: 20px;
+  padding: 3px 6px 3px 11px;
+}
+.order-field input {
+  width: 40px;
+  background: var(--panel-2);
+  border: 1px solid var(--line-2);
+  color: var(--text);
+  padding: 2px 5px;
+  border-radius: 10px;
+  outline: none;
+  font-size: 11px;
+}
+.order-field input:focus {
+  border-color: var(--lime);
+}
+.order-remove {
+  background: none;
+  border: none;
+  color: var(--dimmer);
+  cursor: pointer;
+  font-size: 10px;
+  padding: 2px;
+  border-radius: 3px;
+}
+.order-remove:hover {
+  color: var(--text);
+}
+.docs-edit {
+  margin-top: 9px;
+  max-width: 64ch;
+}
+.docs-input {
+  width: 100%;
+  min-height: 44px;
+  resize: vertical;
   font-family: var(--sans);
   font-size: 12.5px;
   line-height: 1.5;
-  max-width: 64ch;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.docs-input:focus {
+  border-color: var(--line-2);
+  outline: none;
 }
 
 /* ---- Tabs (request + response) ---- */
@@ -1084,6 +1224,11 @@ select:focus {
 .tab.active {
   color: var(--text);
   border-bottom-color: var(--lime);
+}
+.tabs .copy-btn {
+  align-self: center;
+  margin: 6px 0;
+  flex-shrink: 0;
 }
 .tab-count {
   font-size: 10px;
@@ -1155,6 +1300,24 @@ select:focus {
 .script-block + .script-block {
   margin-top: 18px;
 }
+.script-text {
+  width: 100%;
+  min-height: 90px;
+  resize: vertical;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.55;
+  tab-size: 2;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.script-text:focus {
+  border-color: var(--line-2);
+  outline: none;
+}
 .type-label {
   font-size: 10px;
   text-transform: uppercase;
@@ -1191,6 +1354,61 @@ select:focus {
   color: var(--dim);
   font-size: 12.5px;
 }
+/* ---- Inline assertions editor (assert tab) ---- */
+.asserts-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+.assert-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+.assert-type-select {
+  flex-shrink: 0;
+  min-width: 90px;
+  font-size: 12px;
+  color: var(--lime);
+}
+.assert-fields {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.assert-fields select {
+  flex-shrink: 0;
+  font-size: 12px;
+}
+.assert-name {
+  flex: 1;
+  min-width: 0;
+  max-width: 220px;
+}
+.assert-value {
+  flex: 1;
+  min-width: 0;
+}
+.assert-required {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--dim);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.assert-required input {
+  cursor: pointer;
+}
 .assert {
   display: flex;
   gap: 9px;
@@ -1222,18 +1440,38 @@ select:focus {
   flex: 1;
 }
 
-/* ---- Response ---- */
+/* ---- Response (bottom half of the reqview split — always visible, its own scroll) ---- */
 .response {
-  margin-top: auto;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
   border-top: 1px solid var(--line);
   background: color-mix(in oklab, var(--panel) 40%, transparent);
+  overflow: hidden;
 }
 .response-head {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 12px 22px;
   flex-wrap: wrap;
+}
+.response-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+}
+.response-placeholder {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 24px;
+  font-size: 12.5px;
 }
 .response-label {
   font-size: 10.5px;
@@ -1272,7 +1510,15 @@ select:focus {
   border: 1px solid var(--line-2);
 }
 .response-body-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
   padding: 14px 22px 24px;
+}
+/* The response's own JSON/text block fills the resizable dock instead of stopping at .body's
+   320px cap (still used as-is for the script-view blocks, which live in the scrolling top pane). */
+.response-body-wrap .body {
+  max-height: none;
 }
 .body {
   background: var(--panel);
@@ -1734,6 +1980,12 @@ select:focus {
 .op-row:last-child {
   border-bottom: 0;
 }
+.op-row-link {
+  cursor: pointer;
+}
+.op-row-link:hover {
+  background: var(--panel-3);
+}
 .op-row code {
   flex: 1;
   font-size: 12.5px;
@@ -1845,6 +2097,12 @@ select:focus {
 .op.violet {
   color: var(--violet);
 }
+.op-link {
+  cursor: pointer;
+}
+.op-link:hover {
+  border-color: currentColor;
+}
 
 /* ---- Mock view ---- */
 .mockview {
@@ -1902,6 +2160,30 @@ select:focus {
 }
 .mock-port .n {
   color: var(--lime);
+}
+.mock-delay-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.mock-delay-field input {
+  width: 60px;
+  background: var(--panel-2);
+  border: 1px solid var(--line-2);
+  color: var(--text);
+  padding: 4px 6px;
+  border-radius: 6px;
+  outline: none;
+  font-size: 12px;
+  text-transform: none;
+  letter-spacing: normal;
+}
+.mock-delay-field input:focus {
+  border-color: var(--lime);
 }
 .mock-cmd {
   margin-top: 16px;
@@ -2077,6 +2359,15 @@ select:focus {
   font-size: 10.5px;
   color: var(--dimmer);
 }
+.palette-cmd-glyph {
+  width: 30px;
+  text-align: center;
+  color: var(--lime);
+  font-size: 13px;
+}
+.palette-cmd .palette-item-name {
+  color: var(--dim);
+}
 .palette-empty {
   padding: 24px;
   text-align: center;
@@ -2099,16 +2390,17 @@ select:focus {
 /* ---- Status line ---- */
 .statusline {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0;
-  height: 27px;
+  min-height: 27px;
   border-top: 1px solid var(--line);
   background: var(--panel);
   font-size: 11px;
   color: var(--dim);
 }
 .seg {
-  padding: 0 12px;
+  padding: 4px 12px;
   height: 100%;
   display: flex;
   align-items: center;
@@ -2197,7 +2489,9 @@ select:focus {
   font-size: 10.5px;
   letter-spacing: 2px;
   text-transform: uppercase;
-  color: var(--lime);
+  /* --text, not --lime: lime at this size falls under WCAG AA 4.5:1 in the light theme (same
+     issue already worked around for .nav-btn.active / .rail-tab.active). */
+  color: var(--text);
 }
 .editor-bar .grow {
   flex: 1;

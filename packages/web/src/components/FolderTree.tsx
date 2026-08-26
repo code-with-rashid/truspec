@@ -27,6 +27,7 @@ function RowActions({
       <button
         className="row-action-btn"
         title={`rename ${kind}`}
+        aria-label={`rename ${kind}`}
         onClick={(e) => {
           e.stopPropagation();
           actions.onAction("rename", path, kind);
@@ -37,6 +38,7 @@ function RowActions({
       <button
         className="row-action-btn"
         title={`duplicate ${kind}`}
+        aria-label={`duplicate ${kind}`}
         onClick={(e) => {
           e.stopPropagation();
           actions.onAction("duplicate", path, kind);
@@ -47,6 +49,7 @@ function RowActions({
       <button
         className="row-action-btn danger"
         title={`delete ${kind}`}
+        aria-label={`delete ${kind}`}
         onClick={(e) => {
           e.stopPropagation();
           actions.onAction("delete", path, kind);

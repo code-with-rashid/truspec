@@ -125,12 +125,13 @@ export function EnvironmentModal({
                 {environments.map((name) => (
                   <div className="env-list-row" key={name}>
                     <span className="env-list-name">{name}</span>
-                    <button className="row-action-btn" title="edit" onClick={() => void openEdit(name)}>
+                    <button className="row-action-btn" title="edit" aria-label={`edit environment "${name}"`} onClick={() => void openEdit(name)}>
                       ✎
                     </button>
                     <button
                       className="row-action-btn danger"
                       title="delete"
+                      aria-label={`delete environment "${name}"`}
                       onClick={() => {
                         setDeleteErr(null);
                         setDeleteTarget(name);
@@ -180,6 +181,7 @@ export function EnvironmentModal({
                       <button
                         className="row-action-btn danger"
                         title="remove"
+                        aria-label={`remove secret "${s}"`}
                         onClick={() => setSecrets(secrets.filter((x) => x !== s))}
                       >
                         ✕

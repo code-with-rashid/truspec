@@ -23,6 +23,7 @@ const MOCK_LOG_LIMIT = 50;
 interface MockState {
   handle: MockServerHandle;
   spec: string;
+  delayMs: number;
   log: Array<MockRequestLogEntry & { at: number }>;
 }
 
@@ -38,6 +39,7 @@ interface MockStatusJson {
   port?: number;
   url?: string;
   routes?: number;
+  delayMs?: number;
 }
 
 function mockStatusJson(ctx: ApiContext): MockStatusJson {
@@ -47,6 +49,7 @@ function mockStatusJson(ctx: ApiContext): MockStatusJson {
     port: ctx.mock?.handle.port,
     url: ctx.mock?.handle.url,
     routes: ctx.mock?.handle.routes,
+    delayMs: ctx.mock?.delayMs,
   };
 }
 
@@ -516,8 +519,9 @@ export async function handleApi(
     return { status: 200, json: mockStatusJson(ctx) };
   }
   if (method === "POST" && pathname === "/api/mock/start") {
-    const b = (body ?? {}) as { spec?: string; port?: number };
+    const b = (body ?? {}) as { spec?: string; port?: number; delayMs?: number };
     if (!b.spec) return { status: 400, json: { error: "spec required" } };
+    const delayMs = Number.isFinite(b.delayMs) && (b.delayMs ?? 0) > 0 ? (b.delayMs as number) : 0;
     let specPath: string;
     try {
       specPath = confinePath(ctx.dir, b.spec);
@@ -537,12 +541,13 @@ export async function handleApi(
       const handle = await startMockServer(specText, {
         port: b.port ?? DEFAULT_MOCK_PORT,
         validate: true,
+        delayMs,
         onRequest: (entry) => {
           log.unshift({ ...entry, at: Date.now() });
           log.length = Math.min(log.length, MOCK_LOG_LIMIT);
         },
       });
-      ctx.mock = { handle, spec: b.spec, log };
+      ctx.mock = { handle, spec: b.spec, delayMs, log };
     } catch (e) {
       ctx.mock = undefined;
       return { status: 200, json: { ok: false, error: (e as Error).message } };

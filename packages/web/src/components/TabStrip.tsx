@@ -10,11 +10,13 @@ export function TabStrip({
   activePath,
   onSelect,
   onClose,
+  onContextMenu,
 }: {
   tabs: TabStripItem[];
   activePath: string | null;
   onSelect: (path: string) => void;
   onClose: (path: string) => void;
+  onContextMenu: (x: number, y: number, path: string) => void;
 }) {
   if (tabs.length === 0) return null;
   return (
@@ -24,6 +26,10 @@ export function TabStrip({
           key={t.path}
           className={`tab-strip-item ${t.path === activePath ? "active" : ""}`}
           onClick={() => onSelect(t.path)}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            onContextMenu(e.clientX, e.clientY, t.path);
+          }}
           role="button"
           tabIndex={0}
           title={t.path}
@@ -34,6 +40,7 @@ export function TabStrip({
           <button
             className="tab-strip-close"
             title="close"
+            aria-label={`close ${t.name}`}
             onClick={(e) => {
               e.stopPropagation();
               onClose(t.path);
