@@ -1,3 +1,5 @@
+import { VarAwareInput } from "./VarAwareInput";
+
 export interface KVRow {
   key: string;
   value: string;
@@ -24,11 +26,15 @@ export function EditableKV({
   onChange,
   keyPlaceholder = "key",
   valuePlaceholder = "value",
+  varSuggestions,
 }: {
   rows: KVRow[];
   onChange: (rows: KVRow[]) => void;
   keyPlaceholder?: string;
   valuePlaceholder?: string;
+  /** Environment variable names, for `{{...}}` autocomplete in the value column. Omit to fall back
+   * to a plain input (e.g. contexts with no environment concept). */
+  varSuggestions?: string[];
 }) {
   const setRow = (i: number, patch: Partial<KVRow>): void => {
     onChange(rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
@@ -50,14 +56,25 @@ export function EditableKV({
             value={row.key}
             onChange={(e) => setRow(i, { key: e.target.value })}
           />
-          <input
-            className="editable-kv-value"
-            placeholder={valuePlaceholder}
-            spellCheck={false}
-            value={row.value}
-            onChange={(e) => setRow(i, { value: e.target.value })}
-          />
-          <button className="row-action-btn danger" title="remove" onClick={() => removeRow(i)}>
+          {varSuggestions && varSuggestions.length > 0 ? (
+            <VarAwareInput
+              className="editable-kv-value"
+              placeholder={valuePlaceholder}
+              spellCheck={false}
+              value={row.value}
+              onChange={(v) => setRow(i, { value: v })}
+              suggestions={varSuggestions}
+            />
+          ) : (
+            <input
+              className="editable-kv-value"
+              placeholder={valuePlaceholder}
+              spellCheck={false}
+              value={row.value}
+              onChange={(e) => setRow(i, { value: e.target.value })}
+            />
+          )}
+          <button className="row-action-btn danger" title="remove" aria-label="remove row" onClick={() => removeRow(i)}>
             ✕
           </button>
         </div>

@@ -1,6 +1,18 @@
 import type { RequestAuth } from "../api";
+import { VarAwareInput } from "./VarAwareInput";
 
-export function AuthEditor({ auth, onChange }: { auth?: RequestAuth; onChange: (auth: RequestAuth) => void }) {
+export function AuthEditor({
+  auth,
+  onChange,
+  envVarNames,
+}: {
+  auth?: RequestAuth;
+  onChange: (auth: RequestAuth) => void;
+  /** Environment variable names, for `{{...}}` autocomplete in the token/username/password/value
+   * fields — these almost always hold a captured or environment variable reference, same as the
+   * URL, params, and headers value fields. Omit to fall back to a plain input. */
+  envVarNames?: string[];
+}) {
   const type = auth?.type ?? "none";
 
   const setType = (next: RequestAuth["type"]): void => {
@@ -41,12 +53,22 @@ export function AuthEditor({ auth, onChange }: { auth?: RequestAuth; onChange: (
           <div className="kv">
             <div className="kv-row">
               <span className="kv-k">token</span>
-              <input
-                className="kv-input"
-                spellCheck={false}
-                value={auth.token}
-                onChange={(e) => onChange({ type: "bearer", token: e.target.value })}
-              />
+              {envVarNames && envVarNames.length > 0 ? (
+                <VarAwareInput
+                  className="kv-input"
+                  spellCheck={false}
+                  value={auth.token}
+                  onChange={(v) => onChange({ type: "bearer", token: v })}
+                  suggestions={envVarNames}
+                />
+              ) : (
+                <input
+                  className="kv-input"
+                  spellCheck={false}
+                  value={auth.token}
+                  onChange={(e) => onChange({ type: "bearer", token: e.target.value })}
+                />
+              )}
             </div>
           </div>
           <p className="captured-hint" style={{ marginTop: 9 }}>
@@ -59,21 +81,41 @@ export function AuthEditor({ auth, onChange }: { auth?: RequestAuth; onChange: (
         <div className="kv">
           <div className="kv-row">
             <span className="kv-k">username</span>
-            <input
-              className="kv-input"
-              spellCheck={false}
-              value={auth.username}
-              onChange={(e) => onChange({ ...auth, username: e.target.value })}
-            />
+            {envVarNames && envVarNames.length > 0 ? (
+              <VarAwareInput
+                className="kv-input"
+                spellCheck={false}
+                value={auth.username}
+                onChange={(v) => onChange({ ...auth, username: v })}
+                suggestions={envVarNames}
+              />
+            ) : (
+              <input
+                className="kv-input"
+                spellCheck={false}
+                value={auth.username}
+                onChange={(e) => onChange({ ...auth, username: e.target.value })}
+              />
+            )}
           </div>
           <div className="kv-row">
             <span className="kv-k">password</span>
-            <input
-              className="kv-input"
-              spellCheck={false}
-              value={auth.password}
-              onChange={(e) => onChange({ ...auth, password: e.target.value })}
-            />
+            {envVarNames && envVarNames.length > 0 ? (
+              <VarAwareInput
+                className="kv-input"
+                spellCheck={false}
+                value={auth.password}
+                onChange={(v) => onChange({ ...auth, password: v })}
+                suggestions={envVarNames}
+              />
+            ) : (
+              <input
+                className="kv-input"
+                spellCheck={false}
+                value={auth.password}
+                onChange={(e) => onChange({ ...auth, password: e.target.value })}
+              />
+            )}
           </div>
         </div>
       )}
@@ -91,12 +133,22 @@ export function AuthEditor({ auth, onChange }: { auth?: RequestAuth; onChange: (
           </div>
           <div className="kv-row">
             <span className="kv-k">value</span>
-            <input
-              className="kv-input"
-              spellCheck={false}
-              value={auth.value}
-              onChange={(e) => onChange({ ...auth, value: e.target.value })}
-            />
+            {envVarNames && envVarNames.length > 0 ? (
+              <VarAwareInput
+                className="kv-input"
+                spellCheck={false}
+                value={auth.value}
+                onChange={(v) => onChange({ ...auth, value: v })}
+                suggestions={envVarNames}
+              />
+            ) : (
+              <input
+                className="kv-input"
+                spellCheck={false}
+                value={auth.value}
+                onChange={(e) => onChange({ ...auth, value: e.target.value })}
+              />
+            )}
           </div>
           <div className="kv-row">
             <span className="kv-k">in</span>

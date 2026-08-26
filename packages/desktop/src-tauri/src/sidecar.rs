@@ -26,7 +26,16 @@ struct Ready {
 /// window at it" — used both at startup (persisted directory, or a folder picker if none yet)
 /// and from the "File > Open Collection…" menu item (`force_picker = true`).
 pub fn open_collection_flow(app: AppHandle, force_picker: bool) {
-    let persisted = if force_picker { None } else { config::get_last_dir(&app) };
+    // A persisted directory that's since been deleted, renamed, or lives on a now-disconnected
+    // removable/network drive must not be handed to the sidecar as-is — `truspec serve --dir`
+    // would start against a path that doesn't exist, and with no picker offered as a fallback the
+    // window would be stuck on whatever failure state that produces with no visible way out short
+    // of already knowing about "File > Open Collection…".
+    let persisted = if force_picker {
+        None
+    } else {
+        config::get_last_dir(&app).filter(|dir| std::path::Path::new(dir).is_dir())
+    };
     log::info!("sidecar: open_collection_flow force_picker={force_picker} persisted={persisted:?}");
     match persisted {
         Some(dir) => start(app, dir),
@@ -167,9 +176,15 @@ fn navigate_to(app: &AppHandle, url: &str) {
             let _ = w.navigate(url);
         }
         None => {
+            // No floor on the OS window itself, only in the web UI's own CSS (which degrades
+            // gracefully down to ~620px by turning the toolbar and sidebar/rail into scrollable
+            // regions — see the web package's round 14/15 UX passes) — meant as a last resort for
+            // a window that's already narrower than ideal, not as license to let the *native*
+            // window shrink to a sliver a user can't recover from without knowing to drag it back.
             let _ = WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url))
                 .title("TruSpec")
                 .inner_size(1200.0, 800.0)
+                .min_inner_size(680.0, 480.0)
                 .build();
         }
     }

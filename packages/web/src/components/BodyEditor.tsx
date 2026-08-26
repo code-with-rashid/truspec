@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { RequestBody } from "../api";
-import { EditableKV, objectToRows, rowsToObject } from "./EditableKV";
+import { EditableKV, objectToRows, rowsToObject, type KVRow } from "./EditableKV";
 
 /** Live-parses JSON on every keystroke; only propagates to the parent once it parses, otherwise
  * holds the last-valid value and shows an inline "not applied" note. Reseeds its local text only
@@ -44,8 +44,28 @@ function JsonTextEditor({ value, onChange }: { value: unknown; onChange: (value:
   );
 }
 
-export function BodyEditor({ body, onChange }: { body?: RequestBody; onChange: (body: RequestBody) => void }) {
+export function BodyEditor({
+  body,
+  onChange,
+  envVarNames,
+}: {
+  body?: RequestBody;
+  onChange: (body: RequestBody) => void;
+  envVarNames?: string[];
+}) {
   const type = body?.type ?? "none";
+
+  // Mirrors RequestWorkspace's queryRows/headerRows: kept as its own state (not derived from
+  // body.content on every render) so a blank or in-progress-duplicate key survives —
+  // rowsToObject() would otherwise drop it immediately, and re-deriving from that object on the
+  // next render would make a freshly-added row vanish before you could type a key into it at all.
+  // Reset only when switching *into* form (a fresh mount effectively, and setType's own reset of
+  // content to `{}` when arriving from a different type needs mirroring here) — not on every
+  // keystroke.
+  const [formRows, setFormRows] = useState<KVRow[]>(() => (body?.type === "form" ? objectToRows(body.content) : []));
+  useEffect(() => {
+    if (type === "form") setFormRows(objectToRows(body?.type === "form" ? body.content : {}));
+  }, [type]);
 
   const setType = (next: RequestBody["type"]): void => {
     if (next === "none") onChange({ type: "none" });
@@ -89,9 +109,13 @@ export function BodyEditor({ body, onChange }: { body?: RequestBody; onChange: (
 
       {body?.type === "form" && (
         <EditableKV
-          rows={objectToRows(body.content)}
-          onChange={(rows) => onChange({ type: "form", content: rowsToObject(rows) })}
+          rows={formRows}
+          onChange={(rows) => {
+            setFormRows(rows);
+            onChange({ type: "form", content: rowsToObject(rows) });
+          }}
           keyPlaceholder="field"
+          varSuggestions={envVarNames}
         />
       )}
 

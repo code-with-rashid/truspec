@@ -14,6 +14,7 @@ import {
   drift as apiDrift,
   duplicatePath,
   exportPostman,
+  getEnvironment,
   getRequest,
   getState,
   mockLog as apiMockLog,
@@ -40,6 +41,8 @@ import { Editor, type EditMode } from "./components/Editor";
 import { EnvironmentModal } from "./components/EnvironmentModal";
 import { FolderSettingsModal } from "./components/FolderSettingsModal";
 import { FolderTree, type RowAction, type RowActionsController, type RowKind } from "./components/FolderTree";
+import { NewFolderModal } from "./components/NewFolderModal";
+import { NewRequestModal, type NewRequestPayload } from "./components/NewRequestModal";
 import { contractInfo, RequestWorkspace, specRefOf, type ReqTab, type RespTab } from "./components/RequestWorkspace";
 import { TabStrip } from "./components/TabStrip";
 import { statusClass } from "./format-utils";
@@ -48,7 +51,46 @@ import { baseName, buildFolderTree, countRequests, filterTree, normPath, shortDi
 
 type Theme = "dark" | "light";
 type View = "workspace" | "spec" | "mock" | "flow";
-type RailTab = "spec" | "runs";
+type RailTab = "spec" | "runs" | "history";
+
+/** One individually-sent request (not a "run all" collection run — those already have their own
+ * "runs" rail tab). Postman/Bruno both keep a persistent send log; TruSpec had nothing like it. */
+interface HistoryEntry {
+  path: string;
+  name: string;
+  method: string;
+  url: string;
+  ok: boolean;
+  status?: number;
+  statusText?: string;
+  durationMs?: number;
+  error?: string;
+  at: number;
+}
+
+const HISTORY_KEY = "truspec.history";
+const HISTORY_LIMIT = 50;
+
+function loadHistory(): HistoryEntry[] {
+  try {
+    const raw = window.localStorage.getItem(HISTORY_KEY);
+    const parsed: unknown = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? (parsed as HistoryEntry[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function relativeTime(at: number): string {
+  const s = Math.round((Date.now() - at) / 1000);
+  if (s < 5) return "just now";
+  if (s < 60) return `${s}s ago`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.round(h / 24)}d ago`;
+}
 
 /** One open request tab. `detail`/`draft` are null while the tab's content is still loading.
  * Draft/dirty live here (per tab), not in a shared hook, so a background tab keeps its unsaved
@@ -60,6 +102,17 @@ interface OpenTab {
   dirty: boolean;
   tab: ReqTab;
   respTab: RespTab;
+}
+
+const THEME_KEY = "truspec.theme";
+
+/** An explicit prior choice (the toggle button) wins; otherwise default to the OS/browser's own
+ * light/dark preference instead of always starting dark, matching Postman/Bruno's "remember what
+ * I picked, or match my system" behavior instead of resetting on every load. */
+function initialTheme(): Theme {
+  const saved = window.localStorage.getItem(THEME_KEY);
+  if (saved === "dark" || saved === "light") return saved;
+  return window.matchMedia?.("(prefers-color-scheme: light)").matches ? "light" : "dark";
 }
 
 const NEW_TEMPLATE = `name: New request
@@ -124,15 +177,21 @@ export function App() {
   const [tabs, setTabs] = useState<OpenTab[]>([]);
   const [activeTabPath, setActiveTabPath] = useState<string | null>(null);
   const [env, setEnv] = useState("");
+  const [envVarNames, setEnvVarNames] = useState<string[]>([]);
   const [spec, setSpec] = useState("");
   const [running, setRunning] = useState(false);
   const [lastRun, setLastRun] = useState<{ missingSecrets: string[] } | null>(null);
   const [ranResults, setRanResults] = useState<Map<string, RunResult>>(new Map());
+  const [history, setHistory] = useState<HistoryEntry[]>(loadHistory);
   const [driftRep, setDriftRep] = useState<DriftReport | null>(null);
   const [covRep, setCovRep] = useState<CoverageReport | null>(null);
   const [specErr, setSpecErr] = useState<string | null>(null);
   const [view, setView] = useState<View>("workspace");
-  const [theme, setTheme] = useState<Theme>("dark");
+  const [theme, setThemeState] = useState<Theme>(initialTheme);
+  const setTheme = (next: Theme, persist = true): void => {
+    setThemeState(next);
+    if (persist) window.localStorage.setItem(THEME_KEY, next);
+  };
   const [booted, setBooted] = useState(false);
   const [editing, setEditing] = useState<EditMode | null>(null);
   const [editorKey, setEditorKey] = useState(0); // bump to remount Editor with a fresh draft
@@ -147,10 +206,11 @@ export function App() {
   const [mockEntries, setMockEntries] = useState<MockLogEntry[]>([]);
   const [mockBusy, setMockBusy] = useState(false);
   const [mockErr, setMockErr] = useState<string | null>(null);
+  const [mockDelayMs, setMockDelayMs] = useState(0);
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set());
   const [collectionCollapsed, setCollectionCollapsed] = useState(false);
   const [creatingFolder, setCreatingFolder] = useState(false);
-  const [newFolderPath, setNewFolderPath] = useState("");
+  const [newFolderPrefix, setNewFolderPrefix] = useState<string | undefined>(undefined);
   const [folderErr, setFolderErr] = useState<string | null>(null);
   const [folderBusy, setFolderBusy] = useState(false);
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
@@ -165,6 +225,7 @@ export function App() {
   const [envModalOpen, setEnvModalOpen] = useState(false);
   const [ctxMenu, setCtxMenu] = useState<ContextMenuState | null>(null);
   const [folderSettingsPath, setFolderSettingsPath] = useState<string | null>(null);
+  const [quickNewPrefix, setQuickNewPrefix] = useState<string | null>(null);
   const [sidebarW, sidebarDrag] = usePanelWidth("truspec.sidebarWidth", 270, MIN_SIDEBAR, MAX_SIDEBAR, false);
   const [railW, railDrag] = usePanelWidth("truspec.railWidth", 340, MIN_RAIL, MAX_RAIL, true);
 
@@ -173,6 +234,25 @@ export function App() {
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
+
+  // Declared vars + secrets on the active environment, for the request bar's `{{...}}` autocomplete.
+  useEffect(() => {
+    if (!env) {
+      setEnvVarNames([]);
+      return;
+    }
+    let ignore = false;
+    getEnvironment(env)
+      .then((d) => {
+        if (!ignore) setEnvVarNames([...Object.keys(d.variables ?? {}), ...(d.secrets ?? [])]);
+      })
+      .catch(() => {
+        if (!ignore) setEnvVarNames([]);
+      });
+    return () => {
+      ignore = true;
+    };
+  }, [env]);
 
   useEffect(() => {
     getState()
@@ -311,35 +391,38 @@ export function App() {
 
   const openNewFolder = useCallback((prefix?: string) => {
     setFolderErr(null);
-    setNewFolderPath(prefix ? `${prefix}/` : "");
+    setNewFolderPrefix(prefix);
     setCreatingFolder(true);
   }, []);
 
   const closeNewFolder = useCallback(() => {
     setCreatingFolder(false);
-    setNewFolderPath("");
+    setNewFolderPrefix(undefined);
     setFolderErr(null);
   }, []);
 
-  const doCreateFolder = useCallback(async () => {
-    const p = newFolderPath.trim();
-    if (!p) return;
-    setFolderBusy(true);
-    setFolderErr(null);
-    try {
-      const res = await createFolder(p);
-      if (!res.ok) {
-        setFolderErr(res.error ?? "failed to create folder");
-        return;
+  const doCreateFolder = useCallback(
+    async (path: string) => {
+      const p = path.trim();
+      if (!p) return;
+      setFolderBusy(true);
+      setFolderErr(null);
+      try {
+        const res = await createFolder(p);
+        if (!res.ok) {
+          setFolderErr(res.error ?? "failed to create folder");
+          return;
+        }
+        setState(await getState());
+        closeNewFolder();
+      } catch (e) {
+        setFolderErr(String(e));
+      } finally {
+        setFolderBusy(false);
       }
-      setState(await getState());
-      closeNewFolder();
-    } catch (e) {
-      setFolderErr(String(e));
-    } finally {
-      setFolderBusy(false);
-    }
-  }, [newFolderPath, closeNewFolder]);
+    },
+    [closeNewFolder],
+  );
 
   // Open-or-focus a request tab. Reused by the tree, the command palette, run results, and the
   // raw-YAML editor's save flow.
@@ -376,6 +459,42 @@ export function App() {
       else closeTab(path);
     },
     [tabs, closeTab],
+  );
+
+  // Bulk close only ever drops *clean* tabs — a dirty one is silently left open rather than
+  // needing its own bulk confirm-dialog flow (safe by construction: nothing unsaved is ever
+  // discarded by "close others"/"close all", matching how VS Code's own bulk-close behaves).
+  const closeOtherTabs = useCallback(
+    (path: string) => {
+      setTabs((prev) => {
+        const next = prev.filter((t) => t.path === path || t.dirty);
+        if (activeTabPath && !next.some((t) => t.path === activeTabPath)) setActiveTabPath(path);
+        return next;
+      });
+    },
+    [activeTabPath],
+  );
+  const closeAllTabs = useCallback(() => {
+    setTabs((prev) => {
+      const next = prev.filter((t) => t.dirty);
+      if (!next.some((t) => t.path === activeTabPath)) setActiveTabPath(next[0]?.path ?? null);
+      return next;
+    });
+  }, [activeTabPath]);
+
+  const handleTabContextMenu = useCallback(
+    (x: number, y: number, path: string) => {
+      setCtxMenu({
+        x,
+        y,
+        items: [
+          { label: "close", onSelect: () => requestCloseTab(path) },
+          { label: "close others", onSelect: () => closeOtherTabs(path) },
+          { label: "close all", onSelect: () => closeAllTabs() },
+        ],
+      });
+    },
+    [requestCloseTab, closeOtherTabs, closeAllTabs],
   );
 
   const updateActiveTab = useCallback(
@@ -547,18 +666,25 @@ export function App() {
     void doRename(renamingPath, newPath, renamingKind, renamingKind === "request" ? trimmed : undefined);
   }, [renamingPath, renameValue, renamingKind, doRename, cancelRename]);
 
-  const doDuplicate = useCallback(async (path: string) => {
-    try {
-      const res = await duplicatePath(path);
-      if (!res.ok) {
-        setError(res.error ?? "duplicate failed");
-        return;
+  const doDuplicate = useCallback(
+    async (path: string, kind: RowKind) => {
+      try {
+        const res = await duplicatePath(path);
+        if (!res.ok) {
+          setError(res.error ?? "duplicate failed");
+          return;
+        }
+        setState(await getState());
+        // Opening the copy — not just silently refreshing the tree — matches Postman/Bruno's own
+        // "duplicate" behavior: you land on the new request ready to edit, instead of having to
+        // hunt for "Name (copy)" in a (possibly long, possibly collapsed) sidebar tree yourself.
+        if (kind === "request" && res.path) openTab(res.path);
+      } catch (e) {
+        setError(String(e));
       }
-      setState(await getState());
-    } catch (e) {
-      setError(String(e));
-    }
-  }, []);
+    },
+    [openTab],
+  );
 
   const doExport = useCallback(async () => {
     try {
@@ -583,7 +709,7 @@ export function App() {
   const handleRowAction = useCallback(
     (action: RowAction, path: string, kind: RowKind) => {
       if (action === "rename") startRename(path, kind);
-      else if (action === "duplicate") void doDuplicate(path);
+      else if (action === "duplicate") void doDuplicate(path, kind);
       else if (action === "delete") {
         setDeleteErr(null);
         setDeleteTarget({ path, kind });
@@ -677,6 +803,34 @@ export function App() {
           for (const res of r.results) if (res.filePath) next.set(normPath(res.filePath), res);
           return next;
         });
+        // Log individual sends only — a "run all" collection run already has its own "runs" rail
+        // tab, and logging every request in a bulk run would flood a log meant for "what did I
+        // just send" recall. A single-target run always returns exactly one result, so there's no
+        // path-matching needed (and matching filePath against `target` is fragile: the server
+        // returns filePath relative to its own dir handle, which doesn't always normalize
+        // identically to the client-side `target` path across dev/e2e environments).
+        if (target) {
+          const res = r.results[0];
+          if (res) {
+            setHistory((prev) => {
+              const entry: HistoryEntry = {
+                path: target,
+                name: res.name,
+                method: res.request.method,
+                url: res.request.url,
+                ok: res.ok,
+                status: res.response?.status,
+                statusText: res.response?.statusText,
+                durationMs: res.response?.durationMs,
+                error: res.error,
+                at: Date.now(),
+              };
+              const next = [entry, ...prev].slice(0, HISTORY_LIMIT);
+              window.localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+              return next;
+            });
+          }
+        }
         // A run triggered from the Flow view should stay there — only workspace-triggered
         // runs (or the top-bar "run all") jump to the runs rail.
         setView((v) => (v === "flow" ? v : "workspace"));
@@ -719,7 +873,7 @@ export function App() {
       }
       items.push(
         { label: "rename", onSelect: () => startRename(path, kind) },
-        { label: "duplicate", onSelect: () => void doDuplicate(path) },
+        { label: "duplicate", onSelect: () => void doDuplicate(path, kind) },
         {
           label: "delete",
           danger: true,
@@ -795,12 +949,26 @@ export function App() {
     return res;
   }, []);
 
+  const createQuickRequest = useCallback(async (path: string, request: NewRequestPayload) => {
+    const res = await saveRequestObject(path, request as unknown as Record<string, unknown>);
+    if (res.ok) {
+      const saved = res.path ?? path;
+      setState(await getState());
+      const freshDetail = await getRequest(saved);
+      setTabs((prev) => [...prev, { path: saved, detail: freshDetail, draft: freshDetail, dirty: false, tab: "params", respTab: "body" }]);
+      setActiveTabPath(saved);
+      setView("workspace");
+      setQuickNewPrefix(null);
+    }
+    return res;
+  }, []);
+
   const doMockStart = useCallback(async () => {
     if (!spec) return;
     setMockBusy(true);
     setMockErr(null);
     try {
-      const r = await apiMockStart(spec);
+      const r = await apiMockStart(spec, undefined, mockDelayMs > 0 ? mockDelayMs : undefined);
       if (!r.ok) {
         setMockErr(r.error ?? "failed to start the mock server");
         return;
@@ -811,7 +979,7 @@ export function App() {
     } finally {
       setMockBusy(false);
     }
-  }, [spec]);
+  }, [spec, mockDelayMs]);
 
   const doMockStop = useCallback(async () => {
     setMockBusy(true);
@@ -837,7 +1005,7 @@ export function App() {
     if (!state || booted) return;
     setBooted(true);
     const p = new URLSearchParams(window.location.search);
-    if (p.get("theme") === "light") setTheme("light");
+    if (p.get("theme") === "light") setTheme("light", false);
     if (p.get("run") === "all") void doRun(undefined);
     const v = p.get("view");
     if (v === "spec" || v === "mock" || v === "flow") setView(v);
@@ -893,6 +1061,15 @@ export function App() {
       .sort((a, b) => a.key.localeCompare(b.key));
   }, [covRep, driftRep]);
 
+  // Every drift/coverage entry is keyed by the same spec-operation ref a request's own `specRef`
+  // resolves to — this map lets the dashboard jump straight to the request behind an operation
+  // instead of leaving the user to search the sidebar tree for it themselves.
+  const specRefToPath = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const r of state?.requests ?? []) if (r.specRef) map.set(r.specRef, r.path);
+    return map;
+  }, [state]);
+
   const activeSpecRef = specRefOf(activeTab?.detail ?? null);
   const isStale = !!activeSpecRef && !!driftRep?.removed.includes(activeSpecRef);
   const contract = contractInfo(activeTab?.detail ?? null, selectedResult);
@@ -901,6 +1078,32 @@ export function App() {
     const q = paletteQ.trim().toLowerCase();
     return (state?.requests ?? []).filter((r) => !q || `${r.name} ${r.method} ${r.url}`.toLowerCase().includes(q));
   }, [state, paletteQ]);
+
+  // The palette's own placeholder ("jump to a request, run, or view…") promised these two things
+  // it never actually offered — only request search. Filtered by the same query as requests.
+  const paletteCommands = useMemo(() => {
+    const q = paletteQ.trim().toLowerCase();
+    const all = [
+      { id: "view-workspace", label: "go to workspace" },
+      { id: "view-spec", label: "go to spec view" },
+      { id: "view-mock", label: "go to mock view" },
+      { id: "view-flow", label: "go to flow view" },
+      { id: "run-all", label: "run all requests" },
+    ];
+    return all.filter((c) => !q || c.label.toLowerCase().includes(q));
+  }, [paletteQ]);
+
+  const runPaletteCommand = useCallback(
+    (id: string) => {
+      setPaletteOpen(false);
+      if (id === "run-all") void doRun(undefined);
+      else if (id === "view-workspace") setView("workspace");
+      else if (id === "view-spec") setView("spec");
+      else if (id === "view-mock") setView("mock");
+      else if (id === "view-flow") setView("flow");
+    },
+    [doRun],
+  );
 
   const jumpTo = useCallback(
     (path: string) => {
@@ -965,7 +1168,7 @@ export function App() {
             ))}
           </select>
         </label>
-        <button className="btn ghost" onClick={() => setEnvModalOpen(true)} title="manage environments">
+        <button className="btn ghost" onClick={() => setEnvModalOpen(true)} title="manage environments" aria-label="manage environments">
           ⚙
         </button>
 
@@ -982,7 +1185,7 @@ export function App() {
         <button className="btn run" disabled={running} onClick={() => doRun(undefined)}>
           {running ? "running…" : "▶ run all"}
         </button>
-        <button className="btn ghost" onClick={() => setTheme(theme === "dark" ? "light" : "dark")} title="toggle theme">
+        <button className="btn ghost" onClick={() => setTheme(theme === "dark" ? "light" : "dark")} title="toggle theme" aria-label="toggle theme">
           {theme === "dark" ? "☾" : "☀"}
         </button>
       </header>
@@ -991,8 +1194,8 @@ export function App() {
         className={`workspace ${showRail ? "" : "no-rail"}`}
         style={{
           gridTemplateColumns: showRail
-            ? `${sidebarW}px 5px minmax(0, 1fr) 5px ${railW}px`
-            : `${sidebarW}px 5px minmax(0, 1fr)`,
+            ? `${sidebarW}px 5px minmax(500px, 1fr) 5px ${railW}px`
+            : `${sidebarW}px 5px minmax(500px, 1fr)`,
         }}
       >
         <aside className="sidebar">
@@ -1019,8 +1222,11 @@ export function App() {
               <button className="newreq new-folder" onClick={() => openNewFolder()} title="new folder">
                 + folder
               </button>
-              <button className="newreq new-request" onClick={() => openNew()} title="new request">
+              <button className="newreq new-request-quick" onClick={() => setQuickNewPrefix("")} title="new request">
                 + new
+              </button>
+              <button className="newreq new-request" onClick={() => openNew()} title="new request (raw YAML)">
+                + yaml
               </button>
               <button
                 className="newreq export-postman"
@@ -1031,33 +1237,6 @@ export function App() {
               </button>
             </div>
           </div>
-          {creatingFolder && (
-            <div className="new-folder-row">
-              <input
-                autoFocus
-                className="new-folder-input"
-                placeholder="folder/subfolder"
-                spellCheck={false}
-                value={newFolderPath}
-                onChange={(e) => setNewFolderPath(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") void doCreateFolder();
-                  else if (e.key === "Escape") closeNewFolder();
-                }}
-              />
-              <button className="btn ghost small" onClick={closeNewFolder} disabled={folderBusy}>
-                cancel
-              </button>
-              <button
-                className="btn run small"
-                onClick={() => void doCreateFolder()}
-                disabled={folderBusy || !newFolderPath.trim()}
-              >
-                create
-              </button>
-            </div>
-          )}
-          {folderErr && <div className="new-folder-err">{folderErr}</div>}
           {!collectionCollapsed && (
             <>
               <div className="tree-search">
@@ -1069,7 +1248,7 @@ export function App() {
                   onChange={(e) => setTreeQuery(e.target.value)}
                 />
                 {treeQuery && (
-                  <button className="tree-search-clear" title="clear filter" onClick={() => setTreeQuery("")}>
+                  <button className="tree-search-clear" title="clear filter" aria-label="clear filter" onClick={() => setTreeQuery("")}>
                     ✕
                   </button>
                 )}
@@ -1175,8 +1354,10 @@ export function App() {
                 setView("workspace");
               }}
               onClose={requestCloseTab}
+              onContextMenu={handleTabContextMenu}
             />
           )}
+          <div className="main-body">
           {editing ? (
             <Editor
               key={editorKey}
@@ -1204,7 +1385,16 @@ export function App() {
               }}
             />
           ) : view === "spec" ? (
-            <SpecDashboard spec={spec} driftRep={driftRep} covRep={covRep} specOps={specOps} driftCount={driftCount} specErr={specErr} />
+            <SpecDashboard
+              spec={spec}
+              driftRep={driftRep}
+              covRep={covRep}
+              specOps={specOps}
+              driftCount={driftCount}
+              specErr={specErr}
+              specRefToPath={specRefToPath}
+              onOpenRequest={jumpTo}
+            />
           ) : view === "mock" ? (
             <MockView
               spec={spec}
@@ -1214,6 +1404,8 @@ export function App() {
               err={mockErr}
               onToggle={toggleMock}
               ops={specOps}
+              delayMs={mockDelayMs}
+              onDelayChange={setMockDelayMs}
             />
           ) : activeTab ? (
             activeTab.detail && activeTab.draft ? (
@@ -1229,6 +1421,7 @@ export function App() {
                 activeSpecRef={activeSpecRef}
                 isStale={isStale}
                 contract={contract}
+                envVarNames={envVarNames}
                 onRun={() => doRun(activeTab.path)}
                 onEdit={openEdit}
                 onFieldChange={setActiveTabField}
@@ -1246,11 +1439,12 @@ export function App() {
               <div className="empty-mark">◢◤</div>
               <p>select a request, or run the whole collection.</p>
               <p className="muted">requests execute server-side via @truspec/core — no CORS, fully local.</p>
-              <button className="btn small" onClick={() => openNew()}>
+              <button className="btn small" onClick={() => setQuickNewPrefix("")}>
                 + new request
               </button>
             </div>
           )}
+          </div>
         </main>
 
         {showRail && (
@@ -1332,6 +1526,9 @@ export function App() {
               <button className={`rail-tab ${railTab === "runs" ? "active" : ""}`} onClick={() => setRailTab("runs")}>
                 runs
               </button>
+              <button className={`rail-tab ${railTab === "history" ? "active" : ""}`} onClick={() => setRailTab("history")}>
+                history
+              </button>
             </div>
 
             {railTab === "spec" ? (
@@ -1367,7 +1564,7 @@ export function App() {
                   </div>
                 )}
               </div>
-            ) : (
+            ) : railTab === "runs" ? (
               <div className="rail-panel">
                 {runStats.total > 0 ? (
                   <>
@@ -1388,6 +1585,52 @@ export function App() {
                       ▶ run collection
                     </button>
                   </div>
+                )}
+              </div>
+            ) : (
+              <div className="rail-panel">
+                {history.length > 0 ? (
+                  <>
+                    <div className="rsum">
+                      <span className="muted">last {history.length} send{history.length === 1 ? "" : "s"}</span>
+                      <span className="spacer" />
+                      <button
+                        className="btn ghost small"
+                        onClick={() => {
+                          setHistory([]);
+                          window.localStorage.removeItem(HISTORY_KEY);
+                        }}
+                      >
+                        clear
+                      </button>
+                    </div>
+                    <div className="result-list">
+                      {history.map((entry, i) => (
+                        <button
+                          key={`${entry.path}-${entry.at}-${i}`}
+                          className={`rrow ${entry.ok ? "ok" : "bad"}`}
+                          onClick={() => {
+                            openTab(entry.path);
+                            setView("workspace");
+                          }}
+                        >
+                          <div className="rrow-top">
+                            <span className={`m m-${entry.method}`}>{entry.method}</span>
+                            <span className="rrow-name">{entry.name}</span>
+                            <span className="rrow-status">
+                              {entry.status ?? (entry.error ? "err" : "—")}
+                            </span>
+                          </div>
+                          <span className="muted" style={{ fontSize: 11 }}>
+                            {relativeTime(entry.at)}
+                            {entry.durationMs !== undefined ? ` · ${entry.durationMs}ms` : ""}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <div className="empty-runs">nothing sent yet — history fills in as you send requests.</div>
                 )}
               </div>
             )}
@@ -1428,8 +1671,10 @@ export function App() {
           query={paletteQ}
           onQuery={setPaletteQ}
           items={paletteItems}
+          commands={paletteCommands}
           total={state?.requests.length ?? 0}
           onSelect={jumpTo}
+          onRunCommand={runPaletteCommand}
           onClose={() => setPaletteOpen(false)}
         />
       )}
@@ -1468,6 +1713,20 @@ export function App() {
         />
       )}
 
+      {quickNewPrefix !== null && (
+        <NewRequestModal prefix={quickNewPrefix} onCreate={createQuickRequest} onCancel={() => setQuickNewPrefix(null)} />
+      )}
+
+      {creatingFolder && (
+        <NewFolderModal
+          prefix={newFolderPrefix}
+          busy={folderBusy}
+          error={folderErr}
+          onCreate={(path) => void doCreateFolder(path)}
+          onCancel={closeNewFolder}
+        />
+      )}
+
       {envModalOpen && (
         <EnvironmentModal
           environments={state?.environments ?? []}
@@ -1482,6 +1741,7 @@ export function App() {
       {folderSettingsPath && (
         <FolderSettingsModal
           path={folderSettingsPath}
+          envVarNames={envVarNames}
           onClose={() => setFolderSettingsPath(null)}
           onSaved={() => {
             getState()
@@ -1519,6 +1779,8 @@ function SpecDashboard({
   specOps,
   driftCount,
   specErr,
+  specRefToPath,
+  onOpenRequest,
 }: {
   spec: string;
   driftRep: DriftReport | null;
@@ -1526,6 +1788,10 @@ function SpecDashboard({
   specOps: SpecOpRow[];
   driftCount: number;
   specErr: string | null;
+  /** Operation ref (matches `specOps[].key` and each `driftRep` entry) → the request that covers
+   * it, so a row/entry with a matching request can jump straight there. */
+  specRefToPath: Map<string, string>;
+  onOpenRequest: (path: string) => void;
 }) {
   if (!spec) {
     return (
@@ -1610,13 +1876,23 @@ function SpecDashboard({
           operations <span className="muted">{covRep.total}</span>
         </div>
         <div className="ops-table">
-          {specOps.map((o) => (
-            <div className="op-row" key={o.key}>
-              <span className={`m m-${o.method}`}>{o.method}</span>
-              <code>{o.path}</code>
-              <span className={`op-badge ${o.badge}`}>{o.badge}</span>
-            </div>
-          ))}
+          {specOps.map((o) => {
+            const path = specRefToPath.get(o.key);
+            return (
+              <div
+                className={`op-row ${path ? "op-row-link" : ""}`}
+                key={o.key}
+                role={path ? "button" : undefined}
+                tabIndex={path ? 0 : undefined}
+                title={path ? `open ${path}` : undefined}
+                onClick={path ? () => onOpenRequest(path) : undefined}
+              >
+                <span className={`m m-${o.method}`}>{o.method}</span>
+                <code>{o.path}</code>
+                <span className={`op-badge ${o.badge}`}>{o.badge}</span>
+              </div>
+            );
+          })}
         </div>
       </div>
 
@@ -1647,11 +1923,21 @@ function SpecDashboard({
                 <span className="resolve-sub">a request exists for an operation the spec dropped</span>
               </div>
               <div className="resolve-items">
-                {driftRep.removed.map((o) => (
-                  <code key={o} className="op red">
-                    − {o}
-                  </code>
-                ))}
+                {driftRep.removed.map((o) => {
+                  const path = specRefToPath.get(o);
+                  return (
+                    <code
+                      key={o}
+                      className={`op red ${path ? "op-link" : ""}`}
+                      role={path ? "button" : undefined}
+                      tabIndex={path ? 0 : undefined}
+                      title={path ? `open ${path}` : undefined}
+                      onClick={path ? () => onOpenRequest(path) : undefined}
+                    >
+                      − {o}
+                    </code>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -1663,11 +1949,21 @@ function SpecDashboard({
                 <span className="resolve-sub">params or schema differ from the request</span>
               </div>
               <div className="resolve-items">
-                {driftRep.changed.map((o) => (
-                  <code key={o} className="op violet">
-                    ~ {o}
-                  </code>
-                ))}
+                {driftRep.changed.map((o) => {
+                  const path = specRefToPath.get(o.split(":")[0] ?? "");
+                  return (
+                    <code
+                      key={o}
+                      className={`op violet ${path ? "op-link" : ""}`}
+                      role={path ? "button" : undefined}
+                      tabIndex={path ? 0 : undefined}
+                      title={path ? `open ${path}` : undefined}
+                      onClick={path ? () => onOpenRequest(path) : undefined}
+                    >
+                      ~ {o}
+                    </code>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -1699,6 +1995,8 @@ function MockView({
   err,
   onToggle,
   ops,
+  delayMs,
+  onDelayChange,
 }: {
   spec: string;
   mock: MockStatus;
@@ -1707,6 +2005,8 @@ function MockView({
   err: string | null;
   onToggle: () => void;
   ops: SpecOpRow[];
+  delayMs: number;
+  onDelayChange: (ms: number) => void;
 }) {
   return (
     <div className="mockview">
@@ -1728,6 +2028,25 @@ function MockView({
               localhost:<span className="n">{mock.port}</span>
             </span>
           )}
+          {mock.running && !!mock.delayMs && (
+            <span className="mock-port" title="artificial response latency">
+              <span className="n">{mock.delayMs}</span>ms delay
+            </span>
+          )}
+          {!mock.running && (
+            <label className="mock-delay-field" title="artificial response latency, for testing loading states">
+              latency
+              <input
+                type="number"
+                min={0}
+                step={50}
+                value={delayMs || ""}
+                placeholder="0"
+                onChange={(e) => onDelayChange(Math.max(0, Number(e.target.value) || 0))}
+              />
+              ms
+            </label>
+          )}
           <button className="btn run" disabled={!spec || busy} onClick={onToggle}>
             {mock.running ? "■ stop" : "▶ start"}
           </button>
@@ -1736,6 +2055,7 @@ function MockView({
           <span className="prompt">$</span>
           <code>
             truspec mock --spec {spec || "<spec>"} --port {mock.port ?? 4000}
+            {(mock.running ? mock.delayMs : delayMs) ? ` --delay ${mock.running ? mock.delayMs : delayMs}` : ""}
           </code>
         </div>
         <div className="mock-features">

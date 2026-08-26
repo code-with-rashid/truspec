@@ -97,6 +97,30 @@ interface FlowViewProps {
   onImported: () => void;
 }
 
+interface PendingImport {
+  kind: "postman" | "bruno";
+  files: Array<{ path: string; content: string }>;
+  /** Best-effort count from walking the parsed collection client-side — no server round-trip
+   * needed just to preview, since the importer has no separate "dry run" mode. */
+  requestCount: number;
+  sourceName: string;
+  targetDir: string;
+}
+
+/** Walks a Postman v2.1 collection's `item` tree (folders nest via their own `item` array; a leaf
+ * has a `request`) to count requests without asking the server — purely for the review step. */
+function countPostmanRequests(node: unknown): number {
+  if (!node || typeof node !== "object") return 0;
+  const items = (node as { item?: unknown[] }).item;
+  if (!Array.isArray(items)) return 0;
+  let count = 0;
+  for (const it of items) {
+    if (it && typeof it === "object" && "request" in it) count += 1;
+    else count += countPostmanRequests(it);
+  }
+  return count;
+}
+
 export function FlowView({ env, running, onRun, getResult, onImported }: FlowViewProps) {
   const [flow, setFlow] = useState<FlowState | null>(null);
   const [loadErr, setLoadErr] = useState<string | null>(null);
@@ -105,6 +129,7 @@ export function FlowView({ env, running, onRun, getResult, onImported }: FlowVie
   const [importOpen, setImportOpen] = useState(false);
   const [importBusy, setImportBusy] = useState(false);
   const [importMsg, setImportMsg] = useState<string | null>(null);
+  const [pendingImport, setPendingImport] = useState<PendingImport | null>(null);
   const postmanRef = useRef<HTMLInputElement>(null);
   const brunoRef = useRef<HTMLInputElement | null>(null);
 
@@ -157,20 +182,22 @@ export function FlowView({ env, running, onRun, getResult, onImported }: FlowVie
     return set;
   }, [edges, selectedIdx]);
 
-  async function runImport(files: Array<{ path: string; content: string }>, kind: "postman" | "bruno", targetDir: string): Promise<void> {
+  async function confirmImport(): Promise<void> {
+    if (!pendingImport) return;
+    const { kind, files, targetDir } = pendingImport;
+    const dir = targetDir.trim();
+    if (!dir) return;
     setImportBusy(true);
     setImportMsg(null);
     try {
-      const r =
-        kind === "postman"
-          ? await importPostman(JSON.parse(files[0]?.content ?? "null"), targetDir)
-          : await importBruno(files, targetDir);
+      const r = kind === "postman" ? await importPostman(JSON.parse(files[0]?.content ?? "null"), dir) : await importBruno(files, dir);
       if (!r.ok) {
         setImportMsg(`Import failed: ${r.error ?? "unknown error"}`);
         return;
       }
       const n = r.stats?.requests ?? 0;
-      setImportMsg(`Imported ${n} request${n === 1 ? "" : "s"} into ${targetDir}/` + (r.warnings?.length ? ` (${r.warnings.length} warning${r.warnings.length === 1 ? "" : "s"})` : ""));
+      setImportMsg(`Imported ${n} request${n === 1 ? "" : "s"} into ${dir}/` + (r.warnings?.length ? ` (${r.warnings.length} warning${r.warnings.length === 1 ? "" : "s"})` : ""));
+      setPendingImport(null);
       refresh();
       onImported();
     } catch (e) {
@@ -180,19 +207,32 @@ export function FlowView({ env, running, onRun, getResult, onImported }: FlowVie
     }
   }
 
+  function cancelPendingImport(): void {
+    setPendingImport(null);
+    setImportMsg(null);
+  }
+
   async function onPostmanFile(e: ChangeEvent<HTMLInputElement>): Promise<void> {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
+    setImportMsg(null);
     const text = await file.text();
-    let name = "imported";
+    let parsed: unknown;
     try {
-      name = slugify((JSON.parse(text)?.info?.name as string | undefined) ?? file.name.replace(/\.json$/, ""));
+      parsed = JSON.parse(text);
     } catch {
       setImportMsg("Import failed: not valid JSON");
       return;
     }
-    await runImport([{ path: file.name, content: text }], "postman", name);
+    const sourceName = (parsed as { info?: { name?: string } })?.info?.name ?? file.name.replace(/\.json$/, "");
+    setPendingImport({
+      kind: "postman",
+      files: [{ path: file.name, content: text }],
+      requestCount: countPostmanRequests(parsed),
+      sourceName,
+      targetDir: slugify(sourceName),
+    });
   }
 
   async function onBrunoDir(e: ChangeEvent<HTMLInputElement>): Promise<void> {
@@ -200,6 +240,7 @@ export function FlowView({ env, running, onRun, getResult, onImported }: FlowVie
     e.target.value = "";
     const [firstFile] = fileList;
     if (!firstFile) return;
+    setImportMsg(null);
     const firstPath = (firstFile as unknown as { webkitRelativePath?: string }).webkitRelativePath ?? firstFile.name;
     const root = firstPath.split("/")[0] || "imported";
     const files: Array<{ path: string; content: string }> = [];
@@ -212,7 +253,13 @@ export function FlowView({ env, running, onRun, getResult, onImported }: FlowVie
       setImportMsg("Import failed: no .bru files found in that folder");
       return;
     }
-    await runImport(files, "bruno", slugify(root));
+    setPendingImport({
+      kind: "bruno",
+      files,
+      requestCount: files.length,
+      sourceName: root,
+      targetDir: slugify(root),
+    });
   }
 
   return (
@@ -310,40 +357,99 @@ export function FlowView({ env, running, onRun, getResult, onImported }: FlowVie
       )}
 
       {importOpen && (
-        <div className="modal-overlay" onClick={() => !importBusy && setImportOpen(false)}>
+        <div
+          className="modal-overlay"
+          onClick={() => {
+            if (importBusy) return;
+            setImportOpen(false);
+            setPendingImport(null);
+            setImportMsg(null);
+          }}
+        >
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-head">
               <span>import a collection</span>
-              <button className="btn ghost small" disabled={importBusy} onClick={() => setImportOpen(false)}>
+              <button
+                className="btn ghost small"
+                disabled={importBusy}
+                onClick={() => {
+                  setImportOpen(false);
+                  setPendingImport(null);
+                  setImportMsg(null);
+                }}
+              >
                 close
               </button>
             </div>
             <div className="modal-body">
-              <p className="muted">Converts an existing collection into `.tspec.yaml` files and adds it to this workspace.</p>
-              <div className="modal-actions">
-                <button className="btn" disabled={importBusy} onClick={() => postmanRef.current?.click()}>
-                  postman collection (.json)
-                </button>
-                <button className="btn" disabled={importBusy} onClick={() => brunoRef.current?.click()}>
-                  bruno collection (folder)
-                </button>
-              </div>
-              <input ref={postmanRef} type="file" accept="application/json,.json" className="sr-only" onChange={(e) => void onPostmanFile(e)} />
-              <input
-                ref={(el) => {
-                  brunoRef.current = el;
-                  if (el) {
-                    el.setAttribute("webkitdirectory", "");
-                    el.setAttribute("directory", "");
-                  }
-                }}
-                type="file"
-                multiple
-                className="sr-only"
-                onChange={(e) => void onBrunoDir(e)}
-              />
-              {importBusy && <div className="muted">importing…</div>}
-              {importMsg && <div className={importMsg.startsWith("Import failed") ? "editor-err" : "muted"}>{importMsg}</div>}
+              {pendingImport ? (
+                <>
+                  <p className="muted">
+                    found {pendingImport.requestCount}{" "}
+                    {pendingImport.kind === "postman"
+                      ? `request${pendingImport.requestCount === 1 ? "" : "s"}`
+                      : `.bru file${pendingImport.requestCount === 1 ? "" : "s"}`}{" "}
+                    in <code>{pendingImport.sourceName}</code>.
+                  </p>
+                  <div className="kv">
+                    <div className="kv-row">
+                      <span className="kv-k">import into</span>
+                      <input
+                        autoFocus
+                        className="kv-input"
+                        spellCheck={false}
+                        value={pendingImport.targetDir}
+                        onChange={(e) => setPendingImport({ ...pendingImport, targetDir: e.target.value })}
+                        onKeyDown={(e) => e.key === "Enter" && void confirmImport()}
+                      />
+                    </div>
+                  </div>
+                  <p className="captured-hint" style={{ marginTop: 9 }}>
+                    writes new <code>.tspec.yaml</code> files under this folder in the current workspace —
+                    nothing elsewhere is touched.
+                  </p>
+                  {importMsg && <div className="editor-err">{importMsg}</div>}
+                  <div className="modal-actions">
+                    <button className="btn ghost" disabled={importBusy} onClick={cancelPendingImport}>
+                      back
+                    </button>
+                    <button
+                      className="btn run"
+                      disabled={importBusy || !pendingImport.targetDir.trim()}
+                      onClick={() => void confirmImport()}
+                    >
+                      {importBusy ? "importing…" : `import ${pendingImport.requestCount} request${pendingImport.requestCount === 1 ? "" : "s"}`}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="muted">Converts an existing collection into `.tspec.yaml` files and adds it to this workspace.</p>
+                  <div className="modal-actions">
+                    <button className="btn" disabled={importBusy} onClick={() => postmanRef.current?.click()}>
+                      postman collection (.json)
+                    </button>
+                    <button className="btn" disabled={importBusy} onClick={() => brunoRef.current?.click()}>
+                      bruno collection (folder)
+                    </button>
+                  </div>
+                  <input ref={postmanRef} type="file" accept="application/json,.json" className="sr-only" onChange={(e) => void onPostmanFile(e)} />
+                  <input
+                    ref={(el) => {
+                      brunoRef.current = el;
+                      if (el) {
+                        el.setAttribute("webkitdirectory", "");
+                        el.setAttribute("directory", "");
+                      }
+                    }}
+                    type="file"
+                    multiple
+                    className="sr-only"
+                    onChange={(e) => void onBrunoDir(e)}
+                  />
+                  {importMsg && <div className={importMsg.startsWith("Import failed") ? "editor-err" : "muted"}>{importMsg}</div>}
+                </>
+              )}
             </div>
           </div>
         </div>
