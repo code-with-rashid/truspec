@@ -125,3 +125,32 @@ valid reporters.
 **Verification.** 442 tests (was 432) — 8 report unit tests (including an XSS payload through
 name/URL/error/headers/body, and the truncation path) and 2 CLI. Typecheck 8/8, build 5/5.
 
+### 5 — OAuth2 authentication
+
+**Gap.** `auth` supported only `none`/`bearer`/`basic`/`apikey`. Every competitor supports OAuth2,
+and it is the single most common scheme on real APIs — without it, a TruSpec collection against an
+OAuth-protected API needed an out-of-band script to mint a token and inject it as a variable.
+
+**Change.** New `auth: { type: oauth2 }` with the three grants a machine can complete unattended:
+`client_credentials` (default), `password`, and `refresh_token`. An interactive authorization-code
+flow needs a browser a CI gate doesn't have, so it is deliberately excluded and documented as such
+(capture the refresh token once, then use `refresh_token`).
+
+The token is fetched before the request in `runRequest` (the resolver stays synchronous — it
+receives the acquired credential as an override) and cached per run, keyed by grant + endpoint +
+client + scope + audience, with a 30s expiry skew so a token can't expire mid-flight. A
+folder-level block shared by twenty requests therefore hits the token endpoint **once**: a real
+rate-limit hazard and a real cost on metered providers.
+
+Failures never throw: the provider's own error body (`invalid_client`, …) becomes the request's
+error and the API is never called. `clientAuth: body|basic` covers providers that accept only one
+form; `audience` and `extra` cover Auth0/Okta-style parameters. `codegen` renders an oauth2
+request with an honest `{{accessToken}}` placeholder rather than inventing a credential.
+
+Surfaced in the web UI's auth editor with a grant-aware form.
+
+**Verification.** 461 tests (was 442) — 19 covering the grants, client-auth placement,
+interpolation, every failure mode, cache hit/expiry/keying, and end-to-end through `runRequest`
+including folder inheritance and request-level override. Schema regenerated. Typecheck 8/8,
+build 5/5.
+

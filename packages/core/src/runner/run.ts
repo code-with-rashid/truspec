@@ -9,6 +9,7 @@ import {
 } from "./assertions";
 import { evaluateCaptures } from "./capture";
 import type { VarValue, Vars } from "./interpolate";
+import { type OAuth2Auth, resolveOAuthToken, type TokenCache } from "./oauth";
 import { resolveRequest } from "./resolve";
 import { runPostScript, runPreScript } from "./script";
 
@@ -22,6 +23,8 @@ export interface RunContext {
   timeoutMs?: number;
   /** Cap on the response body in bytes; the request fails if a server exceeds it. */
   maxResponseBytes?: number;
+  /** Shared OAuth2 token cache, so one collection run hits the token endpoint once. */
+  tokenCache?: TokenCache;
   /** OpenAPI context for response-schema validation (set when running with a spec). */
   contract?: {
     doc: Record<string, unknown>;
@@ -111,9 +114,35 @@ export async function runRequest(req: TruSpecRequest, ctx: RunContext = {}): Pro
     vars = { ...vars, ...pre.vars };
   }
 
+  // OAuth2 needs a network round-trip before the request can be resolved, so it happens here
+  // rather than inside the (synchronous) resolver, which then sees a plain bearer credential.
+  const declaredAuth = req.auth ?? ctx.folder?.auth;
+  let authOverride: TruSpecRequest["auth"];
+  if (declaredAuth?.type === "oauth2") {
+    const token = await resolveOAuthToken(declaredAuth as OAuth2Auth, {
+      vars,
+      fetch: ctx.fetch,
+      now: ctx.now,
+      cache: ctx.tokenCache,
+      timeoutMs: ctx.timeoutMs,
+    });
+    if (!token.ok) {
+      return {
+        name: req.name,
+        request: { method: req.method, url: req.url },
+        ok: false,
+        error: token.error,
+        assertions: [],
+      };
+    }
+    // Hand the acquired credential back as an opaque bearer-style value. `scheme` is already
+    // baked into `token.header`, so the resolver must not prepend "Bearer " a second time.
+    authOverride = { type: "apikey", name: "Authorization", value: token.header, in: "header" };
+  }
+
   let eff: ReturnType<typeof resolveRequest>;
   try {
-    eff = resolveRequest(req, { folder: ctx.folder, vars });
+    eff = resolveRequest(req, { folder: ctx.folder, vars, ...(authOverride ? { auth: authOverride } : {}) });
   } catch (e) {
     return {
       name: req.name,

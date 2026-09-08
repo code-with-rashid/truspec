@@ -24,15 +24,59 @@ export function AuthEditor({
         username: auth?.type === "basic" ? auth.username : "",
         password: auth?.type === "basic" ? auth.password : "",
       });
-    } else {
+    } else if (next === "apikey") {
       onChange({
         type: "apikey",
         name: auth?.type === "apikey" ? auth.name : "",
         value: auth?.type === "apikey" ? auth.value : "",
         in: auth?.type === "apikey" ? auth.in : "header",
       });
+    } else {
+      onChange(
+        auth?.type === "oauth2"
+          ? auth
+          : {
+              type: "oauth2",
+              grant: "client_credentials",
+              tokenUrl: "",
+              clientAuth: "body",
+              scheme: "Bearer",
+            },
+      );
     }
   };
+
+  /** A labelled row whose value supports `{{var}}` autocomplete when an environment is active. */
+  const field = (
+    label: string,
+    value: string,
+    onValue: (v: string) => void,
+    hint?: string,
+  ): JSX.Element => (
+    <div className="kv-row" key={label}>
+      <span className="kv-k" title={hint}>
+        {label}
+      </span>
+      {envVarNames && envVarNames.length > 0 ? (
+        <VarAwareInput
+          className="kv-input"
+          ariaLabel={label}
+          spellCheck={false}
+          value={value}
+          onChange={onValue}
+          suggestions={envVarNames}
+        />
+      ) : (
+        <input
+          className="kv-input"
+          aria-label={label}
+          spellCheck={false}
+          value={value}
+          onChange={(e) => onValue(e.target.value)}
+        />
+      )}
+    </div>
+  );
 
   return (
     <>
@@ -43,6 +87,7 @@ export function AuthEditor({
           <option value="bearer">bearer</option>
           <option value="basic">basic</option>
           <option value="apikey">apikey</option>
+          <option value="oauth2">oauth2</option>
         </select>
       </div>
 
@@ -118,6 +163,55 @@ export function AuthEditor({
             )}
           </div>
         </div>
+      )}
+
+      {auth?.type === "oauth2" && (
+        <>
+          <div className="kv">
+            <div className="kv-row">
+              <span className="kv-k">grant</span>
+              <select
+                aria-label="oauth2 grant"
+                value={auth.grant}
+                onChange={(e) => onChange({ ...auth, grant: e.target.value as typeof auth.grant })}
+              >
+                <option value="client_credentials">client credentials</option>
+                <option value="password">password</option>
+                <option value="refresh_token">refresh token</option>
+              </select>
+            </div>
+            {field("token url", auth.tokenUrl, (v) => onChange({ ...auth, tokenUrl: v }))}
+            {auth.grant !== "refresh_token" &&
+              field("client id", auth.clientId ?? "", (v) => onChange({ ...auth, clientId: v }))}
+            {auth.grant !== "refresh_token" &&
+              field("client secret", auth.clientSecret ?? "", (v) => onChange({ ...auth, clientSecret: v }))}
+            {auth.grant === "password" &&
+              field("username", auth.username ?? "", (v) => onChange({ ...auth, username: v }))}
+            {auth.grant === "password" &&
+              field("password", auth.password ?? "", (v) => onChange({ ...auth, password: v }))}
+            {auth.grant === "refresh_token" &&
+              field("refresh token", auth.refreshToken ?? "", (v) => onChange({ ...auth, refreshToken: v }))}
+            {field("scope", auth.scope ?? "", (v) => onChange({ ...auth, scope: v }), "optional")}
+            {field("audience", auth.audience ?? "", (v) => onChange({ ...auth, audience: v }), "optional — Auth0/Okta")}
+            <div className="kv-row">
+              <span className="kv-k" title="where the client id/secret are sent">
+                client auth
+              </span>
+              <select
+                aria-label="oauth2 client auth"
+                value={auth.clientAuth}
+                onChange={(e) => onChange({ ...auth, clientAuth: e.target.value as "body" | "basic" })}
+              >
+                <option value="body">request body</option>
+                <option value="basic">basic header</option>
+              </select>
+            </div>
+          </div>
+          <p className="captured-hint" style={{ marginTop: 9 }}>
+            The token is fetched at run time and cached for the rest of the run. Keep the secret in an
+            environment secret — <code>{"{{clientSecret}}"}</code> — never inline.
+          </p>
+        </>
       )}
 
       {auth?.type === "apikey" && (

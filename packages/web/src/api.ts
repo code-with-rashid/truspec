@@ -77,7 +77,22 @@ export type RequestAuth =
   | { type: "none" }
   | { type: "bearer"; token: string }
   | { type: "basic"; username: string; password: string }
-  | { type: "apikey"; name: string; value: string; in: "header" | "query" };
+  | { type: "apikey"; name: string; value: string; in: "header" | "query" }
+  | {
+      type: "oauth2";
+      grant: "client_credentials" | "password" | "refresh_token";
+      tokenUrl: string;
+      clientId?: string;
+      clientSecret?: string;
+      username?: string;
+      password?: string;
+      refreshToken?: string;
+      scope?: string;
+      audience?: string;
+      clientAuth: "body" | "basic";
+      extra?: Record<string, string>;
+      scheme: string;
+    };
 
 export type CaptureSource = string | { jsonpath: string } | { header: string } | { status: true };
 

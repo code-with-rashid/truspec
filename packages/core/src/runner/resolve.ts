@@ -19,6 +19,11 @@ export interface ResolveOptions {
    * pass `"keep"` so the authored placeholder survives into the rendered snippet.
    */
   onMissing?: "empty" | "keep";
+  /**
+   * Replaces the request's (or folder's) auth block. The runner uses this to hand back an already
+   * acquired OAuth2 token as a plain bearer credential, keeping this function synchronous.
+   */
+  auth?: TruSpecAuth;
 }
 
 function base64(input: string): string {
@@ -63,6 +68,13 @@ function applyAuth(
       headers[auth.name] = v.value;
       return undefined;
     }
+    case "oauth2": {
+      // The runner never reaches this branch — it acquires the token first and passes the result
+      // back as `opts.auth`. Non-run consumers (code generation, previews) do, and for them the
+      // honest rendering is a placeholder: the token does not exist until something fetches one.
+      headers.Authorization = `${auth.scheme} {{accessToken}}`;
+      return undefined;
+    }
     default:
       return undefined;
   }
@@ -93,8 +105,8 @@ export function resolveRequest(req: TruSpecRequest, opts: ResolveOptions = {}): 
     for (const [k, v] of Object.entries(r.value)) headers[k] = String(v);
   }
 
-  // Auth — request overrides folder.
-  const auth = req.auth ?? opts.folder?.auth;
+  // Auth — an explicit override (a resolved OAuth2 token) wins, then request, then folder.
+  const auth = opts.auth ?? req.auth ?? opts.folder?.auth;
   const authQuery = auth ? applyAuth(auth, headers, vars, missing, io) : undefined;
 
   // Query string — request query params plus any apikey-in-query.

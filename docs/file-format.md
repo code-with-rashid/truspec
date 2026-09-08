@@ -176,6 +176,7 @@ referenced by name (`{{token}}`), never inlined.
 | `bearer` | `token` | `Authorization: Bearer <token>` |
 | `basic` | `username`, `password` | `Authorization: Basic <base64(user:pass)>` |
 | `apikey` | `name`, `value`, `in` | API key in a header (default) or query param. |
+| `oauth2` | see [below](#oauth2) | Fetches a token at run time and sends it as `Authorization`. |
 
 ```yaml
 auth:
@@ -193,6 +194,47 @@ auth:
 
 For `apikey` with `in: query`, the key is appended to the URL's query string — and its
 value is [masked](#environment-files) in reported output when declared as a secret.
+
+### `oauth2`
+
+The runner fetches an access token from `tokenUrl` **before** sending the request, then sends it
+as `Authorization: Bearer <token>`. The token is cached for the rest of the run, so a folder-level
+`oauth2` block shared by twenty requests hits the token endpoint once — not twenty times.
+
+```yaml
+# folder.tspec.yaml — every request under this folder inherits it
+auth:
+  type: oauth2
+  grant: client_credentials      # client_credentials (default) | password | refresh_token
+  tokenUrl: "{{authUrl}}/oauth/token"
+  clientId: "{{clientId}}"
+  clientSecret: "{{clientSecret}}"   # an environment SECRET — never inline it
+  scope: "read:pets write:pets"
+```
+
+| Field | Required for | Notes |
+|---|---|---|
+| `tokenUrl` | all | The token endpoint. Templated. |
+| `grant` | — | `client_credentials` (default), `password`, `refresh_token`. |
+| `clientId` / `clientSecret` | `client_credentials` | Also sent for the other grants when set. |
+| `username` / `password` | `password` | |
+| `refreshToken` | `refresh_token` | |
+| `scope` | — | Space-separated scopes. |
+| `audience` | — | Extra token parameter some providers require (Auth0, Okta). |
+| `clientAuth` | — | `body` (default) or `basic` — where the client id/secret go. |
+| `extra` | — | Any further token-endpoint parameters, sent verbatim. |
+| `scheme` | — | Authorization scheme for the acquired token. Default `Bearer`. |
+
+**Only unattended grants are supported.** An interactive authorization-code flow needs a browser,
+which a CI gate does not have; capture the resulting refresh token once and use
+`grant: refresh_token`. This is a deliberate limit, not an omission.
+
+A token failure fails the request with the provider's own reason (`invalid_client`,
+`unsupported_grant_type`, …) and the API is never called — so a CI log says *why* the gate failed.
+
+Because the token only exists at run time, [`truspec codegen`](./cli.md#codegen) renders an
+`oauth2` request with an `Authorization: Bearer {{accessToken}}` placeholder rather than inventing
+a credential.
 
 ---
 

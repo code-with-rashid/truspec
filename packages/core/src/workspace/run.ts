@@ -2,7 +2,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { parse } from "../format";
-import { type RunResult, runRequest, type Vars } from "../runner";
+import { type RunResult, runRequest, type TokenCache, type Vars } from "../runner";
 import { refMatchesOp } from "../spec/drift";
 import { parseOpenApi, type SpecOperation } from "../spec/openapi";
 import { buildVars, loadDotenv, loadEnvironment, loadFolderChain } from "./context";
@@ -139,6 +139,9 @@ export async function runPath(target: string, opts: WorkspaceRunOptions = {}): P
 
   let vars: Vars = { ...built.vars, ...opts.vars };
   const results: RunResult[] = [];
+  // One cache for the whole run: twenty requests under a folder-level OAuth2 block should fetch
+  // one token, not twenty (a real rate-limit hazard, and a real cost on metered providers).
+  const tokenCache: TokenCache = new Map();
   const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   let bailed = false;
   for (const [index, { file, req }] of requests.entries()) {
@@ -155,6 +158,7 @@ export async function runPath(target: string, opts: WorkspaceRunOptions = {}): P
       fetch: opts.fetch,
       now: opts.now,
       timeoutMs: opts.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+      tokenCache,
       ...(op && specDoc ? { contract: { doc: specDoc, operation: op, auto: true } } : {}),
     });
     result.filePath = file;

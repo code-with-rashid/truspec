@@ -3,5 +3,6 @@ export * from "./jsonpath";
 export * from "./assertions";
 export * from "./capture";
 export * from "./script";
+export * from "./oauth";
 export * from "./resolve";
 export * from "./run";

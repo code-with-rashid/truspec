@@ -62,6 +62,36 @@ export const Auth = z.discriminatedUnion("type", [
       in: z.enum(["header", "query"]).default("header"),
     })
     .strict(),
+  /**
+   * OAuth2 — the runner fetches a token from `tokenUrl` before sending the request and caches it
+   * for the rest of the run. Only the grants a machine can complete unattended are supported:
+   * an interactive authorization-code flow needs a browser, which a CI gate does not have (capture
+   * the resulting refresh token once and use `grant: refresh_token` instead).
+   */
+  z
+    .object({
+      type: z.literal("oauth2"),
+      grant: z.enum(["client_credentials", "password", "refresh_token"]).default("client_credentials"),
+      tokenUrl: Template,
+      clientId: Template.optional(),
+      clientSecret: Template.optional(),
+      /** `password` grant only. */
+      username: Template.optional(),
+      /** `password` grant only. */
+      password: Template.optional(),
+      /** `refresh_token` grant only. */
+      refreshToken: Template.optional(),
+      scope: Template.optional(),
+      /** Extra token-endpoint parameter some providers require (Auth0, Okta). */
+      audience: Template.optional(),
+      /** Where the client credentials go: the request body (default) or an HTTP Basic header. */
+      clientAuth: z.enum(["body", "basic"]).default("body"),
+      /** Any further parameters to post to the token endpoint verbatim. */
+      extra: z.record(z.string(), Template).optional(),
+      /** Authorization header scheme for the acquired token. */
+      scheme: z.string().default("Bearer"),
+    })
+    .strict(),
 ]);
 
 /**
