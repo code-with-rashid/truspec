@@ -21,6 +21,7 @@ truspec --version
 | [`contract`](#contract) | Run the collection and validate responses against the spec's schemas. |
 | [`gen`](#gen) | Scaffold a request stub per operation from a spec. |
 | [`codegen`](#codegen) | Render a request as a runnable snippet in another client or language. |
+| [`lint`](#lint) | Static checks over a collection; non-zero exit on an error. |
 | [`import`](#import) | Convert a Postman/Bruno collection or a curl command to `.tspec.yaml`. |
 | [`mock`](#mock) | Serve generated responses from a spec (offline). |
 | [`serve`](#serve) | Open the local web UI for a collection. |
@@ -325,6 +326,50 @@ Operations with an unsupported method are skipped and reported on stderr.
 truspec gen --spec openapi.yaml --out ./api
 # Generated 4 request(s) in ./api
 ```
+
+---
+
+## `lint`
+
+Static checks over a collection — everything knowable **without sending a request**. `run` tells
+you whether the API behaves; `lint` tells you whether the collection itself is sound.
+
+```
+truspec lint [<dir>] [--strict] [--json] [--disable <rule>] [--output <file>] [--list-rules]
+```
+
+| Flag | Alias | Description |
+|---|---|---|
+| `--strict` | | Also exit `1` on warnings. |
+| `--json` | | Machine-readable report (every finding carries a stable `rule` id). |
+| `--disable <rule>` | | Skip a rule. Repeatable. |
+| `--output <file>` | `-o` | Write the report to a file instead of stdout. |
+| `--list-rules` | | Print every rule with its severity and exit. |
+
+| Rule | Severity | Catches |
+|---|---|---|
+| `parse` | error | The file does not parse against the schema. |
+| `inline-secret` | error | A committed literal that looks like a real credential (JWT, `ghp_…`, `sk_live_…`, AWS key id, …). |
+| `bad-jsonpath` | error | A capture or assertion uses a JSONPath the engine cannot parse — it would silently never match. |
+| `no-assertions` | warning | The request asserts nothing, so a run can never fail on it. |
+| `duplicate-name` | warning | Two requests share a name, making reports ambiguous. |
+| `undeclared-var` | warning | A `{{var}}` no environment declares, no `.env` provides, and no *earlier* request captures. |
+| `absolute-url` | warning | An absolute URL under a folder that sets `baseUrl` — switching environments would not move it. |
+| `insecure-url` | warning | Plaintext `http://` to a host that is not the local machine. |
+
+**Exit code:** `1` if any error was found (or with `--strict`, any warning); otherwise `0`.
+
+```bash
+truspec lint ./api              # warnings are informational
+truspec lint ./api --strict     # CI gate: nothing at all may be wrong
+truspec lint ./api --json | jq '.findings[] | select(.severity=="error")'
+```
+
+The `undeclared-var` rule understands the run's own ordering: a variable a request captures counts
+as declared for every request that runs **after** it, and names a pre-request script sets with
+`tr.set("name", …)` count for that request. Environments are found the way the runner finds them,
+including nested collections, so linting a directory of several collections does not report every
+variable as missing.
 
 ---
 

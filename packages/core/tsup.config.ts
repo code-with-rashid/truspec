@@ -10,6 +10,7 @@ export default defineConfig({
     "src/importers/index.ts",
     "src/exporters/index.ts",
     "src/codegen/index.ts",
+    "src/lint/index.ts",
     "src/mock/index.ts",
   ],
   format: ["esm"],

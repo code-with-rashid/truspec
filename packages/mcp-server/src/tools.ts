@@ -11,6 +11,7 @@ import {
   writeScaffold,
 } from "@truspec/core/spec";
 import { importCurl, writeImport } from "@truspec/core/importers";
+import { lintWorkspace } from "@truspec/core/lint";
 import { confinePath, discoverRequests, prepareRequest, runPath } from "@truspec/core/workspace";
 
 export interface ToolContext {
@@ -152,4 +153,14 @@ export function importCurlTool(ctx: ToolContext, command: string, outDir = ".", 
     files: written.map((f) => relative(ctx.cwd, f)),
     ...(result.warnings.length > 0 ? { warnings: result.warnings } : {}),
   };
+}
+
+/**
+ * Static checks over a collection. An agent that writes request files needs to know whether what
+ * it just wrote is sound *before* it runs anything — and the machine-readable rule ids let it fix
+ * a finding rather than paraphrase it.
+ */
+export function lintTool(ctx: ToolContext, dir = ".", disable?: string[]) {
+  const report = lintWorkspace(confinePath(ctx.cwd, dir), disable ? { disable } : {});
+  return { ...report, dir: relative(ctx.cwd, report.dir) || "." };
 }

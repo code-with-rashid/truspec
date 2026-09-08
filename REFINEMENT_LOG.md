@@ -211,3 +211,31 @@ JSON coercion on value fields — previously the UI could only ever emit a *stri
 message wording, truncation, and that schema strictness still catches typos. Schema regenerated.
 Typecheck 8/8, build 5/5.
 
+### 8 — `truspec lint`: static checks over a collection
+
+**Gap.** Nothing checked a collection *before* it ran. A committed API key, a JSONPath typo that
+silently never matches, a request with no assertions (which can never fail a run), a `{{var}}` no
+environment declares — all of these were invisible until someone noticed, or never.
+
+**Change.** New `@truspec/core/lint` with eight rules, each carrying a stable id so a finding can
+be suppressed, looked up, or acted on by an agent rather than paraphrased:
+
+- **errors:** `parse`, `inline-secret` (JWT / `ghp_…` / `sk_live_…` / AWS key id / Slack / Google /
+  PEM — deliberately narrow, because a linter that cries wolf gets muted), `bad-jsonpath`.
+- **warnings:** `no-assertions`, `duplicate-name`, `undeclared-var`, `absolute-url`,
+  `insecure-url`.
+
+`undeclared-var` models the run's real semantics: a captured variable counts as declared for every
+request that runs *after* it, names a pre-request script sets with `tr.set` count for that request,
+and `{{…}}` inside `docs` or a script body is not an interpolation site. Environments are found the
+way the runner finds them — from the workspace root above the target *and* any nested collection
+below it — so linting a directory containing several collections doesn't report every variable as
+missing (caught by running it against this repo's own `examples/`).
+
+Surfaced as `truspec lint [dir] [--strict] [--json] [--disable] [--list-rules]` and the
+`truspec_lint` MCP tool.
+
+**Verification.** 521 tests (was 497) — 17 core (each rule, plus the ordering and
+non-interpolation-site subtleties) and 7 CLI (exit codes, `--strict`, `--json`, `--disable`).
+`truspec lint examples` is clean. Typecheck 8/8, build 5/5.
+

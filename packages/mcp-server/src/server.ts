@@ -174,6 +174,20 @@ export function createServer(ctx: ServerContext = {}): McpServer {
   );
 
   server.registerTool(
+    "truspec_lint",
+    {
+      title: "Lint a collection",
+      description:
+        "Static checks over a collection without sending any request: schema errors, committed credentials, unparseable JSONPath, requests with no assertions, duplicate names, undeclared {{vars}}, and insecure URLs. Each finding carries a stable rule id.",
+      inputSchema: {
+        dir: z.string().default(".").describe("Directory to lint, relative to the workspace."),
+        disable: z.array(z.string()).optional().describe("Rule ids to skip."),
+      },
+    },
+    async ({ dir, disable }) => json(tools.lintTool(c, dir, disable)),
+  );
+
+  server.registerTool(
     "truspec_import_curl",
     {
       title: "Import a curl command",
