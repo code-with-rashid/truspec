@@ -1,6 +1,7 @@
 import { parseArgs } from "node:util";
 import { runPath, type WorkspaceRunResult } from "@truspec/core/workspace";
 import { formatHuman, formatJson, formatJunit } from "../output";
+import { formatHtml } from "../report-html";
 import { type CommandDeps, emit, num, resolveDeps } from "./deps";
 
 /** `truspec run <path>` — returns a process exit code (0 ok, 1 failures/error, 2 usage). */
@@ -102,14 +103,29 @@ export async function runCommand(argv: string[], deps: Partial<CommandDeps> = {}
   }
 
   const reporter = values.reporter ?? (values.json ? "json" : "human");
-  const text =
-    reporter === "junit"
-      ? formatJunit(result, d.cwd)
-      : reporter === "json"
-        ? formatJson(result)
-        : formatHuman(result, d.cwd);
+  if (!REPORTERS.includes(reporter as Reporter)) {
+    d.stderr(`Unknown --reporter "${reporter}". Known: ${REPORTERS.join(", ")}.\n`);
+    return 2;
+  }
+  const text = render(reporter as Reporter, result, d.cwd);
   emit(d, text, values.output);
   return result.ok && !noRequests ? 0 : 1;
+}
+
+const REPORTERS = ["human", "json", "junit", "html"] as const;
+type Reporter = (typeof REPORTERS)[number];
+
+function render(reporter: Reporter, result: WorkspaceRunResult, cwd: string): string {
+  switch (reporter) {
+    case "junit":
+      return formatJunit(result, cwd);
+    case "json":
+      return formatJson(result);
+    case "html":
+      return formatHtml(result, cwd);
+    default:
+      return formatHuman(result, cwd);
+  }
 }
 
 /**

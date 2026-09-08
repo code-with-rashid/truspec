@@ -107,3 +107,21 @@ wins over the environment — for a per-branch base URL in CI).
 **Verification.** 432 tests (was 414) — 14 core selection/control, 4 CLI. Schema regenerated.
 Typecheck 8/8, build 5/5.
 
+### 4 — Standalone HTML run report
+
+**Gap.** `--reporter junit` is machine-readable but unreadable; a CI failure meant scrolling raw
+log text. newman and Bruno both ship an HTML report artifact.
+
+**Change.** `--reporter html` writes one self-contained page — no external CSS, fonts or scripts,
+so it opens from `file://`, an artifact viewer, or under a strict CSP (`<details>` does the
+expanding instead of JS). Verdict, counts and total time up top; then a card per request with
+failed assertions listed first, captured values, and a collapsible response. Bodies truncate past
+200 KB so the artifact stays openable. Every interpolated value is HTML-escaped — bodies, headers
+and assertion messages are attacker-controlled.
+
+Also fixed: an unknown `--reporter` silently produced human output; it now exits 2 and names the
+valid reporters.
+
+**Verification.** 442 tests (was 432) — 8 report unit tests (including an XSS payload through
+name/URL/error/headers/body, and the truncation path) and 2 CLI. Typecheck 8/8, build 5/5.
+

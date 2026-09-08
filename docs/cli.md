@@ -61,7 +61,7 @@ truspec run <path> [--env <name>] [--spec <openapi>] [--var k=v] [--grep <re>] [
 | `--bail` | | Stop at the first failure; the remaining requests are reported as skipped. |
 | `--delay <ms>` | | Pause between requests, for rate-limited APIs. |
 | `--json` | | Shorthand for `--reporter json`. |
-| `--reporter <fmt>` | | Output format: `human` (default), `json`, or `junit`. |
+| `--reporter <fmt>` | | Output format: `human` (default), `json`, `junit`, or `html`. |
 | `--output <file>` | `-o` | Write the report to a file instead of stdout. |
 | `--timeout <ms>` | | Per-request timeout. Default `30000`. Use `0` to disable. |
 
@@ -85,6 +85,7 @@ truspec run ./api/get-pet.tspec.yaml          # run one request
 truspec run ./api --env local --spec openapi.yaml  # also validate responses vs the spec
 truspec run ./api --json                       # machine-readable output
 truspec run ./api --reporter junit -o junit.xml   # JUnit XML for CI test reporters
+truspec run ./api --reporter html -o report.html  # standalone HTML artifact for a CI job
 truspec run ./api --timeout 5000               # 5s per-request timeout
 truspec run ./api --tag smoke --bail           # fast smoke gate: stop at the first failure
 truspec run ./api --grep '^billing/'           # just one folder
@@ -106,6 +107,22 @@ With `--bail` or a filter, the summary says what did not run:
 
 ```
 1 passed, 1 failed, 2 skipped (bailed), 2 total, 3 deselected
+```
+
+### HTML report
+
+`--reporter html` writes one self-contained page: no external CSS, fonts, or scripts, so it
+renders from a `file://` path, a CI artifact viewer, or under a strict CSP. It shows the verdict,
+counts and total time, then a card per request with its assertions (failures first), captured
+values, and a collapsible response (headers + body, truncated past 200 KB). Response bodies and
+header values are attacker-controlled, so every interpolated value is HTML-escaped.
+
+```yaml
+# .github/workflows/api.yml
+- run: npx truspec run ./api --env ci --reporter html -o report.html
+- uses: actions/upload-artifact@v4
+  if: always()
+  with: { name: truspec-report, path: report.html }
 ```
 
 ### JSON output

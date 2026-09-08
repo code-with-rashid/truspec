@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -208,5 +208,45 @@ describe("truspec run", () => {
     });
     expect(code).toBe(0);
     expect(cap.out).toMatch(/1 passed, 0 failed/);
+  });
+
+  it("--reporter html writes a standalone report", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "truspec-html-"));
+    try {
+      const cap = capture();
+      const file = join(dir, "report.html");
+      let t = 0;
+      const code = await runCommand(
+        ["examples/petstore", "--env", "local", "--reporter", "html", "-o", file],
+        {
+          cwd: repoRoot,
+          fetch: okFetch({ id: 1 }),
+          now: () => (t += 5),
+          processEnv: { token: "secret" },
+          stdout: cap.stdout,
+          stderr: cap.stderr,
+        },
+      );
+      expect(code).toBe(0);
+      const html = readFileSync(file, "utf8");
+      expect(html.startsWith("<!doctype html>")).toBe(true);
+      expect(html).toContain("Get pet by id");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects an unknown --reporter instead of silently falling back to human output", async () => {
+    const cap = capture();
+    const code = await runCommand(["examples/petstore", "--reporter", "xml"], {
+      cwd: repoRoot,
+      fetch: okFetch({ id: 1 }),
+      processEnv: { token: "secret" },
+      stdout: cap.stdout,
+      stderr: cap.stderr,
+    });
+    expect(code).toBe(2);
+    expect(cap.err).toMatch(/Unknown --reporter "xml"/);
+    expect(cap.err).toMatch(/human, json, junit, html/);
   });
 });
