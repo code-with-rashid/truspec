@@ -8,6 +8,7 @@ import {
   type ResponseView,
 } from "./assertions";
 import { evaluateCaptures } from "./capture";
+import { type CookieJar, setCookiesOf } from "./cookies";
 import type { VarValue, Vars } from "./interpolate";
 import { type OAuth2Auth, resolveOAuthToken, type TokenCache } from "./oauth";
 import { type ResolvedPart, resolveRequest } from "./resolve";
@@ -26,6 +27,11 @@ export interface RunContext {
   maxResponseBytes?: number;
   /** Shared OAuth2 token cache, so one collection run hits the token endpoint once. */
   tokenCache?: TokenCache;
+  /**
+   * Cookie jar shared across a run, so a login response's session cookie is sent by the requests
+   * that follow. Omit it to send no cookies at all.
+   */
+  cookieJar?: CookieJar;
   /** Injectable retry backoff, so tests don't actually wait. */
   sleep?: (ms: number) => Promise<void>;
   /**
@@ -248,6 +254,14 @@ export async function runRequest(req: TruSpecRequest, ctx: RunContext = {}): Pro
         timeoutMs: ctx.timeoutMs,
         options: req.options,
         ...(ctx.sleep ? { sleep: ctx.sleep } : {}),
+        ...(ctx.cookieJar
+          ? {
+              cookieHeaderFor: (u: string) => ctx.cookieJar?.headerFor(u, now()),
+              // Store from every hop: a login that 302s sets its session cookie on the redirect,
+              // not on the page you land on.
+              onResponse: (u: string, r: Response) => ctx.cookieJar?.setFromResponse(u, setCookiesOf(r), now()),
+            }
+          : {}),
       },
     );
   } catch (e) {

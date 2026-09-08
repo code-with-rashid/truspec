@@ -2,6 +2,7 @@ export * from "./interpolate";
 export * from "./jsonpath";
 export * from "./assertions";
 export * from "./capture";
+export * from "./cookies";
 export * from "./script";
 export * from "./oauth";
 export * from "./resolve";

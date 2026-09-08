@@ -7,6 +7,13 @@ export interface SendOptions {
   options?: TruSpecRequestOptions;
   /** Injectable so retry/backoff tests don't actually wait. */
   sleep?: (ms: number) => Promise<void>;
+  /**
+   * Cookie header to send to a given URL. Called per hop, so a redirect chain gets the cookies
+   * that belong to *that* host rather than the ones the first request carried.
+   */
+  cookieHeaderFor?: (url: string) => string | undefined;
+  /** Called with every response, including intermediate redirects, so their cookies are stored. */
+  onResponse?: (url: string, response: Response) => void;
 }
 
 export interface SendOutcome {
@@ -85,10 +92,18 @@ async function sendOnce(
   for (let hop = 0; ; hop++) {
     // Never auto-follow at the platform level: the runner reports the ACTUAL response its URL
     // returns, so a 3xx stays assertable and `contract` can validate a redirect operation.
-    const requestInit: RequestInit = { method, headers, redirect: "manual" };
+    const hopHeaders = { ...headers };
+    // A cookie belongs to a host, not to a request: recompute it for each hop, and never let a
+    // header from the previous host survive into the next one.
+    if (opts.cookieHeaderFor && !hasHeader(hopHeaders, "cookie")) {
+      const cookie = opts.cookieHeaderFor(currentUrl);
+      if (cookie) hopHeaders.Cookie = cookie;
+    }
+    const requestInit: RequestInit = { method, headers: hopHeaders, redirect: "manual" };
     if (body !== undefined) requestInit.body = body;
     if (timeoutMs !== undefined && timeoutMs > 0) requestInit.signal = AbortSignal.timeout(timeoutMs);
     const response = await opts.fetch(currentUrl, requestInit);
+    opts.onResponse?.(currentUrl, response);
 
     const location = response.headers.get("location");
     if (hop >= maxRedirects || !REDIRECT_STATUSES.has(response.status) || !location) {
@@ -102,6 +117,11 @@ async function sendOnce(
     currentUrl = next;
     redirects.push(next);
   }
+}
+
+function hasHeader(headers: Record<string, string>, name: string): boolean {
+  const lower = name.toLowerCase();
+  return Object.keys(headers).some((k) => k.toLowerCase() === lower);
 }
 
 /** Resolve a `Location` (absolute or relative) against the URL that produced it. */

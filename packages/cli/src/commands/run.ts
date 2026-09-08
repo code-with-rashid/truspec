@@ -20,6 +20,7 @@ export async function runCommand(argv: string[], deps: Partial<CommandDeps> = {}
     tag: { type: "string", multiple: true },
     bail: { type: "boolean" },
     delay: { type: "string" },
+    "no-cookies": { type: "boolean" },
   } as const;
 
   let values: {
@@ -34,6 +35,7 @@ export async function runCommand(argv: string[], deps: Partial<CommandDeps> = {}
     tag?: string[];
     bail?: boolean;
     delay?: string;
+    "no-cookies"?: boolean;
   };
   let positionals: string[];
   try {
@@ -49,7 +51,8 @@ export async function runCommand(argv: string[], deps: Partial<CommandDeps> = {}
   if (!target) {
     d.stderr(
       "Usage: truspec run <path> [--env <name>] [--spec <openapi>] [--var k=v] [--grep <re>]\n" +
-        "                         [--tag <name>] [--bail] [--delay <ms>] [--json | --reporter <r>]\n" +
+        "                         [--tag <name>] [--bail] [--delay <ms>] [--no-cookies]\n" +
+        "                         [--json | --reporter <r>]\n" +
         "                         [--output <file>] [--timeout <ms>]\n",
     );
     return 2;
@@ -78,6 +81,7 @@ export async function runCommand(argv: string[], deps: Partial<CommandDeps> = {}
       tags: values.tag,
       bail: values.bail,
       delayMs: num(values.delay),
+      cookies: !values["no-cookies"],
     });
   } catch (e) {
     d.stderr(`Error: ${(e as Error).message}\n`);

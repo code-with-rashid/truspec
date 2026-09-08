@@ -3,7 +3,7 @@ import { basename } from "node:path";
 import { dirname, join, relative, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { parse } from "../format";
-import { type RunResult, runRequest, type TokenCache, type Vars } from "../runner";
+import { CookieJar, type RunResult, runRequest, type TokenCache, type Vars } from "../runner";
 import { refMatchesOp } from "../spec/drift";
 import { parseOpenApi, type SpecOperation } from "../spec/openapi";
 import { confinePath } from "./confine";
@@ -69,6 +69,8 @@ export interface WorkspaceRunOptions {
   delayMs?: number;
   /** Wait between requests; injectable so tests don't actually sleep. */
   sleep?: (ms: number) => Promise<void>;
+  /** Set to false to send no cookies at all. Default: a jar shared across the run. */
+  cookies?: boolean;
 }
 
 export interface WorkspaceRunResult {
@@ -163,6 +165,9 @@ export async function runPath(target: string, opts: WorkspaceRunOptions = {}): P
   // One cache for the whole run: twenty requests under a folder-level OAuth2 block should fetch
   // one token, not twenty (a real rate-limit hazard, and a real cost on metered providers).
   const tokenCache: TokenCache = new Map();
+  // One jar for the whole run and never persisted: a CI run must not inherit state from a
+  // previous one, and a session cookie is a credential with no business in a repository.
+  const cookieJar = opts.cookies === false ? undefined : new CookieJar();
   const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   let bailed = false;
   for (const [index, { file, req }] of requests.entries()) {
@@ -180,6 +185,7 @@ export async function runPath(target: string, opts: WorkspaceRunOptions = {}): P
       now: opts.now,
       timeoutMs: opts.timeoutMs ?? DEFAULT_TIMEOUT_MS,
       tokenCache,
+      ...(cookieJar ? { cookieJar } : {}),
       readFile: makeFileReader(dirname(file), root),
       ...(op && specDoc ? { contract: { doc: specDoc, operation: op, auto: true } } : {}),
     });

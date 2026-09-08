@@ -94,10 +94,17 @@ truspec run <path> [--env <name>] [--spec <openapi>] [--var k=v] [--grep <re>] [
 | `--tag <name>` | | Only run requests carrying this [`tag`](./file-format.md). Repeatable (OR). |
 | `--bail` | | Stop at the first failure; the remaining requests are reported as skipped. |
 | `--delay <ms>` | | Pause between requests, for rate-limited APIs. |
+| `--no-cookies` | | Send no cookies. By default a jar is shared across the run. |
 | `--json` | | Shorthand for `--reporter json`. |
 | `--reporter <fmt>` | | Output format: `human` (default), `json`, `junit`, or `html`. |
 | `--output <file>` | `-o` | Write the report to a file instead of stdout. |
 | `--timeout <ms>` | | Per-request timeout. Default `30000`. Use `0` to disable. |
+
+**Cookies.** A run shares one in-memory cookie jar, so a login request's session cookie is sent by
+the requests that follow — including cookies set on a redirect hop. The jar is never written to
+disk: a CI run must not inherit state from a previous one, and a session cookie is a credential
+with no business in a repository. A request that sets its own `Cookie` header wins over the jar.
+`--no-cookies` turns it off entirely.
 
 `--grep` and `--tag` combine as an **AND** (`--grep login --tag smoke` runs requests that match
 both); repeated `--tag` flags combine as an **OR**. A selection that matches nothing exits `1`

@@ -299,3 +299,30 @@ Also added to the web UI's body editor, with an explicit text/file choice per pa
 missing-reader path, and a **workspace-escape test proving a `../../` path is refused and nothing
 is sent**), plus codegen and importer coverage. Typecheck 8/8, build 5/5.
 
+### 11 — Cookie jar
+
+**Gap.** A login request that sets a session cookie is the most common multi-request flow there
+is, and TruSpec had no way to express it except capturing the header by hand. Every competitor
+carries cookies automatically.
+
+**Change.** An RFC 6265-shaped in-memory `CookieJar`: domain matching with a dot boundary (so
+`evilapi.test` cannot claim a cookie set for `api.test`), a `Domain` attribute the setting host
+must actually belong to, path matching on segment boundaries, `Secure` withheld from plaintext,
+`Max-Age` winning over `Expires`, past expiry treated as deletion, and most-specific-path-first
+ordering.
+
+Two details that matter more than they look:
+
+- **Repeated `Set-Cookie` headers are read with `getSetCookie()`**, not `headers.get()`, which
+  comma-joins them and corrupts any cookie whose `Expires` date contains a comma.
+- **Cookies are stored and re-sent per redirect hop**, not just on the final response — a login
+  that 302s sets its session cookie on the redirect, not on the page you land on. The transport
+  gained `cookieHeaderFor`/`onResponse` hooks for exactly this, which also means a cookie for one
+  host can never survive into a hop to another.
+
+One jar per run, never persisted. A request's own `Cookie` header wins. `--no-cookies` opts out.
+
+**Verification.** 573 tests (was 555) — 18 covering the matching rules, the two look-alike-host
+attacks, expiry semantics, the comma-join hazard, the redirect-hop case, explicit-header
+precedence, and the workspace default plus opt-out. Typecheck 8/8, build 5/5.
+
