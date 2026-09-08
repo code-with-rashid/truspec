@@ -113,6 +113,8 @@ export const Assertion = z.discriminatedUnion("type", [
       type: z.literal("header"),
       name: z.string(),
       equals: z.string().optional(),
+      notEquals: z.string().optional(),
+      contains: z.string().optional(),
       matches: z.string().optional(),
       exists: z.boolean().optional(),
     })
@@ -122,15 +124,39 @@ export const Assertion = z.discriminatedUnion("type", [
       type: z.literal("jsonpath"),
       path: z.string(),
       equals: z.unknown().optional(),
+      notEquals: z.unknown().optional(),
       exists: z.boolean().optional(),
       matches: z.string().optional(),
+      /** Substring of a string value, or membership in an array value. */
+      contains: z.unknown().optional(),
+      /** Value must equal one of these. */
+      oneOf: z.array(z.unknown()).optional(),
+      /** Numeric comparisons against the matched value. */
+      gt: z.number().optional(),
+      gte: z.number().optional(),
+      lt: z.number().optional(),
+      lte: z.number().optional(),
+      /**
+       * JSON type of the matched value. Named `valueType` rather than `type` because `type` is
+       * already the assertion's own discriminator.
+       */
+      valueType: z.enum(["string", "number", "boolean", "object", "array", "null"]).optional(),
+      /** Exact length of a string or array value. */
+      length: z.number().int().nonnegative().optional(),
+      minLength: z.number().int().nonnegative().optional(),
+      maxLength: z.number().int().nonnegative().optional(),
+      /** `true` asserts an empty string/array/object; `false` asserts a non-empty one. */
+      empty: z.boolean().optional(),
     })
     .strict(),
   z
     .object({
       type: z.literal("body"),
+      equals: z.string().optional(),
       contains: z.string().optional(),
+      notContains: z.string().optional(),
       matches: z.string().optional(),
+      empty: z.boolean().optional(),
     })
     .strict(),
   z.object({ type: z.literal("duration"), ltMs: z.number().positive() }).strict(),

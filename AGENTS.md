@@ -77,9 +77,10 @@ spec:                              # links request → OpenAPI operation (drift/
 ### Assertion types
 
 - `status` — `equals` | `in: [..]` | `lt` | `gte`
-- `header` — `name` + (`equals` | `matches` regex | `exists`)
-- `jsonpath` — `path` + (`equals` | `exists` | `matches` regex)
-- `body` — `contains` | `matches` regex
+- `header` — `name` + (`exists` | `equals` | `notEquals` | `contains` | `matches` regex)
+- `jsonpath` — `path` + any of `exists` `equals` `notEquals` `oneOf` `contains` `matches`
+  `gt` `gte` `lt` `lte` `valueType` `length` `minLength` `maxLength` `empty` (AND-ed)
+- `body` — `contains` | `notContains` | `equals` | `matches` regex | `empty`
 - `duration` — `ltMs`
 - `schema` — validate the response body against the linked operation's OpenAPI **response**
   schema. Optional `status` / `contentType` / `required`. Needs a spec supplied to the run

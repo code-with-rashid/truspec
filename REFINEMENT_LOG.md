@@ -179,3 +179,35 @@ exhausted-budget path, redirect hop reporting, the `maxRedirects` stop, per-stat
 rewriting, same- vs cross-origin credential handling, an unusable `Location`, and end-to-end
 reporting through `runRequest`. Schema regenerated. Typecheck 8/8, build 5/5.
 
+### 7 — Richer assertions, and failure messages a CI log can act on
+
+**Gap (two of them).** `jsonpath` could only do `exists`/`equals`/`matches`, so "this array has at
+least one item", "this total is a non-negative number", "this status is one of these three" all
+needed a JS script — the exact thing the declarative format exists to avoid. And every failure
+message was shape-only: `jsonpath $.total matched 1 value(s)` never said *what the value was* or
+*which condition failed*.
+
+**Change.** `jsonpath` gains `notEquals`, `oneOf`, `contains` (substring for strings, membership
+for arrays), `gt`/`gte`/`lt`/`lte` (a non-number fails rather than being coerced), `valueType`
+(with `array` and `null` distinguished from `object`), `length`/`minLength`/`maxLength`, and
+`empty`. `header` gains `notEquals` and `contains`; `body` gains `equals`, `notContains` and
+`empty`. Conditions AND together, and unknown keys are still rejected, so a typo is still an error.
+
+Messages were rebuilt around a `Check { ok, desc }` pair, so a result names the actual value and
+lists only the conditions that failed:
+
+```
+✗ jsonpath $.total → "12.50" fails is a number & >= 0
+✗ header "X-Request-Id" (absent) fails exists
+```
+
+Long values truncate rather than dumping a whole body into the log.
+
+The web assertion editor exposes all of it with grouped dropdowns, typed inputs per condition, and
+JSON coercion on value fields — previously the UI could only ever emit a *string*, so
+`equals: 200` was impossible without dropping to the YAML editor.
+
+**Verification.** 497 tests (was 477) — 20 covering each new condition, the non-coercion rules,
+message wording, truncation, and that schema strictness still catches typos. Schema regenerated.
+Typecheck 8/8, build 5/5.
+

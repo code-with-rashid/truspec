@@ -122,9 +122,11 @@ function StatusFields({ a, onChange }: { a: Assertion; onChange: (a: Assertion) 
   );
 }
 
+const HEADER_MODES = ["exists", "equals", "notEquals", "contains", "matches"] as const;
+
 function HeaderFields({ a, onChange }: { a: Assertion; onChange: (a: Assertion) => void }) {
   const name = String(a.name ?? "");
-  const mode = a.equals !== undefined ? "equals" : a.matches !== undefined ? "matches" : "exists";
+  const mode = HEADER_MODES.find((m) => a[m] !== undefined) ?? "exists";
   return (
     <>
       <input
@@ -139,17 +141,25 @@ function HeaderFields({ a, onChange }: { a: Assertion; onChange: (a: Assertion) 
         value={mode}
         onChange={(e) => {
           const m = e.target.value;
-          const base = { type: "header", name };
-          onChange(m === "exists" ? { ...base, exists: true } : m === "equals" ? { ...base, equals: "" } : { ...base, matches: "" });
+          onChange({ type: "header", name, [m]: m === "exists" ? true : "" });
         }}
       >
-        <option value="exists">exists</option>
-        <option value="equals">equals</option>
-        <option value="matches">matches</option>
+        {HEADER_MODES.map((m) => (
+          <option key={m} value={m}>
+            {m}
+          </option>
+        ))}
       </select>
-      {mode !== "exists" && (
+      {mode === "exists" ? (
+        <BoolSelect
+          label="header exists"
+          value={a.exists !== false}
+          onChange={(v) => onChange({ type: "header", name, exists: v })}
+        />
+      ) : (
         <input
           className="kv-input assert-value"
+          aria-label="header assertion value"
           spellCheck={false}
           value={String(a[mode] ?? "")}
           onChange={(e) => onChange({ type: "header", name, [mode]: e.target.value })}
@@ -159,9 +169,43 @@ function HeaderFields({ a, onChange }: { a: Assertion; onChange: (a: Assertion) 
   );
 }
 
+/** Grouped so a fifteen-entry dropdown still reads as a short list of related choices. */
+const JSONPATH_MODE_GROUPS: Array<[string, readonly string[]]> = [
+  ["presence", ["exists", "empty"]],
+  ["value", ["equals", "notEquals", "oneOf", "contains", "matches"]],
+  ["number", ["gt", "gte", "lt", "lte"]],
+  ["shape", ["valueType", "length", "minLength", "maxLength"]],
+];
+const JSONPATH_MODES = JSONPATH_MODE_GROUPS.flatMap(([, modes]) => modes);
+const NUMBER_MODES = new Set(["gt", "gte", "lt", "lte", "length", "minLength", "maxLength"]);
+const BOOL_MODES = new Set(["exists", "empty"]);
+const VALUE_TYPES = ["string", "number", "boolean", "object", "array", "null"] as const;
+
+/**
+ * Read a typed value out of a text field. `equals: 200` and `equals: "200"` are different
+ * assertions, and the UI could previously only ever produce the string — so a numeric or boolean
+ * comparison was impossible without dropping to the YAML editor.
+ */
+function coerce(text: string): unknown {
+  const trimmed = text.trim();
+  if (trimmed === "") return "";
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return text;
+  }
+}
+
+/** Render a value back into the text field it came from, without JSON-quoting a plain string. */
+function uncoerce(value: unknown): string {
+  return typeof value === "string" ? value : JSON.stringify(value) ?? "";
+}
+
 function JsonpathFields({ a, onChange }: { a: Assertion; onChange: (a: Assertion) => void }) {
   const path = String(a.path ?? "$.");
-  const mode = a.equals !== undefined ? "equals" : a.matches !== undefined ? "matches" : "exists";
+  const mode = JSONPATH_MODES.find((m) => a[m] !== undefined) ?? "exists";
+  const set = (next: Assertion): void => onChange({ type: "jsonpath", path, ...next });
+
   return (
     <>
       <input
@@ -176,44 +220,131 @@ function JsonpathFields({ a, onChange }: { a: Assertion; onChange: (a: Assertion
         value={mode}
         onChange={(e) => {
           const m = e.target.value;
-          const base = { type: "jsonpath", path };
-          onChange(m === "exists" ? { ...base, exists: true } : m === "equals" ? { ...base, equals: "" } : { ...base, matches: "" });
+          if (BOOL_MODES.has(m)) set({ [m]: true });
+          else if (NUMBER_MODES.has(m)) set({ [m]: 0 });
+          else if (m === "valueType") set({ valueType: "string" });
+          else if (m === "oneOf") set({ oneOf: [] });
+          else set({ [m]: "" });
         }}
       >
-        <option value="exists">exists</option>
-        <option value="equals">equals</option>
-        <option value="matches">matches</option>
+        {JSONPATH_MODE_GROUPS.map(([group, modes]) => (
+          <optgroup key={group} label={group}>
+            {modes.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </optgroup>
+        ))}
       </select>
-      {mode !== "exists" && (
+      {BOOL_MODES.has(mode) ? (
+        <BoolSelect
+          label={`jsonpath ${mode}`}
+          value={a[mode] !== false}
+          onChange={(v) => set({ [mode]: v })}
+        />
+      ) : NUMBER_MODES.has(mode) ? (
         <input
           className="kv-input assert-value"
-          spellCheck={false}
+          aria-label="jsonpath assertion value"
+          type="number"
           value={String(a[mode] ?? "")}
-          onChange={(e) => onChange({ type: "jsonpath", path, [mode]: e.target.value })}
+          onChange={(e) => set({ [mode]: Number(e.target.value) })}
+        />
+      ) : mode === "valueType" ? (
+        <select
+          aria-label="jsonpath value type"
+          value={String(a.valueType ?? "string")}
+          onChange={(e) => set({ valueType: e.target.value })}
+        >
+          {VALUE_TYPES.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </select>
+      ) : mode === "oneOf" ? (
+        <input
+          className="kv-input assert-value"
+          aria-label="jsonpath assertion value"
+          spellCheck={false}
+          placeholder='"a", "b", 3'
+          value={Array.isArray(a.oneOf) ? a.oneOf.map(uncoerce).join(", ") : ""}
+          onChange={(e) =>
+            set({
+              oneOf: e.target.value
+                .split(",")
+                .map((part) => coerce(part))
+                .filter((v) => v !== ""),
+            })
+          }
+        />
+      ) : (
+        <input
+          className="kv-input assert-value"
+          aria-label="jsonpath assertion value"
+          spellCheck={false}
+          value={uncoerce(a[mode])}
+          onChange={(e) => set({ [mode]: mode === "matches" ? e.target.value : coerce(e.target.value) })}
         />
       )}
     </>
   );
 }
 
+/** A true/false picker — clearer than a bare checkbox when the field means "assert absent". */
+function BoolSelect({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <select aria-label={label} value={value ? "true" : "false"} onChange={(e) => onChange(e.target.value === "true")}>
+      <option value="true">true</option>
+      <option value="false">false</option>
+    </select>
+  );
+}
+
+const BODY_MODES = ["contains", "notContains", "equals", "matches", "empty"] as const;
+
 function BodyFields({ a, onChange }: { a: Assertion; onChange: (a: Assertion) => void }) {
-  const mode = a.matches !== undefined ? "matches" : "contains";
+  const mode = BODY_MODES.find((m) => a[m] !== undefined) ?? "contains";
   return (
     <>
       <select
         aria-label="body assertion mode"
         value={mode}
-        onChange={(e) => onChange({ type: "body", [e.target.value]: "" })}
+        onChange={(e) => {
+          const m = e.target.value;
+          onChange({ type: "body", [m]: m === "empty" ? true : "" });
+        }}
       >
-        <option value="contains">contains</option>
-        <option value="matches">matches</option>
+        {BODY_MODES.map((m) => (
+          <option key={m} value={m}>
+            {m}
+          </option>
+        ))}
       </select>
-      <input
-        className="kv-input assert-value"
-        spellCheck={false}
-        value={String(a[mode] ?? "")}
-        onChange={(e) => onChange({ type: "body", [mode]: e.target.value })}
-      />
+      {mode === "empty" ? (
+        <BoolSelect
+          label="body empty"
+          value={a.empty !== false}
+          onChange={(v) => onChange({ type: "body", empty: v })}
+        />
+      ) : (
+        <input
+          className="kv-input assert-value"
+          aria-label="body assertion value"
+          spellCheck={false}
+          value={String(a[mode] ?? "")}
+          onChange={(e) => onChange({ type: "body", [mode]: e.target.value })}
+        />
+      )}
     </>
   );
 }

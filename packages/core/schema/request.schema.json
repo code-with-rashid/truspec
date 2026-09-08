@@ -331,6 +331,12 @@
                   "equals": {
                     "type": "string"
                   },
+                  "notEquals": {
+                    "type": "string"
+                  },
+                  "contains": {
+                    "type": "string"
+                  },
                   "matches": {
                     "type": "string"
                   },
@@ -355,11 +361,55 @@
                     "type": "string"
                   },
                   "equals": {},
+                  "notEquals": {},
                   "exists": {
                     "type": "boolean"
                   },
                   "matches": {
                     "type": "string"
+                  },
+                  "contains": {},
+                  "oneOf": {
+                    "type": "array",
+                    "items": {}
+                  },
+                  "gt": {
+                    "type": "number"
+                  },
+                  "gte": {
+                    "type": "number"
+                  },
+                  "lt": {
+                    "type": "number"
+                  },
+                  "lte": {
+                    "type": "number"
+                  },
+                  "valueType": {
+                    "type": "string",
+                    "enum": [
+                      "string",
+                      "number",
+                      "boolean",
+                      "object",
+                      "array",
+                      "null"
+                    ]
+                  },
+                  "length": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "minLength": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "maxLength": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "empty": {
+                    "type": "boolean"
                   }
                 },
                 "required": [
@@ -375,11 +425,20 @@
                     "type": "string",
                     "const": "body"
                   },
+                  "equals": {
+                    "type": "string"
+                  },
                   "contains": {
+                    "type": "string"
+                  },
+                  "notContains": {
                     "type": "string"
                   },
                   "matches": {
                     "type": "string"
+                  },
+                  "empty": {
+                    "type": "boolean"
                   }
                 },
                 "required": [

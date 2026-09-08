@@ -302,12 +302,21 @@ must hold.
 ### `header`
 
 ```yaml
-- { type: header, name: Content-Type, matches: "application/json" }
+- { type: header, name: Content-Type, contains: "application/json" }
 - { type: header, name: X-Request-Id, exists: true }
 - { type: header, name: Cache-Control, equals: "no-store" }
+- { type: header, name: Server, notEquals: "nginx" }
+- { type: header, name: Content-Type, matches: "^application/(json|problem\\+json)" }
 ```
 
-`matches` is a JavaScript regular expression (as a string).
+| Condition | Meaning |
+|---|---|
+| `exists` | `true` — the header is present; `false` — it is absent. |
+| `equals` / `notEquals` | Exact string comparison. |
+| `contains` | Substring. |
+| `matches` | JavaScript regular expression (as a string). |
+
+Header names are matched case-insensitively.
 
 ### `jsonpath`
 
@@ -315,12 +324,33 @@ must hold.
 - { type: jsonpath, path: "$.id", exists: true }
 - { type: jsonpath, path: "$.status", equals: "active" }
 - { type: jsonpath, path: "$.items[0].sku", matches: "^SKU-" }
+- { type: jsonpath, path: "$.total", valueType: number, gte: 0 }
+- { type: jsonpath, path: "$.items", minLength: 1 }
+- { type: jsonpath, path: "$.tags", contains: "featured" }
+- { type: jsonpath, path: "$.state", oneOf: ["queued", "running"] }
+- { type: jsonpath, path: "$.errors", empty: true }
 ```
 
-- `exists` checks whether the path selects any value.
-- `equals` uses **structural equality**, so it works for objects and arrays too.
-- `matches` tests the stringified value against a regex.
-- The body must parse as JSON; if it doesn't, `jsonpath` assertions don't match.
+| Condition | Meaning |
+|---|---|
+| `exists` | Whether the path selects any value. |
+| `equals` / `notEquals` | **Structural** equality, so objects and arrays work too. |
+| `oneOf` | The value equals one of the listed values. |
+| `contains` | Substring of a string value, or membership in an array value. |
+| `matches` | Regex against the stringified value. |
+| `gt` / `gte` / `lt` / `lte` | Numeric comparison. A non-number **fails** rather than being coerced. |
+| `valueType` | `string`, `number`, `boolean`, `object`, `array`, or `null` (arrays and null are *not* `object`). |
+| `length` / `minLength` / `maxLength` | Length of a string or array. Anything else fails. |
+| `empty` | `true` for an empty string, array or object; `false` for a non-empty one. |
+
+Conditions on one assertion combine as an **AND**. The body must parse as JSON; if it doesn't,
+`jsonpath` assertions don't match.
+
+A failure names the value that was actually there and only the conditions that failed:
+
+```
+✗ jsonpath $.total → "12.50" fails is a number & >= 0
+```
 
 See [JSONPath support](#jsonpath-support) for the supported subset.
 
@@ -328,10 +358,14 @@ See [JSONPath support](#jsonpath-support) for the supported subset.
 
 ```yaml
 - { type: body, contains: "ok" }
+- { type: body, notContains: "stack trace" }
+- { type: body, equals: "pong" }
+- { type: body, empty: false }
 - { type: body, matches: "\"status\"\\s*:\\s*\"active\"" }
 ```
 
-Runs against the raw response text — useful for non-JSON responses.
+Runs against the raw response text — useful for non-JSON responses. `notContains` is the one to
+reach for in a security or privacy check ("no internal hostname in the error body").
 
 ### `duration`
 
