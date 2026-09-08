@@ -60,3 +60,24 @@ duplicated client-side builder), and the `truspec_codegen` / `truspec_codegen_ta
 build 5/5. e2e `code-snippets.spec.ts` replaces `copy-as-curl.spec.ts` and also covers switching
 language.
 
+### 2 — Import a `curl` command
+
+**Gap.** "Copy as cURL" from devtools is the most common way a real request enters an API client.
+Postman, Insomnia and Bruno all accept a pasted command; TruSpec accepted only Postman JSON and
+Bruno directories, so the fastest on-ramp was missing entirely.
+
+**Change.** New `importCurl()` in `@truspec/core/importers`, built on a real POSIX-subset shell
+tokenizer (single/double quotes, `$'…'` ANSI-C quoting, backslash escapes, `\`-continuations, and
+quote-awareness so `curl` inside a header value can't split the command). Handles `-X`, `-H`,
+`-d`/`--data-raw`/`--data-binary`/`--data-urlencode`/`--json`, `-G`, `-I`, `-F`, `-u`, `-A`, `-e`,
+`-b`, `--url`, combined short flags (`-XPOST`, `-H'A: b'`), and skips known no-op flags without
+swallowing the URL. Bearer/basic `Authorization` (and `-u`) are lifted into structured `auth`;
+JSON/urlencoded bodies become typed bodies; several commands in one paste become several files.
+Flags with no request-file equivalent (`-F` multipart, `-k`, `--proxy`) warn instead of vanishing.
+
+Surfaced as `truspec import curl <command|file|->`, `POST /api/import/curl` behind a
+"paste a curl command" pane in the web import dialog, and the `truspec_import_curl` MCP tool.
+
+**Verification.** 414 tests (was 384) — 22 core (tokenizer + importer), 4 CLI, 2 web API, 2 MCP.
+Typecheck 8/8, build 5/5.
+

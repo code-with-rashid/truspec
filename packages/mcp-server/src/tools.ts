@@ -10,6 +10,7 @@ import {
   scaffoldFromSpec as coreScaffold,
   writeScaffold,
 } from "@truspec/core/spec";
+import { importCurl, writeImport } from "@truspec/core/importers";
 import { confinePath, discoverRequests, prepareRequest, runPath } from "@truspec/core/workspace";
 
 export interface ToolContext {
@@ -132,5 +133,23 @@ export function codegenTargetsTool() {
   return {
     count: CODEGEN_TARGETS.length,
     targets: CODEGEN_TARGETS.map((t) => ({ id: t.id, label: t.label, group: t.group, syntax: t.syntax })),
+  };
+}
+
+/**
+ * Convert a pasted `curl` command into request file(s). Agents are handed curl commands
+ * constantly (docs, devtools, bug reports); this turns one into a first-class, runnable,
+ * spec-linkable request instead of a shell one-liner.
+ */
+export function importCurlTool(ctx: ToolContext, command: string, outDir = ".", name?: string) {
+  const result = importCurl(command, name ? { name } : {});
+  if (result.files.length === 0) {
+    return { created: 0, warnings: result.warnings.length > 0 ? result.warnings : ["No curl command found"] };
+  }
+  const written = writeImport(result, confinePath(ctx.cwd, outDir));
+  return {
+    created: written.length,
+    files: written.map((f) => relative(ctx.cwd, f)),
+    ...(result.warnings.length > 0 ? { warnings: result.warnings } : {}),
   };
 }

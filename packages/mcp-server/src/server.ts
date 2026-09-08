@@ -174,6 +174,21 @@ export function createServer(ctx: ServerContext = {}): McpServer {
   );
 
   server.registerTool(
+    "truspec_import_curl",
+    {
+      title: "Import a curl command",
+      description:
+        "Convert one or more pasted `curl` command lines into .tspec.yaml request files (headers, body, and bearer/basic auth are lifted into structured fields).",
+      inputSchema: {
+        command: z.string().describe("The curl command line(s)."),
+        out: z.string().default(".").describe("Directory to write the request file(s) into."),
+        name: z.string().optional().describe("Base filename; defaults to a slug of the derived request name."),
+      },
+    },
+    async ({ command, out, name }) => json(tools.importCurlTool(c, command, out, name)),
+  );
+
+  server.registerTool(
     "truspec_codegen",
     {
       title: "Generate request code",

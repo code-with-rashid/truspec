@@ -21,7 +21,7 @@ truspec --version
 | [`contract`](#contract) | Run the collection and validate responses against the spec's schemas. |
 | [`gen`](#gen) | Scaffold a request stub per operation from a spec. |
 | [`codegen`](#codegen) | Render a request as a runnable snippet in another client or language. |
-| [`import`](#import) | Convert a Postman or Bruno collection to `.tspec.yaml`. |
+| [`import`](#import) | Convert a Postman/Bruno collection or a curl command to `.tspec.yaml`. |
 | [`mock`](#mock) | Serve generated responses from a spec (offline). |
 | [`serve`](#serve) | Open the local web UI for a collection. |
 
@@ -332,12 +332,25 @@ snippet is identical wherever you ask for it.
 
 ## `import`
 
-Convert an existing Postman or Bruno collection into `.tspec.yaml` files. See the
-[Importing guide](./importing.md) for details and caveats.
+Convert an existing Postman or Bruno collection — or a single `curl` command — into
+`.tspec.yaml` files. See the [Importing guide](./importing.md) for details and caveats.
 
 ```
-truspec import <postman|bruno> <path> [--out <dir>] [--dry-run]
+truspec import <postman|bruno|curl> <path> [--out <dir>] [--dry-run] [--name <base>]
+truspec import curl -            # read the command from stdin
 ```
+
+For `curl`, the argument is the command itself when it isn't an existing file — so "Copy as cURL"
+from browser devtools pastes straight in:
+
+```bash
+truspec import curl "curl 'https://api.example.com/pets' -H 'Authorization: Bearer abc'" --out ./api
+```
+
+Headers, query params and the body become structured fields; a bearer or basic `Authorization`
+header (or `-u`) is lifted into an `auth` block; every imported request gets a
+`{ type: status, lt: 400 }` assertion so it is runnable immediately. Flags with no request-file
+equivalent (`-k`, `--proxy`, `-F` multipart) are reported as warnings rather than silently dropped.
 
 | Argument / flag | Alias | Description |
 |---|---|---|

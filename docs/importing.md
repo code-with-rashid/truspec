@@ -1,8 +1,8 @@
-# Importing from Postman & Bruno
+# Importing from Postman, Bruno & curl
 
 `truspec import` converts an existing collection into TruSpec's plain-text format so you
-can migrate without rebuilding by hand. It supports **Postman v2.1** collections and
-**Bruno** directories.
+can migrate without rebuilding by hand. It supports **Postman v2.1** collections,
+**Bruno** directories, and **`curl` command lines**.
 
 ---
 
@@ -14,6 +14,12 @@ truspec import postman ./postman_collection.json --out ./api
 
 # Bruno — a directory of .bru files
 truspec import bruno ./bruno-collection --out ./api
+
+# curl — the command itself, straight from devtools' "Copy as cURL"
+truspec import curl "curl 'https://api.example.com/pets' -H 'Accept: application/json'" --out ./api
+
+# curl — piped in
+pbpaste | truspec import curl - --out ./api
 ```
 
 Each source request becomes one `<name>.tspec.yaml` file, preserving the folder structure
@@ -45,15 +51,56 @@ truspec import postman ./postman_collection.json
 ## Options
 
 ```
-truspec import <postman|bruno> <path> [--out <dir>] [--dry-run]
+truspec import <postman|bruno|curl> <path> [--out <dir>] [--dry-run] [--name <base>]
 ```
 
 | Argument / flag | Alias | Description |
 |---|---|---|
-| `<postman\|bruno>` | | **Required.** Source format. |
-| `<path>` | | **Required.** Postman JSON file, or Bruno directory. |
+| `<postman\|bruno\|curl>` | | **Required.** Source format. |
+| `<path>` | | **Required.** Postman JSON file, Bruno directory, or a curl command (`-` for stdin). |
 | `--out <dir>` | `-o` | Destination directory. Omit for a dry-run preview. |
 | `--dry-run` | | Force preview mode even when `--out` is given. |
+| `--name <base>` | | curl only: base filename, instead of a slug of the derived request name. |
+
+---
+
+## Importing a curl command
+
+“Copy as cURL” in Chrome/Firefox devtools is the shortest path from a request you just watched
+happen to a request you can replay, assert on, and commit. Paste the command as the argument (or
+pipe it in with `-`) and TruSpec converts it into a real request file:
+
+```bash
+truspec import curl "curl 'https://api.example.com/pets?expand=owner' \
+  -H 'Authorization: Bearer abc' -H 'Accept: application/json'" --out ./api
+```
+
+```yaml
+# api/get-pets.tspec.yaml
+tspec: "0.1"
+name: GET pets
+method: GET
+url: https://api.example.com/pets
+headers:
+  Accept: application/json
+query:
+  expand: owner
+auth:
+  type: bearer
+  token: abc
+assertions:
+  - { type: status, lt: 400 }
+```
+
+What it handles: shell quoting (including `$'…'` and `\`-continuations), `-X`, `-H`, `-d` /
+`--data-raw` / `--data-urlencode` / `--json`, `-G`, `-I`, `-F`, `-u`, `-A`, `-e`, `-b`, `--url`,
+and combined short flags (`-XPOST`). A bearer or basic `Authorization` header becomes an `auth`
+block instead of a raw header. Several commands in one paste import as several files.
+
+What it warns about rather than silently dropping: `-F` multipart (converted to a urlencoded form
+body — v0 has no multipart type), `-k` (skip TLS verification), and `--proxy`, none of which have
+a request-file equivalent. Also note that a pasted command usually contains **real credentials** —
+move them into an [environment secret](./concepts.md) before committing the file.
 
 ---
 

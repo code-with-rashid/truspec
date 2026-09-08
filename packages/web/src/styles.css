@@ -2816,3 +2816,22 @@ select:focus {
   font-size: 11.5px;
   margin: 8px 0 0;
 }
+
+/* --- paste-a-curl import pane --- */
+.curl-paste {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-3);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.curl-paste:focus-visible {
+  outline: 2px solid var(--lime);
+  outline-offset: 1px;
+}

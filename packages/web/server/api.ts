@@ -3,7 +3,13 @@ import { basename, dirname, join, relative, resolve } from "node:path";
 import { CODEGEN_TARGETS, codegenTargetIds, generateCode } from "@truspec/core/codegen";
 import { parse } from "@truspec/core/format";
 import { exportPostman } from "@truspec/core/exporters";
-import { importBrunoFiles, importPostman, type ImportedFile, type ImportResult } from "@truspec/core/importers";
+import {
+  importBrunoFiles,
+  importCurl,
+  importPostman,
+  type ImportedFile,
+  type ImportResult,
+} from "@truspec/core/importers";
 import { type MockRequestLogEntry, type MockServerHandle, startMockServer } from "@truspec/core/mock";
 import { resolveRequest } from "@truspec/core/runner";
 import { coverageReport, driftReport } from "@truspec/core/spec";
@@ -479,6 +485,30 @@ export async function handleApi(
       return { status: 200, json: { ok: false, error: (e as Error).message } };
     }
     const result = importBrunoFiles(files);
+    try {
+      const written = writeImportConfined(result, target);
+      return { status: 200, json: { ok: true, stats: result.stats, warnings: result.warnings, files: written } };
+    } catch (e) {
+      return { status: 200, json: { ok: false, error: (e as Error).message } };
+    }
+  }
+  if (method === "POST" && pathname === "/api/import/curl") {
+    // "Copy as cURL" from devtools is the fastest path from a real request to a saved one;
+    // Postman, Insomnia and Bruno all take a pasted command, and now so does TruSpec.
+    const b = (body ?? {}) as { text?: string; targetDir?: string; name?: string };
+    if (typeof b.text !== "string" || !b.text.trim()) {
+      return { status: 400, json: { error: "text required" } };
+    }
+    let target: string;
+    try {
+      target = b.targetDir ? confinePath(ctx.dir, b.targetDir) : ctx.dir;
+    } catch (e) {
+      return { status: 200, json: { ok: false, error: (e as Error).message } };
+    }
+    const result = importCurl(b.text, b.name ? { name: b.name } : {});
+    if (result.files.length === 0) {
+      return { status: 200, json: { ok: false, error: result.warnings[0] ?? "No curl command found" } };
+    }
     try {
       const written = writeImportConfined(result, target);
       return { status: 200, json: { ok: true, stats: result.stats, warnings: result.warnings, files: written } };

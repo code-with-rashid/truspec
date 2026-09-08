@@ -20,7 +20,7 @@ Usage:
   truspec contract --spec <openapi> [<dir>] [--env <name>] [--json]
   truspec gen --spec <openapi> --out <dir> [--base-url-var <name>]
   truspec codegen <request> [--lang <target>] [--env <name>] [--list]
-  truspec import <postman|bruno> <path> [--out <dir>]
+  truspec import <postman|bruno|curl> <path|-> [--out <dir>]
   truspec mock --spec <openapi> [--port <n>] [--delay <ms>]
   truspec serve [--dir <collection>] [--port <n>]
   truspec --help
@@ -33,7 +33,7 @@ Commands:
   contract   Run the collection and validate each response against the spec; non-zero exit on violation.
   gen        Scaffold a request stub per operation from an OpenAPI spec.
   codegen    Render a request as a runnable snippet (curl, Python, Go, …); --list for targets.
-  import     Convert a Postman collection or Bruno directory to .tspec.yaml files.
+  import     Convert a Postman collection, Bruno directory, or curl command to .tspec.yaml.
   mock       Serve generated responses from an OpenAPI spec (local, offline).
   serve      Open the local web UI for a collection (executes requests server-side).
 `;

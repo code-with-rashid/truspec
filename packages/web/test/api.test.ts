@@ -35,6 +35,39 @@ describe("web server api", () => {
     }
   });
 
+  it("imports a pasted curl command into the workspace", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "truspec-web-curl-"));
+    try {
+      const r = await handleApi(
+        "POST",
+        "/api/import/curl",
+        noQuery,
+        { text: `curl 'https://api.example.com/pets' -H 'Authorization: Bearer t0k'` },
+        { dir },
+      );
+      const out = r.json as { ok: boolean; stats: { requests: number }; files: string[] };
+      expect(out.ok).toBe(true);
+      expect(out.stats.requests).toBe(1);
+      const written = readFileSync(join(dir, out.files[0]), "utf8");
+      expect(written).toContain("type: bearer");
+      expect(written).toContain("token: t0k");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("reports unusable curl input instead of writing an empty import", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "truspec-web-curl-bad-"));
+    try {
+      const empty = await handleApi("POST", "/api/import/curl", noQuery, { text: "   " }, { dir });
+      expect(empty.status).toBe(400);
+      const junk = await handleApi("POST", "/api/import/curl", noQuery, { text: "hello there" }, { dir });
+      expect((junk.json as { ok: boolean }).ok).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("lists code-generation targets", async () => {
     const r = await handleApi("GET", "/api/codegen/targets", noQuery, undefined, ctx);
     const targets = (r.json as { targets: Array<{ id: string }> }).targets;

@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   codegenTargetsTool,
   codegenTool,
+  importCurlTool,
   contractTool,
   coverageTool,
   createRequest,
@@ -109,6 +110,31 @@ describe("mcp tools", () => {
       expect(readFileSync(join(dir, "api", "getpetbyid.tspec.yaml"), "utf8")).toMatch(
         /\{\{baseUrl\}\}\/pets\/\{\{id\}\}/,
       );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("imports a curl command into request files", () => {
+    const dir = mkdtempSync(join(tmpdir(), "truspec-mcp-curl-"));
+    try {
+      const r = importCurlTool({ cwd: dir }, `curl -X POST https://api.example.com/pets -d '{"name":"Rex"}'`) as {
+        created: number;
+        files: string[];
+      };
+      expect(r.created).toBe(1);
+      expect(readFileSync(join(dir, r.files[0]), "utf8")).toContain("Rex");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("reports a curl import that produced nothing rather than writing files", () => {
+    const dir = mkdtempSync(join(tmpdir(), "truspec-mcp-curl-bad-"));
+    try {
+      const r = importCurlTool({ cwd: dir }, "nothing here") as { created: number; warnings: string[] };
+      expect(r.created).toBe(0);
+      expect(r.warnings.join(" ")).toMatch(/No curl command/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

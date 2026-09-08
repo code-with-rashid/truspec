@@ -233,6 +233,8 @@ export const importPostman = (json: unknown, targetDir?: string) =>
   api<ImportApiResult>("/api/import/postman", { method: "POST", body: JSON.stringify({ json, targetDir }) });
 export const importBruno = (files: Array<{ path: string; content: string }>, targetDir?: string) =>
   api<ImportApiResult>("/api/import/bruno", { method: "POST", body: JSON.stringify({ files, targetDir }) });
+export const importCurlText = (text: string, targetDir?: string, name?: string) =>
+  api<ImportApiResult>("/api/import/curl", { method: "POST", body: JSON.stringify({ text, targetDir, name }) });
 export const getRequest = (path: string) =>
   api<RequestDetail>(`/api/request?path=${encodeURIComponent(path)}`);
 export const run = (target: string | undefined, env: string | undefined, spec?: string) =>
