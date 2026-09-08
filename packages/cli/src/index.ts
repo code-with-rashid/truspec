@@ -14,7 +14,8 @@ const VERSION = typeof __TRUSPEC_VERSION__ === "string" ? __TRUSPEC_VERSION__ : 
 const HELP = `truspec ${VERSION} — local-first, spec-synced, agent-native API client
 
 Usage:
-  truspec run <path> [--env <name>] [--spec <openapi>] [--json] [--output <file>] [--timeout <ms>]
+  truspec run <path> [--env <name>] [--spec <openapi>] [--var k=v] [--grep <re>] [--tag <name>]
+                     [--bail] [--delay <ms>] [--json | --reporter <r>] [--output <file>] [--timeout <ms>]
   truspec drift --spec <openapi> [<dir>] [--live <baseUrl>] [--json]
   truspec coverage --spec <openapi> [<dir>] [--min <percent>] [--json]
   truspec contract --spec <openapi> [<dir>] [--env <name>] [--json]

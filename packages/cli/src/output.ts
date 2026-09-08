@@ -19,7 +19,13 @@ export function formatHuman(result: WorkspaceRunResult, cwd: string): string {
     }
   }
   lines.push("");
-  lines.push(`${result.passed} passed, ${result.failed} failed, ${result.results.length} total`);
+  const parts = [`${result.passed} passed`, `${result.failed} failed`];
+  // `bail` and `--grep`/`--tag` both shrink what ran; say so, or a small "total" looks like a
+  // missing-file bug rather than the selection the user asked for.
+  if (result.skipped > 0) parts.push(`${result.skipped} skipped (bailed)`);
+  parts.push(`${result.results.length} total`);
+  if (result.deselected) parts.push(`${result.deselected} deselected`);
+  lines.push(parts.join(", "));
   return lines.join("\n");
 }
 

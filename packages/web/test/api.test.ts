@@ -48,7 +48,7 @@ describe("web server api", () => {
       const out = r.json as { ok: boolean; stats: { requests: number }; files: string[] };
       expect(out.ok).toBe(true);
       expect(out.stats.requests).toBe(1);
-      const written = readFileSync(join(dir, out.files[0]), "utf8");
+      const written = readFileSync(join(dir, out.files[0]!), "utf8");
       expect(written).toContain("type: bearer");
       expect(written).toContain("token: t0k");
     } finally {

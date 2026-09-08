@@ -150,6 +150,12 @@ export const RequestSchema = z
     capture: z.record(z.string(), CaptureSource).optional(),
     /** Run order within a collection (lower first; default 0, then by path). */
     order: z.number().optional(),
+    /**
+     * Free-form labels for selecting a subset of a collection at run time
+     * (`truspec run --tag smoke`). Kept as plain strings so a tag can also be a team
+     * convention (`owner:payments`) without the format needing to know about it.
+     */
+    tags: z.array(z.string().min(1)).optional(),
     /** Pre-request + post-response scripts run in a Node vm context (see CLAUDE.md; not a security sandbox). */
     script: z.object({ pre: z.string().optional(), post: z.string().optional() }).strict().optional(),
     docs: z.string().optional(),

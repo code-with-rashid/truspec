@@ -58,6 +58,7 @@ assertions:                        # declarative + machine-checkable
 capture:                           # save response values into vars for later requests
   ownerId: "$.owner.id"
 order: 1                           # run order within a collection (lower first; default 0)
+tags: [smoke, auth]                # labels for `truspec run --tag smoke`
 script:                            # advanced — see ./scripting.md
   pre: "tr.set('ts', new Date().toISOString())"
   post: "tr.expect(tr.response.status === 200, 'ok')"
@@ -82,9 +83,29 @@ spec:                              # links request → OpenAPI operation (drift/
 | `assertions` | [Assertion](#assertions)[] | no | `[]` | Declarative checks. |
 | `capture` | map | no | — | [Save response values](#chaining-with-capture) into variables. |
 | `order` | number | no | `0` | Lower runs first; ties broken by file path. |
+| `tags` | string[] | no | — | Labels for [selective runs](./cli.md#run) (`--tag`). Free-form. |
 | `script` | `{ pre?, post? }` | no | — | [Scripting](./scripting.md). |
 | `docs` | string | no | — | Free-form documentation. |
 | `spec` | `{ operation?, operationId? }` | no | — | [Links to an OpenAPI operation](#spec-link). |
+
+### Tags
+
+`tags` label a request so a run can select a subset of the collection without reorganizing
+folders:
+
+```yaml
+tags: [smoke, auth, "owner:payments"]
+```
+
+```bash
+truspec run ./api --tag smoke            # the fast gate on every push
+truspec run ./api --tag smoke --tag auth # either tag
+truspec run ./api --tag smoke --bail     # …and stop at the first failure
+```
+
+Tags are plain strings, so a team convention like `owner:payments` or `slow` works without the
+format needing to know about it. They are orthogonal to `order`: selection decides *what* runs,
+`order` decides *in what sequence*.
 
 ---
 

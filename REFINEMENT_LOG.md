@@ -20,7 +20,9 @@ UI/UX polish, and stabilization. Each iteration is a self-contained, tested, com
 | **Cookie jar** | ✓ | ✓ | ✓ | ✓ | **✗** |
 | **Multipart / file upload** | ✓ | ✓ | ✓ | ✓ | **✗** |
 | **Data-driven runs (CSV/JSON)** | ✓ | ✓ | ✗ | ✗ | **✗** |
-| **JUnit / HTML CI reports** | ✓ (newman) | ✓ | ✗ | ✗ | **✗** |
+| JUnit CI report | ✓ (newman) | ✓ | ✗ | ✗ | ✓ (`--reporter junit`) |
+| **HTML CI report** | ✓ (newman) | ✓ | ✗ | ✗ | **✗** |
+| **Run selection (`--grep` / tags / `--bail`)** | ✓ | ✓ | ✗ | ✗ | **✗** |
 | **Proxy / TLS / client certs** | ✓ | ✓ | ✓ | ✗ | **✗** |
 | **Retries / redirect policy** | ✓ | ✓ | ✓ | ✓ | **✗** |
 | **SSE / streaming** | ✓ | ✓ | ✓ | ✓ | **✗** |
@@ -79,5 +81,29 @@ Surfaced as `truspec import curl <command|file|->`, `POST /api/import/curl` behi
 "paste a curl command" pane in the web import dialog, and the `truspec_import_curl` MCP tool.
 
 **Verification.** 414 tests (was 384) — 22 core (tokenizer + importer), 4 CLI, 2 web API, 2 MCP.
+Typecheck 8/8, build 5/5.
+
+### 3 — Run selection and control (`--grep`, `--tag`, `--bail`, `--delay`, `--var`)
+
+**Gap.** `truspec run` was all-or-nothing: no way to run just the smoke subset, stop at the first
+failure, pace against a rate limit, or override a variable from CI. Postman's newman and Bruno's
+runner have all four; a CI gate without them forces either a full run on every push or an ad-hoc
+directory layout.
+
+**Change.** `runPath` gained `grep`, `tags`, `bail`, `delayMs` (with an injectable `sleep`), and
+the format gained an optional `tags: string[]` on a request. `grep` matches the request's **name
+or its workspace-relative path** — both are things people reach for — and an invalid pattern
+fails loudly rather than matching nothing. Tags OR together; grep and tags AND together.
+
+`WorkspaceRunResult` now reports `skipped` (selected but never sent, because `bail` stopped the
+run) and `deselected` (filtered out before it started), and the human reporter prints both — a
+run that shrank should say why. A filter matching nothing exits 1 with a filter-specific message,
+because a filtered run that passes by running zero requests is exactly the false positive the gate
+exists to prevent.
+
+CLI: `--grep/-g`, `--tag` (repeatable), `--bail`, `--delay`, and `--var name=value` (repeatable,
+wins over the environment — for a per-branch base URL in CI).
+
+**Verification.** 432 tests (was 414) — 14 core selection/control, 4 CLI. Schema regenerated.
 Typecheck 8/8, build 5/5.
 

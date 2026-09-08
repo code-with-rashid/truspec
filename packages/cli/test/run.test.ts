@@ -143,4 +143,70 @@ describe("truspec run", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it("--var overrides an environment variable", async () => {
+    const cap = capture();
+    let seen = "";
+    const code = await runCommand(
+      ["examples/petstore", "--env", "local", "--var", "petId=99"],
+      {
+        cwd: repoRoot,
+        fetch: (async (url: string) => {
+          seen = url;
+          return new Response(JSON.stringify({ id: 99 }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        }) as unknown as typeof fetch,
+        now: (() => {
+          let t = 0;
+          return () => (t += 5);
+        })(),
+        processEnv: { token: "secret" },
+        stdout: cap.stdout,
+        stderr: cap.stderr,
+      },
+    );
+    expect(code).toBe(0);
+    expect(seen).toContain("/pets/99");
+  });
+
+  it("rejects a malformed --var with exit 2", async () => {
+    const cap = capture();
+    const code = await runCommand(["examples/petstore", "--var", "nope"], {
+      cwd: repoRoot,
+      stdout: cap.stdout,
+      stderr: cap.stderr,
+    });
+    expect(code).toBe(2);
+    expect(cap.err).toMatch(/Invalid --var "nope"/);
+  });
+
+  it("fails with a filter-specific message when --grep matches nothing", async () => {
+    const cap = capture();
+    const code = await runCommand(["examples/petstore", "--env", "local", "--grep", "zzz"], {
+      cwd: repoRoot,
+      fetch: okFetch({ id: 1 }),
+      processEnv: { token: "secret" },
+      stdout: cap.stdout,
+      stderr: cap.stderr,
+    });
+    expect(code).toBe(1);
+    expect(cap.err).toMatch(/--grep\/--tag matched none of the 1 request/);
+  });
+
+  it("--grep selects a matching request and reports the deselected count", async () => {
+    const cap = capture();
+    let t = 0;
+    const code = await runCommand(["examples/petstore", "--env", "local", "--grep", "pet"], {
+      cwd: repoRoot,
+      fetch: okFetch({ id: 1 }),
+      now: () => (t += 5),
+      processEnv: { token: "secret" },
+      stdout: cap.stdout,
+      stderr: cap.stderr,
+    });
+    expect(code).toBe(0);
+    expect(cap.out).toMatch(/1 passed, 0 failed/);
+  });
 });

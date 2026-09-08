@@ -15,7 +15,7 @@ describe("formatJunit", () => {
     const ctrl = String.fromCharCode(0, 27, 8); // NUL, ESC, BS — illegal in XML 1.0 even as entities
     const result: WorkspaceRunResult = {
       passed: 0,
-      failed: 1,
+      failed: 1, skipped: 0,
       ok: false,
       missingSecrets: [],
       results: [
@@ -39,7 +39,7 @@ describe("formatJunit", () => {
   it("still escapes XML metacharacters", () => {
     const result: WorkspaceRunResult = {
       passed: 0,
-      failed: 1,
+      failed: 1, skipped: 0,
       ok: false,
       missingSecrets: [],
       results: [

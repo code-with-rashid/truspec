@@ -24,6 +24,7 @@ describe("vscode results rendering", () => {
       ],
       passed: 1,
       failed: 1,
+      skipped: 0,
       ok: false,
       missingSecrets: [],
     };
@@ -62,6 +63,7 @@ describe("vscode results rendering", () => {
       results: [{ name: "<script>", request: { method: "GET", url: "x" }, ok: true, assertions: [] }],
       passed: 1,
       failed: 0,
+      skipped: 0,
       ok: true,
       missingSecrets: [],
     };
@@ -77,7 +79,7 @@ describe("vscode results rendering", () => {
       results: [
         { name: "n", request: { method: "GET", url: "x" }, ok: false, error: payload, assertions: [{ type: "header", ok: false, message: payload }] },
       ],
-      passed: 0, failed: 1, ok: false, missingSecrets: [],
+      passed: 0, failed: 1, skipped: 0, ok: false, missingSecrets: [],
     };
     const html = renderResults(run);
     expect(html).not.toContain("<img src=x onerror");

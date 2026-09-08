@@ -14,6 +14,11 @@ export async function runCommand(argv: string[], deps: Partial<CommandDeps> = {}
     reporter: { type: "string" },
     output: { type: "string", short: "o" },
     timeout: { type: "string" },
+    var: { type: "string", multiple: true },
+    grep: { type: "string", short: "g" },
+    tag: { type: "string", multiple: true },
+    bail: { type: "boolean" },
+    delay: { type: "string" },
   } as const;
 
   let values: {
@@ -23,6 +28,11 @@ export async function runCommand(argv: string[], deps: Partial<CommandDeps> = {}
     reporter?: string;
     output?: string;
     timeout?: string;
+    var?: string[];
+    grep?: string;
+    tag?: string[];
+    bail?: boolean;
+    delay?: string;
   };
   let positionals: string[];
   try {
@@ -37,8 +47,18 @@ export async function runCommand(argv: string[], deps: Partial<CommandDeps> = {}
   const target = positionals[0];
   if (!target) {
     d.stderr(
-      "Usage: truspec run <path> [--env <name>] [--spec <openapi>] [--json] [--output <file>] [--timeout <ms>]\n",
+      "Usage: truspec run <path> [--env <name>] [--spec <openapi>] [--var k=v] [--grep <re>]\n" +
+        "                         [--tag <name>] [--bail] [--delay <ms>] [--json | --reporter <r>]\n" +
+        "                         [--output <file>] [--timeout <ms>]\n",
     );
+    return 2;
+  }
+
+  let overrides: Record<string, string>;
+  try {
+    overrides = parseVarFlags(values.var ?? []);
+  } catch (e) {
+    d.stderr(`${(e as Error).message}\n`);
     return 2;
   }
 
@@ -52,6 +72,11 @@ export async function runCommand(argv: string[], deps: Partial<CommandDeps> = {}
       now: d.now,
       processEnv: d.processEnv,
       timeoutMs: num(values.timeout),
+      vars: overrides,
+      grep: values.grep,
+      tags: values.tag,
+      bail: values.bail,
+      delayMs: num(values.delay),
     });
   } catch (e) {
     d.stderr(`Error: ${(e as Error).message}\n`);
@@ -67,7 +92,13 @@ export async function runCommand(argv: string[], deps: Partial<CommandDeps> = {}
   // "pass" here.) Industry test runners (jest, pytest, go test) fail on "no tests found" too.
   const noRequests = result.results.length === 0;
   if (noRequests) {
-    d.stderr(`Error: no .tspec.yaml requests found under "${target}".\n`);
+    // Distinguish "nothing here" from "your filter matched nothing" — the fix differs, and a
+    // silently-empty filtered run is exactly the false-positive this gate exists to prevent.
+    d.stderr(
+      result.deselected
+        ? `Error: --grep/--tag matched none of the ${result.deselected} request(s) under "${target}".\n`
+        : `Error: no .tspec.yaml requests found under "${target}".\n`,
+    );
   }
 
   const reporter = values.reporter ?? (values.json ? "json" : "human");
@@ -79,4 +110,18 @@ export async function runCommand(argv: string[], deps: Partial<CommandDeps> = {}
         : formatHuman(result, d.cwd);
   emit(d, text, values.output);
   return result.ok && !noRequests ? 0 : 1;
+}
+
+/**
+ * Parse repeated `--var name=value` flags into a variable map. These win over the environment,
+ * so CI can inject a per-branch base URL or a one-off id without editing a file.
+ */
+function parseVarFlags(flags: string[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const raw of flags) {
+    const eq = raw.indexOf("=");
+    if (eq <= 0) throw new Error(`Invalid --var "${raw}" — expected name=value`);
+    out[raw.slice(0, eq)] = raw.slice(eq + 1);
+  }
+  return out;
 }

@@ -123,7 +123,7 @@ describe("mcp tools", () => {
         files: string[];
       };
       expect(r.created).toBe(1);
-      expect(readFileSync(join(dir, r.files[0]), "utf8")).toContain("Rex");
+      expect(readFileSync(join(dir, r.files[0]!), "utf8")).toContain("Rex");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

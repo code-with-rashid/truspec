@@ -47,17 +47,28 @@ Run a single request file or a whole directory of requests, evaluating each requ
 assertions.
 
 ```
-truspec run <path> [--env <name>] [--spec <openapi>] [--json] [--reporter <fmt>] [--output <file>] [--timeout <ms>]
+truspec run <path> [--env <name>] [--spec <openapi>] [--var k=v] [--grep <re>] [--tag <name>]
+                   [--bail] [--delay <ms>] [--json | --reporter <fmt>] [--output <file>] [--timeout <ms>]
 ```
 
 | Flag | Alias | Description |
 |---|---|---|
 | `--env <name>` | `-e` | Environment to load (`environments/<name>.env.yaml`). |
 | `--spec <openapi>` | `-s` | Validate each spec-linked request's response against the OpenAPI response schema. |
+| `--var <name=value>` | | Override or add a variable. Repeatable; wins over the environment. |
+| `--grep <regex>` | `-g` | Only run requests whose **name or path** matches (case-insensitive). |
+| `--tag <name>` | | Only run requests carrying this [`tag`](./file-format.md). Repeatable (OR). |
+| `--bail` | | Stop at the first failure; the remaining requests are reported as skipped. |
+| `--delay <ms>` | | Pause between requests, for rate-limited APIs. |
 | `--json` | | Shorthand for `--reporter json`. |
 | `--reporter <fmt>` | | Output format: `human` (default), `json`, or `junit`. |
 | `--output <file>` | `-o` | Write the report to a file instead of stdout. |
 | `--timeout <ms>` | | Per-request timeout. Default `30000`. Use `0` to disable. |
+
+`--grep` and `--tag` combine as an **AND** (`--grep login --tag smoke` runs requests that match
+both); repeated `--tag` flags combine as an **OR**. A selection that matches nothing exits `1`
+with a message naming the filter — a filtered run that quietly passes because it ran zero requests
+is the false positive this gate exists to prevent.
 
 `<path>` may be a single `.tspec.yaml` file or a directory. A directory is searched
 recursively; requests run in `order` (ascending) then by file path, so
@@ -75,6 +86,10 @@ truspec run ./api --env local --spec openapi.yaml  # also validate responses vs 
 truspec run ./api --json                       # machine-readable output
 truspec run ./api --reporter junit -o junit.xml   # JUnit XML for CI test reporters
 truspec run ./api --timeout 5000               # 5s per-request timeout
+truspec run ./api --tag smoke --bail           # fast smoke gate: stop at the first failure
+truspec run ./api --grep '^billing/'           # just one folder
+truspec run ./api --var baseUrl=https://staging.example.com   # per-branch override in CI
+truspec run ./api --delay 200                  # 200ms between requests (rate limits)
 ```
 
 ### Human output
@@ -85,6 +100,12 @@ truspec run ./api --timeout 5000               # 5s per-request timeout
       ✗ status 500 fails == 201
 
 1 passed, 1 failed, 2 total
+```
+
+With `--bail` or a filter, the summary says what did not run:
+
+```
+1 passed, 1 failed, 2 skipped (bailed), 2 total, 3 deselected
 ```
 
 ### JSON output
