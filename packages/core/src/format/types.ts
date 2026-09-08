@@ -7,6 +7,7 @@ import {
   EnvironmentSchema,
   FolderConfigSchema,
   HttpMethod,
+  RequestOptions,
   RequestSchema,
 } from "./schema";
 
@@ -18,3 +19,4 @@ export type TruSpecAuth = z.infer<typeof Auth>;
 export type TruSpecBody = z.infer<typeof Body>;
 export type TruSpecMethod = z.infer<typeof HttpMethod>;
 export type TruSpecCaptureSource = z.infer<typeof CaptureSource>;
+export type TruSpecRequestOptions = z.infer<typeof RequestOptions>;

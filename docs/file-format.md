@@ -59,6 +59,8 @@ capture:                           # save response values into vars for later re
   ownerId: "$.owner.id"
 order: 1                           # run order within a collection (lower first; default 0)
 tags: [smoke, auth]                # labels for `truspec run --tag smoke`
+options:                           # transport: timeout, retries, redirects
+  retries: 2
 script:                            # advanced — see ./scripting.md
   pre: "tr.set('ts', new Date().toISOString())"
   post: "tr.expect(tr.response.status === 200, 'ok')"
@@ -84,6 +86,7 @@ spec:                              # links request → OpenAPI operation (drift/
 | `capture` | map | no | — | [Save response values](#chaining-with-capture) into variables. |
 | `order` | number | no | `0` | Lower runs first; ties broken by file path. |
 | `tags` | string[] | no | — | Labels for [selective runs](./cli.md#run) (`--tag`). Free-form. |
+| `options` | [Options](#request-options) | no | — | Timeout, retries, redirect policy. |
 | `script` | `{ pre?, post? }` | no | — | [Scripting](./scripting.md). |
 | `docs` | string | no | — | Free-form documentation. |
 | `spec` | `{ operation?, operationId? }` | no | — | [Links to an OpenAPI operation](#spec-link). |
@@ -106,6 +109,38 @@ truspec run ./api --tag smoke --bail     # …and stop at the first failure
 Tags are plain strings, so a team convention like `owner:payments` or `slow` works without the
 format needing to know about it. They are orthogonal to `order`: selection decides *what* runs,
 `order` decides *in what sequence*.
+
+---
+
+## Request options
+
+Per-request transport behavior. Every field is optional, and every default matches what the runner
+did before the block existed — adding `options` never changes an existing request.
+
+```yaml
+options:
+  timeoutMs: 5000          # overrides the run-wide --timeout for this request; 0 disables it
+  retries: 2               # re-send on a transport error, 429, or 5xx (never on a 4xx or a
+                           # failed assertion — those are answers, not faults)
+  retryDelayMs: 200        # base backoff; doubles each attempt, capped at 5s
+  followRedirects: true    # off by default
+  maxRedirects: 5
+```
+
+**Redirects are not followed by default.** TruSpec reports the *actual* response a URL returns, so
+a `301` stays assertable and [`contract`](./cli.md#contract) can validate a redirect operation the
+spec declares. Turn `followRedirects` on for a request where the hop is incidental.
+
+When following, TruSpec does it itself rather than delegating to the platform, so that:
+
+- each hop is reported back on the result (`redirects: [...]`),
+- `303` — and `301`/`302` on a non-`GET` — become a bodiless `GET`, matching what every real
+  client does, with the body's `Content-Type`/`Content-Length` dropped with it,
+- `307`/`308` preserve the method and body, and
+- **`Authorization` and `Cookie` are dropped the moment the origin changes**, so a redirect can't
+  walk your credentials to a host you never named.
+
+A result reports `retries` and `redirects` only when they actually happened.
 
 ---
 

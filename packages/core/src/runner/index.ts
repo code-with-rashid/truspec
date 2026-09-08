@@ -5,4 +5,5 @@ export * from "./capture";
 export * from "./script";
 export * from "./oauth";
 export * from "./resolve";
+export * from "./transport";
 export * from "./run";

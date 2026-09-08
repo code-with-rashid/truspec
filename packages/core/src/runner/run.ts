@@ -12,6 +12,7 @@ import type { VarValue, Vars } from "./interpolate";
 import { type OAuth2Auth, resolveOAuthToken, type TokenCache } from "./oauth";
 import { resolveRequest } from "./resolve";
 import { runPostScript, runPreScript } from "./script";
+import { send } from "./transport";
 
 export interface RunContext {
   folder?: TruSpecFolderConfig;
@@ -25,6 +26,8 @@ export interface RunContext {
   maxResponseBytes?: number;
   /** Shared OAuth2 token cache, so one collection run hits the token endpoint once. */
   tokenCache?: TokenCache;
+  /** Injectable retry backoff, so tests don't actually wait. */
+  sleep?: (ms: number) => Promise<void>;
   /** OpenAPI context for response-schema validation (set when running with a spec). */
   contract?: {
     doc: Record<string, unknown>;
@@ -50,6 +53,10 @@ export interface RunResult {
   };
   assertions: AssertionResult[];
   captured?: Record<string, VarValue>;
+  /** Redirect hops actually followed, when `options.followRedirects` is on. */
+  redirects?: string[];
+  /** How many times the request had to be re-sent, when `options.retries` is set. */
+  retries?: number;
 }
 
 function looksLikeJson(text: string): boolean {
@@ -165,20 +172,22 @@ export async function runRequest(req: TruSpecRequest, ctx: RunContext = {}): Pro
   }
 
   const start = now();
-  let response: Response;
+  let sent: Awaited<ReturnType<typeof send>>;
   try {
-    // Do NOT auto-follow redirects: this is a spec-contract tool, so a request must observe the
-    // ACTUAL response its URL returns — including a 3xx with its Location header. Auto-following
-    // silently reports the redirect TARGET's response instead, which makes redirect responses
-    // impossible to assert on and blinds `truspec contract`/`run --spec` to any 3xx operation the
-    // spec declares. (Node returns the real 3xx for `manual`, unlike a browser's opaque response.)
-    const init: RequestInit = { method: eff.method, headers: eff.headers, redirect: "manual" };
-    if (eff.body !== undefined) init.body = eff.body;
-    if (ctx.timeoutMs !== undefined && ctx.timeoutMs > 0) init.signal = AbortSignal.timeout(ctx.timeoutMs);
-    response = await doFetch(eff.url, init);
+    sent = await send(
+      eff.url,
+      { method: eff.method, headers: eff.headers, ...(eff.body !== undefined ? { body: eff.body } : {}) },
+      {
+        fetch: doFetch,
+        timeoutMs: ctx.timeoutMs,
+        options: req.options,
+        ...(ctx.sleep ? { sleep: ctx.sleep } : {}),
+      },
+    );
   } catch (e) {
     return { ...head, ok: false, error: `Request failed: ${(e as Error).message}`, assertions: [] };
   }
+  const response = sent.response;
 
   const durationMs = now() - start;
   let bodyText: string;
@@ -225,6 +234,8 @@ export async function runRequest(req: TruSpecRequest, ctx: RunContext = {}): Pro
   return {
     ...head,
     ok,
+    ...(sent.redirects.length > 0 ? { redirects: sent.redirects } : {}),
+    ...(sent.attempts > 0 ? { retries: sent.attempts } : {}),
     response: { status: response.status, statusText: response.statusText, durationMs, headers, bodyText },
     assertions,
     ...(scriptError ? { error: `Script error: ${scriptError}` } : {}),

@@ -147,6 +147,28 @@ export const Assertion = z.discriminatedUnion("type", [
     .strict(),
 ]);
 
+/**
+ * Per-request transport options. All optional; every default matches what the runner did before
+ * these existed, so adding the block never changes an existing request's behavior.
+ */
+export const RequestOptions = z
+  .object({
+    /** Overrides the run-wide timeout for this request. `0` disables it. */
+    timeoutMs: z.number().int().nonnegative().optional(),
+    /** Re-send on a transport error, 429, or 5xx. Assertion failures are never retried. */
+    retries: z.number().int().min(0).max(10).optional(),
+    /** Base pause before a retry; doubles each attempt (capped). Default 200ms. */
+    retryDelayMs: z.number().int().nonnegative().optional(),
+    /**
+     * Follow 3xx responses. Off by default: TruSpec observes the ACTUAL response a URL returns,
+     * so a redirect stays assertable and `contract` can validate a 3xx operation the spec declares.
+     */
+    followRedirects: z.boolean().optional(),
+    /** Redirect hops allowed when `followRedirects` is on. Default 5. */
+    maxRedirects: z.number().int().min(1).max(20).optional(),
+  })
+  .strict();
+
 /** Links a request back to its OpenAPI operation — consumed by drift & coverage. */
 const SpecLink = z
   .object({
@@ -186,6 +208,8 @@ export const RequestSchema = z
      * convention (`owner:payments`) without the format needing to know about it.
      */
     tags: z.array(z.string().min(1)).optional(),
+    /** Transport options (timeout, retries, redirects) for this request. */
+    options: RequestOptions.optional(),
     /** Pre-request + post-response scripts run in a Node vm context (see CLAUDE.md; not a security sandbox). */
     script: z.object({ pre: z.string().optional(), post: z.string().optional() }).strict().optional(),
     docs: z.string().optional(),

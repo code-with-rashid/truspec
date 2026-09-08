@@ -154,3 +154,28 @@ interpolation, every failure mode, cache hit/expiry/keying, and end-to-end throu
 including folder inheritance and request-level override. Schema regenerated. Typecheck 8/8,
 build 5/5.
 
+### 6 — Per-request transport options (timeout, retries, redirects)
+
+**Gap.** Timeout was run-wide only; there were no retries at all (a flaky staging API meant a red
+CI build for a reason unrelated to the code), and redirects could never be followed.
+
+**Change.** New optional `options` block on a request: `timeoutMs`, `retries`, `retryDelayMs`,
+`followRedirects`, `maxRedirects`. Every default reproduces the previous behavior exactly, so the
+block is purely additive.
+
+Retries cover transport errors, `429`, and `5xx` — never a `4xx` or a failed assertion, which are
+answers rather than faults — with exponential backoff capped at 5s and an injectable sleep so
+tests don't wait.
+
+Redirect following is **opt-in and hand-rolled** rather than delegated to `fetch`, for two
+reasons. First, each hop is reported on the result. Second, and more importantly, the platform's
+own follow carries `Authorization` to whatever host the `Location` names; TruSpec drops
+`Authorization` and `Cookie` the moment the origin changes. Method rewriting matches real clients:
+`303` (and `301`/`302` on a non-GET) becomes a bodiless `GET` with the body's content headers
+removed; `307`/`308` preserve both.
+
+**Verification.** 477 tests (was 461) — 16 covering retry eligibility, backoff shape, the
+exhausted-budget path, redirect hop reporting, the `maxRedirects` stop, per-status method
+rewriting, same- vs cross-origin credential handling, an unusable `Location`, and end-to-end
+reporting through `runRequest`. Schema regenerated. Typecheck 8/8, build 5/5.
+
