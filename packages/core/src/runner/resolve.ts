@@ -1,12 +1,23 @@
 import type { TruSpecAuth, TruSpecFolderConfig, TruSpecRequest } from "../format/types";
 import { interpolate, type InterpolateOptions, interpolateDeep, type Vars } from "./interpolate";
 
+/** One resolved `multipart/form-data` part, ready to be turned into a `FormData` entry. */
+export type ResolvedPart =
+  | { kind: "text"; name: string; value: string; contentType?: string; filename?: string }
+  | { kind: "file"; name: string; path: string; filename?: string; contentType?: string };
+
 /** A concrete HTTP request ready to hand to `fetch`. */
 export interface EffectiveRequest {
   method: string;
   url: string;
   headers: Record<string, string>;
   body?: string;
+  /**
+   * Set instead of `body` for a multipart request. It stays *unassembled* here because a file
+   * part has to be read from disk, which this module (browser-safe, synchronous) must not do —
+   * the runner assembles it with an injected reader.
+   */
+  multipart?: ResolvedPart[];
   missing: string[];
 }
 
@@ -151,6 +162,38 @@ export function resolveRequest(req: TruSpecRequest, opts: ResolveOptions = {}): 
       if (!hasHeader(headers, "content-type")) {
         headers["Content-Type"] = "application/x-www-form-urlencoded";
       }
+    } else if (req.body.type === "multipart") {
+      const parts: ResolvedPart[] = [];
+      for (const [name, field] of Object.entries(req.body.fields)) {
+        if (typeof field !== "object" || field === null) {
+          const r = interpolate(String(field), vars, io);
+          missing.push(...r.missing);
+          parts.push({ kind: "text", name, value: r.value });
+        } else if ("file" in field) {
+          const r = interpolate(field.file, vars, io);
+          missing.push(...r.missing);
+          parts.push({
+            kind: "file",
+            name,
+            path: r.value,
+            ...(field.filename ? { filename: field.filename } : {}),
+            ...(field.contentType ? { contentType: field.contentType } : {}),
+          });
+        } else {
+          const r = interpolate(field.text, vars, io);
+          missing.push(...r.missing);
+          parts.push({
+            kind: "text",
+            name,
+            value: r.value,
+            ...(field.filename ? { filename: field.filename } : {}),
+            ...(field.contentType ? { contentType: field.contentType } : {}),
+          });
+        }
+      }
+      // No Content-Type: the boundary is generated when the body is assembled, and a hand-set
+      // header would produce a boundary that does not match the payload.
+      return { method: req.method, url, headers, multipart: parts, missing: Array.from(new Set(missing)) };
     } else if (req.body.type === "graphql") {
       const q = interpolate(req.body.query, vars, io);
       missing.push(...q.missing);

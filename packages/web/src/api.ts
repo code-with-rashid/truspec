@@ -71,7 +71,16 @@ export type RequestBody =
   | { type: "json"; content: unknown }
   | { type: "text"; content: string }
   | { type: "form"; content: Record<string, string> }
-  | { type: "graphql"; query: string; variables?: Record<string, unknown> };
+  | { type: "graphql"; query: string; variables?: Record<string, unknown> }
+  | { type: "multipart"; fields: Record<string, MultipartField> };
+
+/** One `multipart/form-data` part: a plain value, a file read at send time, or typed text. */
+export type MultipartField =
+  | string
+  | number
+  | boolean
+  | { file: string; filename?: string; contentType?: string }
+  | { text: string; filename?: string; contentType?: string };
 
 export type RequestAuth =
   | { type: "none" }

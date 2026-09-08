@@ -268,3 +268,34 @@ end-to-end against `examples/blog`, 4/4 passing).
 force, spec scaffolding, sample derivation per source, next-step wording) and 6 CLI. The scaffold
 is also asserted to be **lint-clean**. Typecheck 8/8, build 5/5.
 
+### 10 — `multipart/form-data` with file uploads
+
+**Gap.** File upload is table stakes in every competitor and TruSpec had no body type for it. The
+curl importer had to downgrade `-F` to a urlencoded form and warn about it.
+
+**Change.** New `body: { type: multipart, fields }`, where a field is a plain value, a typed text
+part, or `{ file, filename?, contentType? }`.
+
+The layering matters: `resolveRequest` (synchronous, browser-safe) resolves the *parts* but does
+not read anything; the runner assembles the `FormData` through an **injected file reader**, which
+the workspace runner supplies. That reader resolves paths relative to the request file (what an
+author expects) and confines them to the workspace, so a collection — which may have been
+imported, generated, or written by an agent — cannot read `../../.ssh/id_rsa` and POST it. A
+runner without filesystem access fails with a clear message rather than silently sending nothing.
+`Content-Type` is deliberately never set, since the boundary is generated at assembly time.
+
+Knock-on work, both of which would otherwise be silent correctness bugs:
+
+- **codegen** renders true multipart for curl (`-F`), HTTPie (`--form`, `field@path`), fetch/axios
+  (`FormData`) and Python (`files=` + `data=`). Every other target prints a comment describing the
+  parts instead — falling back to a urlencoded body would produce a snippet that looks right, runs,
+  and hits the server with the wrong content type.
+- **curl import** now produces a real multipart body, including `@path` file parts and `;type=` /
+  `;filename=` modifiers, replacing the lossy fallback.
+
+Also added to the web UI's body editor, with an explicit text/file choice per part.
+
+**Verification.** 555 tests (was 540) — 11 multipart (resolution, no Content-Type, blob typing,
+missing-reader path, and a **workspace-escape test proving a `../../` path is refused and nothing
+is sent**), plus codegen and importer coverage. Typecheck 8/8, build 5/5.
+

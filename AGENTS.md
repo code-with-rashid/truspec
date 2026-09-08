@@ -56,7 +56,7 @@ headers:
 query:
   expand: owner
 body:
-  type: json                       # none | json | text | form | graphql
+  type: json                       # none | json | text | form | multipart | graphql
   content: { name: "Rex" }
 auth:                              # optional; can inherit from folder.tspec.yaml
   type: bearer                     # none | bearer | basic | apikey

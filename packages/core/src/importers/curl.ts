@@ -328,17 +328,36 @@ function buildBody(
   warnings: string[],
 ): TruSpecBody | undefined {
   if (p.form.length > 0) {
-    // Multipart isn't representable in v0's body union; keep the fields as a form body and say so.
-    warnings.push(
-      "curl -F sends multipart/form-data, which TruSpec v0 does not support — imported as a urlencoded form body",
-    );
-    const content: Record<string, string> = {};
+    // `-F name=@path` uploads a file; `-F name=value` is a plain part. `;type=` sets its media type.
+    const fields: Record<string, unknown> = {};
     for (const f of p.form) {
       const idx = f.indexOf("=");
       if (idx === -1) continue;
-      content[f.slice(0, idx)] = f.slice(idx + 1);
+      const name = f.slice(0, idx);
+      let rest = f.slice(idx + 1);
+      let contentType: string | undefined;
+      let filename: string | undefined;
+      // Trailing `;type=…` / `;filename=…` modifiers, which curl parses off the value.
+      for (;;) {
+        const m = /;(type|filename)=([^;]*)$/.exec(rest);
+        if (!m) break;
+        if (m[1] === "type") contentType = m[2];
+        else filename = m[2];
+        rest = rest.slice(0, m.index);
+      }
+      if (rest.startsWith("@") || rest.startsWith("<")) {
+        fields[name] = {
+          file: rest.slice(1),
+          ...(filename ? { filename } : {}),
+          ...(contentType ? { contentType } : {}),
+        };
+      } else if (contentType || filename) {
+        fields[name] = { text: rest, ...(filename ? { filename } : {}), ...(contentType ? { contentType } : {}) };
+      } else {
+        fields[name] = rest;
+      }
     }
-    return { type: "form", content };
+    return { type: "multipart", fields } as TruSpecBody;
   }
   // `-G` turns every data flag into query params, so there is no body at all.
   if (p.getWithData) return undefined;

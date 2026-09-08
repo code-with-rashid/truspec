@@ -97,9 +97,11 @@ What it handles: shell quoting (including `$'…'` and `\`-continuations), `-X`,
 and combined short flags (`-XPOST`). A bearer or basic `Authorization` header becomes an `auth`
 block instead of a raw header. Several commands in one paste import as several files.
 
-What it warns about rather than silently dropping: `-F` multipart (converted to a urlencoded form
-body — v0 has no multipart type), `-k` (skip TLS verification), and `--proxy`, none of which have
-a request-file equivalent. Also note that a pasted command usually contains **real credentials** —
+`-F` becomes a real [`multipart` body](./file-format.md#multipart), including `@path` file parts
+and their `;type=` / `;filename=` modifiers.
+
+What it warns about rather than silently dropping: `-k` (skip TLS verification) and `--proxy`,
+neither of which has a request-file equivalent. Also note that a pasted command usually contains **real credentials** —
 move them into an [environment secret](./concepts.md) before committing the file.
 
 ---

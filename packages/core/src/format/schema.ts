@@ -34,6 +34,24 @@ const KeyValue = z.record(z.string(), Primitive);
 // mis-reports as stale. (Required-field typos were already caught; this closes the optional-key gap,
 // honoring CLAUDE.md's "unknown keys are rejected" hard rule at every level.)
 
+/**
+ * One `multipart/form-data` part: a plain value, an explicit text part with its own media type,
+ * or a file read from disk at send time (path relative to the request file, confined to the
+ * workspace).
+ */
+export const MultipartField = z.union([
+  Primitive,
+  z
+    .object({
+      file: Template,
+      /** Filename sent in the part's Content-Disposition. Defaults to the file's basename. */
+      filename: z.string().optional(),
+      contentType: z.string().optional(),
+    })
+    .strict(),
+  z.object({ text: Template, contentType: z.string().optional(), filename: z.string().optional() }).strict(),
+]);
+
 /** Request body. Omit entirely for no body. */
 export const Body = z.discriminatedUnion("type", [
   z.object({ type: z.literal("none") }).strict(),
@@ -45,6 +63,16 @@ export const Body = z.discriminatedUnion("type", [
       type: z.literal("graphql"),
       query: z.string(),
       variables: z.record(z.string(), z.unknown()).optional(),
+    })
+    .strict(),
+  /**
+   * `multipart/form-data`. A field is either a plain value or a file part; the boundary is
+   * generated at send time, so a `Content-Type` header must NOT be set by hand.
+   */
+  z
+    .object({
+      type: z.literal("multipart"),
+      fields: z.record(z.string(), MultipartField),
     })
     .strict(),
 ]);

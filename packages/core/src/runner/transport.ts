@@ -42,7 +42,7 @@ function isRetryableStatus(status: number): boolean {
  */
 export async function send(
   url: string,
-  init: { method: string; headers: Record<string, string>; body?: string },
+  init: { method: string; headers: Record<string, string>; body?: string | FormData },
   opts: SendOptions,
 ): Promise<SendOutcome> {
   const o = opts.options ?? {};
@@ -69,7 +69,7 @@ export async function send(
 
 async function sendOnce(
   url: string,
-  init: { method: string; headers: Record<string, string>; body?: string },
+  init: { method: string; headers: Record<string, string>; body?: string | FormData },
   opts: SendOptions,
 ): Promise<{ response: Response; redirects: string[] }> {
   const o = opts.options ?? {};
@@ -80,7 +80,7 @@ async function sendOnce(
   let currentUrl = url;
   let method = init.method;
   let headers = { ...init.headers };
-  let body = init.body;
+  let body: string | FormData | undefined = init.body;
 
   for (let hop = 0; ; hop++) {
     // Never auto-follow at the platform level: the runner reports the ACTUAL response its URL
@@ -124,11 +124,11 @@ function resolveLocation(from: string, location: string): string | undefined {
 function nextHop(
   status: number,
   method: string,
-  body: string | undefined,
+  body: string | FormData | undefined,
   headers: Record<string, string>,
   from: string,
   to: string,
-): { method: string; body: string | undefined; headers: Record<string, string> } {
+): { method: string; body: string | FormData | undefined; headers: Record<string, string> } {
   const next = { ...headers };
   if (!sameOrigin(from, to)) {
     for (const key of Object.keys(next)) {

@@ -127,12 +127,22 @@ describe("importCurl", () => {
     expect(req.headers).toEqual({ Accept: "text/plain" });
   });
 
-  it("warns rather than failing on -F multipart and -k", () => {
-    const r = importCurl(`curl -k https://x.test/u -F 'a=1' -F 'b=2'`);
+  it("imports -F as a real multipart body, including file parts and their modifiers", () => {
+    const { req } = only(
+      `curl https://x.test/u -F 'title=Rex' -F 'photo=@./rex.jpg;type=image/jpeg;filename=pet.jpg'`,
+    );
+    expect(req.body).toEqual({
+      type: "multipart",
+      fields: {
+        title: "Rex",
+        photo: { file: "./rex.jpg", filename: "pet.jpg", contentType: "image/jpeg" },
+      },
+    });
+  });
+
+  it("still warns about -k, which has no request-file equivalent", () => {
+    const r = importCurl(`curl -k https://x.test/u -F 'a=1'`);
     expect(r.files.length).toBe(1);
-    const req = parse.request.parse(r.files[0]!.content);
-    expect(req.body).toEqual({ type: "form", content: { a: "1", b: "2" } });
-    expect(r.warnings.join(" ")).toMatch(/multipart/);
     expect(r.warnings.join(" ")).toMatch(/TLS/);
   });
 

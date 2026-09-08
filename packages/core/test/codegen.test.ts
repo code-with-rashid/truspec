@@ -174,4 +174,51 @@ describe("per-language rendering", () => {
     const r = req(`name: t\nurl: "https://x.test/it's"`);
     expect(generateCode(r, "curl").code).toContain(`'https://x.test/it'\\''s'`);
   });
+
+  it("renders a real multipart body for the targets that can express one", () => {
+    const upload = req(`
+name: Upload
+method: POST
+url: "https://api.test/u"
+body:
+  type: multipart
+  fields:
+    title: Rex
+    photo: { file: "./rex.jpg", contentType: "image/jpeg" }
+`);
+    expect(generateCode(upload, "curl").code).toContain("-F 'photo=@./rex.jpg;type=image/jpeg'");
+    expect(generateCode(upload, "curl").code).toContain("-F 'title=Rex'");
+    expect(generateCode(upload, "httpie").code).toContain("http --form POST");
+    expect(generateCode(upload, "httpie").code).toContain("'photo@./rex.jpg'");
+    expect(generateCode(upload, "javascript-fetch").code).toContain("new FormData()");
+    expect(generateCode(upload, "javascript-axios").code).toContain('form.append("title", "Rex")');
+    const python = generateCode(upload, "python-requests").code;
+    expect(python).toContain("files=");
+    expect(python).toContain('open("./rex.jpg", "rb")');
+    expect(python).toContain("data=data");
+  });
+
+  it("says plainly that a target cannot express multipart, instead of sending the wrong encoding", () => {
+    const upload = req(`
+name: Upload
+method: POST
+url: "https://api.test/u"
+body:
+  type: multipart
+  fields:
+    title: Rex
+    photo: { file: "./rex.jpg" }
+`);
+    for (const id of ["go", "java", "ruby", "csharp", "rust", "swift", "dart", "php", "wget", "powershell", "kotlin"]) {
+      const { code } = generateCode(upload, id);
+      expect(code, id).toContain("multipart/form-data");
+      expect(code, id).toContain("photo: file ./rex.jpg");
+      // The fields must not be silently smuggled through as a urlencoded body.
+      expect(code, id).not.toContain("title=Rex&");
+    }
+  });
+
+  it("gives every target a comment prefix, so the note is always a comment", () => {
+    for (const t of CODEGEN_TARGETS) expect(["#", "//"], t.id).toContain(t.comment);
+  });
 });

@@ -45,7 +45,7 @@ headers:
 query:
   expand: owner
 body:
-  type: json                       # none | json | text | form | graphql
+  type: json                       # none | json | text | form | multipart | graphql
   content: { name: "Rex" }
 auth:                              # optional; can inherit from folder.tspec.yaml
   type: bearer                     # none | bearer | basic | apikey
@@ -184,6 +184,33 @@ body:
 ```
 
 A map of string values, serialized as `application/x-www-form-urlencoded`.
+
+### `multipart`
+
+```yaml
+body:
+  type: multipart
+  fields:
+    title: "Rex"                                        # plain value
+    tags: "{{tagList}}"                                 # templated
+    photo: { file: "./rex.jpg", contentType: image/jpeg }
+    meta:  { text: '{"a":1}', contentType: application/json, filename: meta.json }
+```
+
+Sent as `multipart/form-data`. **Do not set a `Content-Type` header** — the boundary is generated
+when the body is assembled, and a hand-written header would not match the payload.
+
+A `file` part is read at send time. Its path resolves **relative to the request file** and is
+confined to the workspace, so a collection — which may have been imported, generated, or written
+by an agent — cannot read `../../.ssh/id_rsa` and POST it. `filename` and `contentType` override
+what would otherwise be inferred from the file.
+
+A `text` part with a `contentType` travels as its own typed part (useful for the JSON-metadata +
+binary pattern); a bare string is sent as a plain field.
+
+File parts need filesystem access, so they work under `truspec run`, `truspec serve`, and the MCP
+server. In an embedded/browser runner without a file reader, the request fails with a clear
+message rather than silently sending nothing.
 
 ### `graphql`
 

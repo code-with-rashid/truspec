@@ -1,10 +1,12 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
+import { basename } from "node:path";
 import { dirname, join, relative, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { parse } from "../format";
 import { type RunResult, runRequest, type TokenCache, type Vars } from "../runner";
 import { refMatchesOp } from "../spec/drift";
 import { parseOpenApi, type SpecOperation } from "../spec/openapi";
+import { confinePath } from "./confine";
 import { buildVars, loadDotenv, loadEnvironment, loadFolderChain } from "./context";
 import { discoverRequests, findUp } from "./discover";
 
@@ -79,6 +81,25 @@ export interface WorkspaceRunResult {
   missingSecrets: string[];
   /** Requests filtered out by `grep`/`tags` before the run started. */
   deselected?: number;
+}
+
+/**
+ * Reader for a `multipart` file part: paths resolve relative to the request file (what an author
+ * expects) and are **confined to the workspace root**, so a collection — which may have been
+ * imported, generated, or written by an agent — cannot read `../../.ssh/id_rsa` and POST it.
+ */
+function makeFileReader(
+  requestDir: string,
+  root: string,
+): (path: string) => Promise<{ bytes: Uint8Array; filename: string }> {
+  return async (path: string) => {
+    const abs = confinePath(requestDir, path.startsWith("/") ? path : path);
+    // `confinePath` anchors at requestDir; re-check against the workspace root so a relative
+    // `../..` escape out of the collection is refused even when it stays on disk.
+    const rootAnchored = confinePath(root, relative(root, abs));
+    if (!existsSync(rootAnchored)) throw new Error(`file not found: ${path}`);
+    return { bytes: new Uint8Array(readFileSync(rootAnchored)), filename: basename(rootAnchored) };
+  };
 }
 
 /** Locate the workspace root by walking up to a dir with `environments/` or `.git`. */
@@ -159,6 +180,7 @@ export async function runPath(target: string, opts: WorkspaceRunOptions = {}): P
       now: opts.now,
       timeoutMs: opts.timeoutMs ?? DEFAULT_TIMEOUT_MS,
       tokenCache,
+      readFile: makeFileReader(dirname(file), root),
       ...(op && specDoc ? { contract: { doc: specDoc, operation: op, auto: true } } : {}),
     });
     result.filePath = file;

@@ -1,5 +1,5 @@
 import type { TruSpecRequest } from "../format/types";
-import { CODEGEN_TARGETS, type CodegenTarget } from "./targets";
+import { CODEGEN_TARGETS, type CodegenTarget, multipartNote } from "./targets";
 import { type HttpShape, type ShapeOptions, toHttpShape } from "./shape";
 
 export type { CodegenBody, HttpShape, ShapeOptions } from "./shape";
@@ -43,5 +43,12 @@ export function generateCode(
 
 /** Render an already-normalized shape. Exposed for callers that build a shape by hand. */
 export function renderShape(shape: HttpShape, target: CodegenTarget): string {
-  return target.render(shape);
+  const code = target.render(shape);
+  // A target that cannot express `multipart/form-data` must say so. Silently emitting the fields
+  // as a urlencoded body would produce a snippet that looks right, runs, and sends the wrong
+  // content type — a worse outcome than an honest comment.
+  if (shape.body?.kind === "multipart" && !target.multipart) {
+    return `${multipartNote(shape.body.parts, target.comment)}\n${code}`;
+  }
+  return code;
 }

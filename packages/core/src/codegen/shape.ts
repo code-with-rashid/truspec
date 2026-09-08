@@ -19,7 +19,12 @@ export interface HttpShape {
 export type CodegenBody =
   | { kind: "json"; value: unknown }
   | { kind: "text"; text: string }
-  | { kind: "form"; fields: Record<string, string> };
+  | { kind: "form"; fields: Record<string, string> }
+  | { kind: "multipart"; parts: MultipartPart[] };
+
+export type MultipartPart =
+  | { kind: "text"; name: string; value: string; contentType?: string }
+  | { kind: "file"; name: string; path: string; filename?: string; contentType?: string };
 
 export interface ShapeOptions {
   folder?: TruSpecFolderConfig;
@@ -60,6 +65,30 @@ function structuredBody(req: TruSpecRequest, vars: Vars): CodegenBody | undefine
         fields[k] = String(v);
       }
       return { kind: "form", fields };
+    }
+    case "multipart": {
+      const parts: MultipartPart[] = [];
+      for (const [name, field] of Object.entries(b.fields)) {
+        if (typeof field !== "object" || field === null) {
+          parts.push({ kind: "text", name, value: interpolate(String(field), vars, keep).value });
+        } else if ("file" in field) {
+          parts.push({
+            kind: "file",
+            name,
+            path: interpolate(field.file, vars, keep).value,
+            ...(field.filename ? { filename: field.filename } : {}),
+            ...(field.contentType ? { contentType: field.contentType } : {}),
+          });
+        } else {
+          parts.push({
+            kind: "text",
+            name,
+            value: interpolate(field.text, vars, keep).value,
+            ...(field.contentType ? { contentType: field.contentType } : {}),
+          });
+        }
+      }
+      return { kind: "multipart", parts };
     }
     default:
       return undefined;
