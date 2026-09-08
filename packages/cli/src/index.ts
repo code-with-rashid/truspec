@@ -4,6 +4,7 @@ import { coverageCommand } from "./commands/coverage";
 import { driftCommand } from "./commands/drift";
 import { genCommand } from "./commands/gen";
 import { importCommand } from "./commands/import";
+import { initCommand } from "./commands/init";
 import { lintCommand } from "./commands/lint";
 import { mockCommand } from "./commands/mock";
 import { runCommand } from "./commands/run";
@@ -15,6 +16,7 @@ const VERSION = typeof __TRUSPEC_VERSION__ === "string" ? __TRUSPEC_VERSION__ : 
 const HELP = `truspec ${VERSION} — local-first, spec-synced, agent-native API client
 
 Usage:
+  truspec init [<dir>] [--spec <openapi>] [--dir <requests>] [--base-url <url>] [--env <name>]
   truspec run <path> [--env <name>] [--spec <openapi>] [--var k=v] [--grep <re>] [--tag <name>]
                      [--bail] [--delay <ms>] [--json | --reporter <r>] [--output <file>] [--timeout <ms>]
   truspec drift --spec <openapi> [<dir>] [--live <baseUrl>] [--json]
@@ -30,6 +32,7 @@ Usage:
   truspec --version
 
 Commands:
+  init       Scaffold a runnable collection: a request, an environment, and a .gitignore.
   run        Run a request file or directory; non-zero exit on assertion failure.
   drift      Diff a collection against an OpenAPI spec (+ --live API probe); non-zero exit on drift.
   coverage   Report which spec operations have a tested request (--min to gate).
@@ -55,6 +58,8 @@ export async function main(argv: string[]): Promise<number> {
   }
 
   switch (command) {
+    case "init":
+      return initCommand(rest);
     case "run":
       return runCommand(rest);
     case "drift":

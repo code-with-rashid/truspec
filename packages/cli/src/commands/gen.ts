@@ -41,6 +41,15 @@ export async function genCommand(argv: string[], deps: Partial<CommandDeps> = {}
 
   const written = writeScaffold(result.files, resolve(d.cwd, values.out));
   d.stdout(`Generated ${written.length} request(s) in ${values.out}\n`);
+  // A scaffolded collection is not runnable until its path variables are declared; saying so here
+  // is the difference between a working first run and "Unresolved variables: {{id}}".
+  const vars = Object.entries(result.pathVariables);
+  if (vars.length > 0) {
+    d.stdout(
+      `\nDeclare these in your environment (${vars.length} path parameter(s)) — suggested values:\n`,
+    );
+    for (const [name, sample] of vars) d.stdout(`  ${name}: "${sample}"\n`);
+  }
   for (const op of result.skipped) d.stderr(`skipped (unsupported method): ${op}\n`);
   return 0;
 }

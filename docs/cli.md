@@ -15,6 +15,7 @@ truspec --version
 
 | Command | One-liner |
 |---|---|
+| [`init`](#init) | Scaffold a runnable collection: a request, an environment, a `.gitignore`. |
 | [`run`](#run) | Run a request file or directory; non-zero exit on assertion failure. |
 | [`drift`](#drift) | Diff a collection against an OpenAPI spec; non-zero exit on drift. |
 | [`coverage`](#coverage) | Report which spec operations have a tested request. |
@@ -39,6 +40,38 @@ Commands return conventional exit codes so they gate CI without extra glue:
 | `0` | Success — run passed / no drift / coverage at or above threshold. |
 | `1` | Failure — assertions failed, drift detected, coverage below `--min`, or a runtime error. |
 | `2` | Usage error — a required argument or flag is missing/invalid. |
+
+---
+
+## `init`
+
+Scaffold a collection that **runs** — not a skeleton that needs three more edits first.
+
+```
+truspec init [<dir>] [--spec <openapi>] [--dir <requests>] [--base-url <url>] [--env <name>] [--force]
+```
+
+| Flag | Alias | Description |
+|---|---|---|
+| `--spec <openapi>` | `-s` | Scaffold a request per operation instead of one placeholder. |
+| `--dir <requests>` | | Subdirectory for requests. Default `api`. |
+| `--base-url <url>` | | Base URL the generated environment points at. Default `http://localhost:3000`. |
+| `--env <name>` | `-e` | Environment to create. Default `local`. |
+| `--force` | | Overwrite files that already exist. |
+
+It writes a folder config, a request, `environments/<env>.env.yaml`, a `.env.example`, and a
+`.gitignore` rule for `.env` — so the first secret anyone adds is not committed. Re-running is
+safe: existing files are reported and left alone.
+
+With `--spec`, the whole loop is green offline on the first try, because the scaffold asserts the
+status **the spec itself documents** and the generated environment declares every path parameter
+the requests introduce:
+
+```bash
+truspec init --spec openapi.yaml
+truspec mock --spec openapi.yaml --port 3000 &
+truspec run api --env local     # passes
+```
 
 ---
 

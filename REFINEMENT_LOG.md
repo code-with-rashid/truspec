@@ -239,3 +239,32 @@ Surfaced as `truspec lint [dir] [--strict] [--json] [--disable] [--list-rules]` 
 non-interpolation-site subtleties) and 7 CLI (exit codes, `--strict`, `--json`, `--disable`).
 `truspec lint examples` is clean. Typecheck 8/8, build 5/5.
 
+### 9 — `truspec init`, and a first run that actually passes
+
+**Gap.** There was no way to start a project except by hand-writing a folder config, an
+environment and a first request from the docs.
+
+**Change.** `truspec init [dir]` scaffolds a folder config, a request, an environment, a
+`.env.example`, and a `.gitignore` rule for `.env` (so the first secret anyone adds isn't
+committed). Files are serialized *through the schema*, so a scaffold can never emit something the
+parser rejects. Re-running is safe — existing files are reported and left alone, never clobbered.
+
+Building it surfaced two real bugs in the pre-existing `gen` path, both of which made a scaffolded
+collection fail on its very first run:
+
+1. **Path parameters were never declared.** `gen` emits `{{id}}` from `/posts/{id}` but nothing
+   declared it, so the first run died with `Unresolved variables: {{id}}`. `scaffoldFromSpec` now
+   reports `pathVariables` with a sample derived from the spec (parameter `example` → schema
+   `example`/`default`/first `enum` → type- and format-appropriate placeholder, so a `uuid`
+   parameter gets a real UUID). `init --spec` seeds them into the environment; `gen` prints them.
+2. **Every scaffolded request asserted `status: 200`,** even for an operation the spec documents
+   as `201`. `SpecOperation` now carries `successStatus` (lowest documented 2xx) and the scaffold
+   asserts that.
+
+With both fixed, `init --spec` → `mock` → `run` is green offline out of the box (verified
+end-to-end against `examples/blog`, 4/4 passing).
+
+**Verification.** 540 tests (was 521) — 13 core (idempotence, `.gitignore` append-not-duplicate,
+force, spec scaffolding, sample derivation per source, next-step wording) and 6 CLI. The scaffold
+is also asserted to be **lint-clean**. Typecheck 8/8, build 5/5.
+
