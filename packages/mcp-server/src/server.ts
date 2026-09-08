@@ -173,5 +173,32 @@ export function createServer(ctx: ServerContext = {}): McpServer {
     },
   );
 
+  server.registerTool(
+    "truspec_codegen",
+    {
+      title: "Generate request code",
+      description:
+        "Render a .tspec.yaml request as a runnable snippet in another client or language (curl, Python, Go, Java, …). Folder base URL, inherited headers and auth are applied exactly as the runner applies them.",
+      inputSchema: {
+        path: z.string().describe("Path to a .tspec.yaml file."),
+        lang: z
+          .string()
+          .default("curl")
+          .describe("Target id — call truspec_codegen_targets for the list."),
+        env: z.string().optional().describe("Environment name, to substitute its variables."),
+      },
+    },
+    async ({ path, lang, env }) => json(tools.codegenTool(c, path, lang, env)),
+  );
+
+  server.registerTool(
+    "truspec_codegen_targets",
+    {
+      title: "List code targets",
+      description: "List the languages and clients truspec_codegen can render a request into.",
+    },
+    async () => json(tools.codegenTargetsTool()),
+  );
+
   return server;
 }

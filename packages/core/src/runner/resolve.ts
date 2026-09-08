@@ -1,5 +1,5 @@
 import type { TruSpecAuth, TruSpecFolderConfig, TruSpecRequest } from "../format/types";
-import { interpolate, interpolateDeep, type Vars } from "./interpolate";
+import { interpolate, type InterpolateOptions, interpolateDeep, type Vars } from "./interpolate";
 
 /** A concrete HTTP request ready to hand to `fetch`. */
 export interface EffectiveRequest {
@@ -13,6 +13,12 @@ export interface EffectiveRequest {
 export interface ResolveOptions {
   folder?: TruSpecFolderConfig;
   vars?: Vars;
+  /**
+   * What to do with a `{{name}}` that has no value. The runner leaves this at the default
+   * (`"empty"`) and refuses to send when `missing` is non-empty; code generation and previews
+   * pass `"keep"` so the authored placeholder survives into the rendered snippet.
+   */
+  onMissing?: "empty" | "keep";
 }
 
 function base64(input: string): string {
@@ -34,23 +40,24 @@ function applyAuth(
   headers: Record<string, string>,
   vars: Vars,
   missing: string[],
+  io: InterpolateOptions,
 ): [string, string] | undefined {
   switch (auth.type) {
     case "bearer": {
-      const t = interpolate(auth.token, vars);
+      const t = interpolate(auth.token, vars, io);
       missing.push(...t.missing);
       headers.Authorization = `Bearer ${t.value}`;
       return undefined;
     }
     case "basic": {
-      const u = interpolate(auth.username, vars);
-      const p = interpolate(auth.password, vars);
+      const u = interpolate(auth.username, vars, io);
+      const p = interpolate(auth.password, vars, io);
       missing.push(...u.missing, ...p.missing);
       headers.Authorization = `Basic ${base64(`${u.value}:${p.value}`)}`;
       return undefined;
     }
     case "apikey": {
-      const v = interpolate(auth.value, vars);
+      const v = interpolate(auth.value, vars, io);
       missing.push(...v.missing);
       if (auth.in === "query") return [auth.name, v.value];
       headers[auth.name] = v.value;
@@ -64,14 +71,15 @@ function applyAuth(
 /** Resolve a request against its folder config and variables into a concrete HTTP request. */
 export function resolveRequest(req: TruSpecRequest, opts: ResolveOptions = {}): EffectiveRequest {
   const vars = opts.vars ?? {};
+  const io: InterpolateOptions = { onMissing: opts.onMissing ?? "empty" };
   const missing: string[] = [];
 
   // URL — prepend folder baseUrl when the request URL is relative.
-  const urlRes = interpolate(req.url, vars);
+  const urlRes = interpolate(req.url, vars, io);
   missing.push(...urlRes.missing);
   let url = urlRes.value;
   if (!/^https?:\/\//i.test(url) && opts.folder?.baseUrl) {
-    const baseRes = interpolate(opts.folder.baseUrl, vars);
+    const baseRes = interpolate(opts.folder.baseUrl, vars, io);
     missing.push(...baseRes.missing);
     url = joinUrl(baseRes.value, url);
   }
@@ -80,19 +88,19 @@ export function resolveRequest(req: TruSpecRequest, opts: ResolveOptions = {}): 
   const headers: Record<string, string> = {};
   for (const src of [opts.folder?.headers, req.headers]) {
     if (!src) continue;
-    const r = interpolateDeep(src, vars);
+    const r = interpolateDeep(src, vars, io);
     missing.push(...r.missing);
     for (const [k, v] of Object.entries(r.value)) headers[k] = String(v);
   }
 
   // Auth — request overrides folder.
   const auth = req.auth ?? opts.folder?.auth;
-  const authQuery = auth ? applyAuth(auth, headers, vars, missing) : undefined;
+  const authQuery = auth ? applyAuth(auth, headers, vars, missing, io) : undefined;
 
   // Query string — request query params plus any apikey-in-query.
   const usp = new URLSearchParams();
   if (req.query) {
-    const r = interpolateDeep(req.query, vars);
+    const r = interpolateDeep(req.query, vars, io);
     missing.push(...r.missing);
     for (const [k, v] of Object.entries(r.value)) usp.append(k, String(v));
   }
@@ -113,17 +121,17 @@ export function resolveRequest(req: TruSpecRequest, opts: ResolveOptions = {}): 
   let body: string | undefined;
   if (req.body && req.body.type !== "none") {
     if (req.body.type === "json") {
-      const r = interpolateDeep(req.body.content, vars);
+      const r = interpolateDeep(req.body.content, vars, io);
       missing.push(...r.missing);
       body = JSON.stringify(r.value);
       if (!hasHeader(headers, "content-type")) headers["Content-Type"] = "application/json";
     } else if (req.body.type === "text") {
-      const r = interpolate(req.body.content, vars);
+      const r = interpolate(req.body.content, vars, io);
       missing.push(...r.missing);
       body = r.value;
       if (!hasHeader(headers, "content-type")) headers["Content-Type"] = "text/plain";
     } else if (req.body.type === "form") {
-      const r = interpolateDeep(req.body.content, vars);
+      const r = interpolateDeep(req.body.content, vars, io);
       missing.push(...r.missing);
       const form = new URLSearchParams();
       for (const [k, v] of Object.entries(r.value)) form.append(k, String(v));
@@ -132,11 +140,11 @@ export function resolveRequest(req: TruSpecRequest, opts: ResolveOptions = {}): 
         headers["Content-Type"] = "application/x-www-form-urlencoded";
       }
     } else if (req.body.type === "graphql") {
-      const q = interpolate(req.body.query, vars);
+      const q = interpolate(req.body.query, vars, io);
       missing.push(...q.missing);
       let variables: Record<string, unknown> | undefined;
       if (req.body.variables) {
-        const r = interpolateDeep(req.body.variables, vars);
+        const r = interpolateDeep(req.body.variables, vars, io);
         missing.push(...r.missing);
         variables = r.value;
       }

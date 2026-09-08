@@ -44,6 +44,10 @@
       "types": "./dist/exporters/index.d.ts",
       "import": "./dist/exporters/index.js"
     },
+    "./codegen": {
+      "types": "./dist/codegen/index.d.ts",
+      "import": "./dist/codegen/index.js"
+    },
     "./mock": {
       "types": "./dist/mock/index.d.ts",
       "import": "./dist/mock/index.js"

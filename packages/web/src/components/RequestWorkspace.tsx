@@ -3,7 +3,7 @@ import type { RequestDetail, RunResult, SaveResult } from "../api";
 import { AssertionsEditor } from "./AssertionsEditor";
 import { AuthEditor } from "./AuthEditor";
 import { BodyEditor } from "./BodyEditor";
-import { buildCurl } from "../curl";
+import { CodeModal } from "./CodeModal";
 import { CaptureEditor } from "./CaptureEditor";
 import { EditableKV, objectToRows, rowsToObject, type KVRow } from "./EditableKV";
 import { JsonBlock, prettyBody, statusClass } from "../format-utils";
@@ -99,6 +99,8 @@ export function RequestWorkspace({
   isStale,
   contract,
   envVarNames,
+  path,
+  env,
   onRun,
   onEdit,
   onTab,
@@ -123,6 +125,10 @@ export function RequestWorkspace({
   contract: ContractInfo;
   /** Declared vars/secrets on the active environment, for `{{...}}` autocomplete in the URL bar. */
   envVarNames: string[];
+  /** Collection-relative path of the open request — gives code generation its folder context. */
+  path: string;
+  /** Active environment name, so generated snippets resolve the same variables a run would. */
+  env: string;
   onRun: () => void;
   onEdit: () => void;
   onTab: (t: ReqTab) => void;
@@ -134,17 +140,7 @@ export function RequestWorkspace({
   const [saveErr, setSaveErr] = useState<string | null>(null);
   const [responseHeight, onResponseDragStart] = useResponseHeight();
   const [copied, setCopied] = useState(false);
-  const [curlCopied, setCurlCopied] = useState(false);
-
-  const copyCurl = async (): Promise<void> => {
-    try {
-      await navigator.clipboard.writeText(buildCurl(effective));
-      setCurlCopied(true);
-      setTimeout(() => setCurlCopied(false), 1200);
-    } catch {
-      // clipboard permission denied/unavailable — nothing else useful to do here.
-    }
-  };
+  const [codeOpen, setCodeOpen] = useState(false);
 
   // The only way to get a response out of the app was the clipboard — fine for a short JSON body,
   // awkward for anything large or binary-ish (a paste can silently mangle it). Postman/Bruno both
@@ -255,8 +251,12 @@ export function RequestWorkspace({
             }}
           />
         </div>
-        <button className="btn ghost curl-btn" onClick={() => void copyCurl()} title="copy as curl">
-          {curlCopied ? "copied ✓" : "curl"}
+        <button
+          className="btn ghost curl-btn"
+          onClick={() => setCodeOpen(true)}
+          title="generate a snippet for curl, Python, Go, …"
+        >
+          {"</>"} code
         </button>
         <button className="btn ghost" onClick={onEdit} title="edit YAML source">
           ✎ edit
@@ -504,6 +504,14 @@ export function RequestWorkspace({
           )}
         </div>
       </div>
+      {codeOpen && (
+        <CodeModal
+          request={effective}
+          path={path}
+          env={env || undefined}
+          onClose={() => setCodeOpen(false)}
+        />
+      )}
     </div>
   );
 }

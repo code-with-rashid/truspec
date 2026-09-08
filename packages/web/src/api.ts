@@ -202,6 +202,22 @@ export interface ImportApiResult {
   files?: string[];
 }
 
+export interface CodegenTargetInfo {
+  id: string;
+  label: string;
+  group: string;
+  syntax: string;
+}
+
+export interface CodegenResult {
+  ok: boolean;
+  error?: string;
+  lang?: string;
+  label?: string;
+  syntax?: string;
+  code?: string;
+}
+
 /** Success is the raw Postman collection (no `ok` field); failure is `{ok:false,error}`. */
 export type ExportPostmanResult = Record<string, unknown>;
 
@@ -250,6 +266,14 @@ export const saveFolderConfig = (path: string, config: Record<string, unknown>) 
   api<SaveResult>("/api/folder/object", { method: "POST", body: JSON.stringify({ path, config }) });
 export const exportPostman = (path?: string) =>
   api<ExportPostmanResult>("/api/export/postman", { method: "POST", body: JSON.stringify({ path }) });
+
+export const codegenTargets = () => api<{ targets: CodegenTargetInfo[] }>("/api/codegen/targets");
+export const codegen = (
+  request: Record<string, unknown>,
+  lang: string,
+  path?: string,
+  env?: string,
+) => api<CodegenResult>("/api/codegen", { method: "POST", body: JSON.stringify({ request, lang, path, env }) });
 
 export const mockStatus = () => api<MockStatus>("/api/mock/status");
 export const mockStart = (spec: string, port?: number, delayMs?: number) =>

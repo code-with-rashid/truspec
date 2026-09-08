@@ -59,6 +59,8 @@ files **validate against the schema before writing**, so an agent can't land a m
 | `truspec_scaffold_from_spec` | `spec`, `out`, `baseUrlVar?` | Generate a request stub per operation (closes drift gaps). |
 | `truspec_mock_start` | `spec`, `port?`, `delay?`, `validate?` | Start a local mock server from a spec. |
 | `truspec_mock_stop` | — | Stop the running mock server, if any. |
+| `truspec_codegen` | `path`, `lang?`, `env?` | Render a request as a runnable snippet in another client/language. |
+| `truspec_codegen_targets` | — | List the languages/clients `truspec_codegen` supports. |
 
 Notes:
 

@@ -3,6 +3,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  codegenTargetsTool,
+  codegenTool,
   contractTool,
   coverageTool,
   createRequest,
@@ -110,6 +112,34 @@ describe("mcp tools", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it("generates a code snippet with folder + environment context applied", () => {
+    const r = codegenTool({ cwd: repoRoot }, "examples/petstore/get-pet.tspec.yaml", "python-requests", "local") as {
+      lang: string;
+      code: string;
+      unresolvedSecrets?: string[];
+    };
+    expect(r.lang).toBe("python-requests");
+    expect(r.code).toContain("import requests");
+    expect(r.code).toContain("http://localhost:4000/pets/1");
+    // `token` is a declared secret with no value in this process — reported, not silently dropped.
+    expect(r.unresolvedSecrets).toContain("token");
+  });
+
+  it("returns the target list instead of throwing on an unknown lang", () => {
+    const r = codegenTool({ cwd: repoRoot }, "examples/petstore/get-pet.tspec.yaml", "cobol") as {
+      error: string;
+      targets: Array<{ id: string }>;
+    };
+    expect(r.error).toMatch(/Unknown lang/);
+    expect(r.targets.map((t) => t.id)).toContain("curl");
+  });
+
+  it("lists every codegen target", () => {
+    const r = codegenTargetsTool();
+    expect(r.count).toBe(r.targets.length);
+    expect(r.count).toBeGreaterThanOrEqual(17);
   });
 
   it("runs a request with an injected fetch", async () => {

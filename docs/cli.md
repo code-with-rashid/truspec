@@ -20,6 +20,7 @@ truspec --version
 | [`coverage`](#coverage) | Report which spec operations have a tested request. |
 | [`contract`](#contract) | Run the collection and validate responses against the spec's schemas. |
 | [`gen`](#gen) | Scaffold a request stub per operation from a spec. |
+| [`codegen`](#codegen) | Render a request as a runnable snippet in another client or language. |
 | [`import`](#import) | Convert a Postman or Bruno collection to `.tspec.yaml`. |
 | [`mock`](#mock) | Serve generated responses from a spec (offline). |
 | [`serve`](#serve) | Open the local web UI for a collection. |
@@ -286,6 +287,46 @@ Operations with an unsupported method are skipped and reported on stderr.
 truspec gen --spec openapi.yaml --out ./api
 # Generated 4 request(s) in ./api
 ```
+
+---
+
+## `codegen`
+
+Render a request as a runnable snippet in another HTTP client or language — for a bug report,
+a README, a colleague on a different stack, or pasting into a terminal.
+
+```
+truspec codegen <request.tspec.yaml> [--lang <target>] [--env <name>] [--output <file>] [--list]
+```
+
+| Flag | Alias | Description |
+|---|---|---|
+| `--lang <target>` | `-l` | Snippet target. Default `curl`. |
+| `--env <name>` | `-e` | Environment whose variables to substitute. |
+| `--output <file>` | `-o` | Write to a file instead of stdout. |
+| `--list` | | Print every supported target id and exit. |
+
+The snippet is built through the **same resolution the runner uses**: the folder chain's
+`baseUrl`, inherited headers, and auth are applied, and the environment's variables (including
+secrets from your OS env or project `.env`) are substituted. Anything still unresolved is left
+as its authored `{{name}}` placeholder rather than being silently blanked, so the reader can see
+exactly what to fill in.
+
+**Targets** (17): `curl`, `httpie`, `wget`, `powershell`, `javascript-fetch`, `javascript-axios`,
+`python-requests`, `python-httpx`, `go`, `ruby`, `php`, `java`, `kotlin`, `csharp`, `rust`,
+`swift`, `dart`.
+
+```bash
+truspec codegen api/get-pet.tspec.yaml --env local
+# curl -X GET 'http://localhost:4000/pets/1?expand=owner' \
+#   -H 'Accept: application/json' \
+#   -H 'Authorization: Bearer {{token}}'
+
+truspec codegen api/get-pet.tspec.yaml --lang python-requests --env local
+```
+
+The same generator backs the web UI's **code** button and the `truspec_codegen` MCP tool, so a
+snippet is identical wherever you ask for it.
 
 ---
 

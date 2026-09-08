@@ -35,6 +35,46 @@ describe("web server api", () => {
     }
   });
 
+  it("lists code-generation targets", async () => {
+    const r = await handleApi("GET", "/api/codegen/targets", noQuery, undefined, ctx);
+    const targets = (r.json as { targets: Array<{ id: string }> }).targets;
+    expect(targets.length).toBeGreaterThanOrEqual(17);
+    expect(targets.map((t) => t.id)).toContain("python-requests");
+  });
+
+  it("generates a snippet from a draft request, applying the folder chain and environment", async () => {
+    const request = {
+      tspec: "0.1",
+      name: "Get pet",
+      method: "GET",
+      url: "{{baseUrl}}/pets/{{petId}}",
+      assertions: [],
+    };
+    const r = await handleApi(
+      "POST",
+      "/api/codegen",
+      noQuery,
+      { request, path: "get-pet.tspec.yaml", lang: "curl", env: "local" },
+      ctx,
+    );
+    const out = r.json as { ok: boolean; code: string; syntax: string };
+    expect(out.ok).toBe(true);
+    expect(out.syntax).toBe("bash");
+    // baseUrl/petId come from environments/local.env.yaml; Accept from folder.tspec.yaml.
+    expect(out.code).toContain("http://localhost:4000/pets/1");
+    expect(out.code).toContain("Accept: application/json");
+  });
+
+  it("rejects an unknown codegen language and reports an invalid draft rather than throwing", async () => {
+    const bad = await handleApi("POST", "/api/codegen", noQuery, { request: {}, lang: "cobol" }, ctx);
+    expect(bad.status).toBe(400);
+
+    const invalid = await handleApi("POST", "/api/codegen", noQuery, { request: { name: "" }, lang: "curl" }, ctx);
+    expect(invalid.status).toBe(200);
+    expect((invalid.json as { ok: boolean; error: string }).ok).toBe(false);
+    expect((invalid.json as { error: string }).error).toBeTruthy();
+  });
+
   it("computes drift and coverage", async () => {
     const drift = await handleApi("POST", "/api/drift", noQuery, { spec: "openapi.yaml" }, ctx);
     expect((drift.json as { added: string[] }).added).toContain("GET /pets");

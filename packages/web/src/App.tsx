@@ -1422,6 +1422,8 @@ export function App() {
                 isStale={isStale}
                 contract={contract}
                 envVarNames={envVarNames}
+                path={activeTab.path}
+                env={env}
                 onRun={() => doRun(activeTab.path)}
                 onEdit={openEdit}
                 onFieldChange={setActiveTabField}

@@ -26,6 +26,7 @@ The API-client market runs from **local-and-minimal** (Bruno) to **cloud-and-eve
 | Local **mock server** (no cloud) | cloud | ✗ | ✓ |
 | First-party **MCP server** for agents | bolted-on | community | ✓ |
 | Import from Postman + Bruno | — | partial | ✓ |
+| Code generation (17 clients/langs) | ✓ | ✓ | ✓ |
 
 ## Quickstart
 
@@ -123,7 +124,7 @@ Or add it to your MCP client config:
 }
 ```
 
-Tools exposed: `truspec_list_collections`, `truspec_run_request`, `truspec_run_collection`, `truspec_create_request`, `truspec_update_request`, `truspec_drift`, `truspec_coverage`, `truspec_contract`, `truspec_scaffold_from_spec`, `truspec_mock_start`, `truspec_mock_stop`. Create/update operations validate against the schema before writing.
+Tools exposed: `truspec_list_collections`, `truspec_run_request`, `truspec_run_collection`, `truspec_create_request`, `truspec_update_request`, `truspec_drift`, `truspec_coverage`, `truspec_contract`, `truspec_scaffold_from_spec`, `truspec_mock_start`, `truspec_mock_stop`, `truspec_codegen`, `truspec_codegen_targets`. Create/update operations validate against the schema before writing.
 
 ## How it fits together
 

@@ -1,5 +1,6 @@
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
+import { CODEGEN_TARGETS, codegenTargetIds, generateCode } from "@truspec/core/codegen";
 import { parse } from "@truspec/core/format";
 import { exportPostman } from "@truspec/core/exporters";
 import { importBrunoFiles, importPostman, type ImportedFile, type ImportResult } from "@truspec/core/importers";
@@ -7,9 +8,12 @@ import { type MockRequestLogEntry, type MockServerHandle, startMockServer } from
 import { resolveRequest } from "@truspec/core/runner";
 import { coverageReport, driftReport } from "@truspec/core/spec";
 import {
+  buildVars,
   confinePath,
   discoverRequests,
   findWorkspaceRoot,
+  loadDotenv,
+  loadEnvironment,
   loadFolderChain,
   runPath,
   walkDirSafe,
@@ -503,6 +507,41 @@ export async function handleApi(
     return {
       status: 200,
       json: await runPath(target, { env: b.env || undefined, cwd: ctx.dir, spec: b.spec || undefined }),
+    };
+  }
+  if (method === "GET" && pathname === "/api/codegen/targets") {
+    return {
+      status: 200,
+      json: {
+        targets: CODEGEN_TARGETS.map((t) => ({ id: t.id, label: t.label, group: t.group, syntax: t.syntax })),
+      },
+    };
+  }
+  if (method === "POST" && pathname === "/api/codegen") {
+    // The client sends the *draft* request object (not a path) so the snippet reflects unsaved
+    // edits, exactly as the old client-side curl builder did — but resolved server-side through
+    // the real engine, so folder inheritance, environment variables and secrets all apply.
+    const b = (body ?? {}) as { request?: unknown; path?: string; lang?: string; env?: string };
+    const lang = b.lang ?? "curl";
+    if (!codegenTargetIds().includes(lang)) return { status: 400, json: { error: `Unknown lang "${lang}"` } };
+    const validation = parse.request.validate(b.request);
+    if (!validation.ok || !validation.data) {
+      return { status: 200, json: { ok: false, error: validation.error } };
+    }
+    let folder: ReturnType<typeof loadFolderChain> | undefined;
+    if (b.path) {
+      try {
+        folder = loadFolderChain(dirname(confinePath(ctx.dir, b.path)), ctx.dir);
+      } catch {
+        // A draft that hasn't been saved anywhere yet simply has no folder context.
+      }
+    }
+    const env = b.env ? loadEnvironment(ctx.dir, b.env) : undefined;
+    const built = buildVars(env, { ...loadDotenv(ctx.dir), ...process.env });
+    const { target, code } = generateCode(validation.data, lang, { folder, vars: built.vars });
+    return {
+      status: 200,
+      json: { ok: true, lang: target.id, label: target.label, syntax: target.syntax, code },
     };
   }
   if (method === "POST" && pathname === "/api/drift") {

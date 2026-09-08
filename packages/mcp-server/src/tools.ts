@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
+import { CODEGEN_TARGETS, codegenTargetIds, generateCode } from "@truspec/core/codegen";
 import { parse } from "@truspec/core/format";
 import {
   contractReport,
@@ -9,7 +10,7 @@ import {
   scaffoldFromSpec as coreScaffold,
   writeScaffold,
 } from "@truspec/core/spec";
-import { confinePath, discoverRequests, runPath } from "@truspec/core/workspace";
+import { confinePath, discoverRequests, prepareRequest, runPath } from "@truspec/core/workspace";
 
 export interface ToolContext {
   cwd: string;
@@ -99,5 +100,37 @@ export function scaffoldFromSpec(ctx: ToolContext, specPath: string, outDir: str
     created: written.length,
     files: written.map((p) => relative(ctx.cwd, p)),
     skipped: result.skipped,
+  };
+}
+
+/**
+ * Render a request as a runnable snippet in another client/language. An agent asked to "show me
+ * how to call this from Python" should not have to hand-assemble the URL, folder-inherited
+ * headers and auth — this returns exactly what the runner would send.
+ */
+export function codegenTool(ctx: ToolContext, path: string, lang = "curl", env?: string) {
+  if (!codegenTargetIds().includes(lang)) {
+    return { error: `Unknown lang "${lang}"`, targets: CODEGEN_TARGETS.map((t) => ({ id: t.id, label: t.label })) };
+  }
+  const prepared = prepareRequest(confinePath(ctx.cwd, path), { cwd: ctx.cwd, ...(env ? { env } : {}) });
+  const { target, code } = generateCode(prepared.req, lang, {
+    folder: prepared.folder,
+    vars: prepared.vars,
+  });
+  return {
+    path,
+    lang: target.id,
+    label: target.label,
+    syntax: target.syntax,
+    code,
+    ...(prepared.missingSecrets.length > 0 ? { unresolvedSecrets: prepared.missingSecrets } : {}),
+  };
+}
+
+/** The snippet targets `truspec_codegen` accepts, for an agent to choose from. */
+export function codegenTargetsTool() {
+  return {
+    count: CODEGEN_TARGETS.length,
+    targets: CODEGEN_TARGETS.map((t) => ({ id: t.id, label: t.label, group: t.group, syntax: t.syntax })),
   };
 }
