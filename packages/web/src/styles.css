@@ -2945,3 +2945,31 @@ select:focus {
 .body-nowrap .body {
   white-space: pre;
 }
+
+/* --- keyboard shortcut reference --- */
+.shortcut-group + .shortcut-group {
+  margin-top: 14px;
+}
+.shortcut-title {
+  font-size: 10.5px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--dim);
+  margin-bottom: 6px;
+}
+.shortcut-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 3px 0;
+  font-size: 12.5px;
+}
+.shortcut-keys {
+  display: inline-flex;
+  gap: 4px;
+  flex: 0 0 128px;
+  justify-content: flex-end;
+}
+.shortcut-what {
+  color: var(--dim);
+}

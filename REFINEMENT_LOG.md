@@ -480,3 +480,27 @@ between auditing the UI and auditing a transition.
 **Verification.** 5 new a11y scans (9 total), all zero-violation. Full e2e 81/81, unit 611,
 typecheck 8/8, build 5/5.
 
+### 17 — Keyboard: make the shortcuts global, and discoverable
+
+**Gap (two).** Send (`⌘↵`) and save (`⌘S`) were bound *inside the request view*, so they only fired
+while focus happened to be there — press either after clicking the sidebar and nothing happened,
+with no feedback. And the app advertised none of its shortcuts: an unlisted shortcut is one only
+its author uses.
+
+**Change.**
+
+- Send and save are now **window-level**, as in any editor. The handler binds once and reads its
+  actions from a ref assigned during render, so it neither re-subscribes on every keystroke nor
+  reaches a not-yet-initialised binding.
+- New tab shortcuts: `⌘/Ctrl+Alt+←/→` to move between tabs (wrapping) and `⌘/Ctrl+Alt+W` to close
+  one — deliberately avoiding `⌘W`/`⌘1..9`, which the browser owns.
+- **`?` opens a shortcut reference**, generated from a single table so the list and the bindings
+  cannot drift apart. It is suppressed while typing, since `?` is also just a character.
+- The command palette gained seven actions that were previously reachable only by knowing where
+  their button lives: run/save the open request, new request, new folder, toggle theme, show/hide
+  the spec panel, and the shortcut reference.
+
+**Verification.** 5 e2e tests, including the two that pin the actual bug — save and send working
+*from outside the request view* — and one asserting `?` stays inert while typing. Full e2e 86/86,
+unit 611, typecheck 8/8, build 5/5.
+

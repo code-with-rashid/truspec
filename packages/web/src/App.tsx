@@ -44,6 +44,7 @@ import { FolderTree, type RowAction, type RowActionsController, type RowKind } f
 import { NewFolderModal } from "./components/NewFolderModal";
 import { NewRequestModal, type NewRequestPayload } from "./components/NewRequestModal";
 import { contractInfo, RequestWorkspace, specRefOf, type ReqTab, type RespTab } from "./components/RequestWorkspace";
+import { ShortcutsModal } from "./components/ShortcutsModal";
 import { TabStrip } from "./components/TabStrip";
 import { statusClass } from "./format-utils";
 import { FlowView } from "./FlowView";
@@ -129,6 +130,18 @@ interface SpecOpRow {
   badge: "tested" | "changed" | "untested";
 }
 
+/** True when the event came from somewhere the user is typing, where a bare `?` is just a `?`. */
+function isTypingTarget(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  if (!el || typeof el.tagName !== "string") return false;
+  return (
+    el.tagName === "INPUT" ||
+    el.tagName === "TEXTAREA" ||
+    el.tagName === "SELECT" ||
+    el.isContentEditable === true
+  );
+}
+
 const MIN_SIDEBAR = 200;
 const MAX_SIDEBAR = 480;
 const MIN_RAIL = 260;
@@ -190,6 +203,18 @@ export function App() {
   const [railHidden, setRailHidden] = useState<boolean>(
     () => window.localStorage.getItem(RAIL_KEY) === "1",
   );
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  /**
+   * Actions the window-level shortcut handler needs. They are defined much further down, so a
+   * ref (assigned during render, below) is what lets one handler subscribe once instead of the
+   * effect re-binding on every keystroke — or, worse, reaching a not-yet-initialised const.
+   */
+  const shortcutActions = useRef<{
+    run: () => void;
+    save: () => void;
+    stepTab: (delta: number) => void;
+    closeTab: () => void;
+  }>({ run: () => {}, save: () => {}, stepTab: () => {}, closeTab: () => {} });
   const [state, setState] = useState<WorkspaceState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tabs, setTabs] = useState<OpenTab[]>([]);
@@ -248,6 +273,12 @@ export function App() {
   const [railW, railDrag] = usePanelWidth("truspec.railWidth", 340, MIN_RAIL, MAX_RAIL, true);
 
   const activeTab = tabs.find((t) => t.path === activeTabPath) ?? null;
+  // Mirrors for the window-level shortcut handler, which is bound once and so cannot close over
+  // per-render values.
+  const tabsRef = useRef(tabs);
+  tabsRef.current = tabs;
+  const activeTabPathRef = useRef(activeTabPath);
+  activeTabPathRef.current = activeTabPath;
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -340,13 +371,45 @@ export function App() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+      const mod = e.metaKey || e.ctrlKey;
+      // Send and save used to be bound inside the request view, so they only worked while focus
+      // happened to be in it — pressing them after clicking the sidebar did nothing. They are
+      // window-level now, which is what every editor does and what people expect.
+      if (mod && e.key === "Enter") {
+        e.preventDefault();
+        shortcutActions.current.run();
+        return;
+      }
+      if (mod && !e.altKey && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        shortcutActions.current.save();
+        return;
+      }
+      if (mod && e.altKey) {
+        if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+          e.preventDefault();
+          shortcutActions.current.stepTab(e.key === "ArrowLeft" ? -1 : 1);
+          return;
+        }
+        if (e.key.toLowerCase() === "w") {
+          e.preventDefault();
+          shortcutActions.current.closeTab();
+          return;
+        }
+      }
+      if (mod && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setPaletteOpen((v) => !v);
         setPaletteQ("");
-      } else if (e.key === "Escape" && paletteOpen) {
-        setPaletteOpen(false);
+        return;
       }
+      // `?` is a plain character, so it must not fire while the user is typing one.
+      if (e.key === "?" && !mod && !isTypingTarget(e.target)) {
+        e.preventDefault();
+        setShortcutsOpen(true);
+        return;
+      }
+      if (e.key === "Escape" && paletteOpen) setPaletteOpen(false);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -1088,6 +1151,36 @@ export function App() {
     return map;
   }, [state]);
 
+  /** Save the open request from anywhere, not only from inside the request view. */
+  const saveActiveTab = useCallback((): void => {
+    const tab = tabsRef.current.find((t) => t.path === activeTabPathRef.current);
+    if (!tab?.draft || !tab.dirty) return;
+    const { raw: _raw, ...request } = tab.draft as typeof tab.draft & { raw?: string };
+    void doSaveInline(tab.path, request as unknown as Record<string, unknown>);
+  }, [doSaveInline]);
+
+  /** Move `delta` tabs from the active one, wrapping at both ends. */
+  const stepTab = useCallback((delta: number): void => {
+    const open = tabsRef.current;
+    if (open.length < 2) return;
+    const at = open.findIndex((t) => t.path === activeTabPathRef.current);
+    const next = open[(((at === -1 ? 0 : at) + delta) % open.length + open.length) % open.length];
+    if (next) setActiveTabPath(next.path);
+  }, []);
+
+  // Assigned during render so the window-level handler always calls the current closures without
+  // re-subscribing on every keystroke.
+  shortcutActions.current = {
+    run: () => {
+      if (activeTabPathRef.current && !running) void doRun(activeTabPathRef.current);
+    },
+    save: saveActiveTab,
+    stepTab,
+    closeTab: () => {
+      if (activeTabPathRef.current) requestCloseTab(activeTabPathRef.current);
+    },
+  };
+
   const activeSpecRef = specRefOf(activeTab?.detail ?? null);
   const isStale = !!activeSpecRef && !!driftRep?.removed.includes(activeSpecRef);
   const contract = contractInfo(activeTab?.detail ?? null, selectedResult);
@@ -1107,9 +1200,30 @@ export function App() {
       { id: "view-mock", label: "go to mock view" },
       { id: "view-flow", label: "go to flow view" },
       { id: "run-all", label: "run all requests" },
+      // Every one of these was previously reachable only by knowing where its button lives; the
+      // palette is where people look for an action they cannot immediately see.
+      { id: "run-request", label: "run the open request" },
+      { id: "save-request", label: "save the open request" },
+      { id: "new-request", label: "new request" },
+      { id: "new-folder", label: "new folder" },
+      { id: "toggle-theme", label: "toggle light / dark theme" },
+      { id: "toggle-rail", label: "show or hide the spec panel" },
+      { id: "shortcuts", label: "keyboard shortcuts" },
     ];
     return all.filter((c) => !q || c.label.toLowerCase().includes(q));
   }, [paletteQ]);
+
+  const toggleRail = useCallback((): void => {
+    setRailHidden((v) => {
+      const next = !v;
+      try {
+        window.localStorage.setItem(RAIL_KEY, next ? "1" : "0");
+      } catch {
+        // private mode / storage disabled — the toggle still works for this session.
+      }
+      return next;
+    });
+  }, []);
 
   const runPaletteCommand = useCallback(
     (id: string) => {
@@ -1119,8 +1233,15 @@ export function App() {
       else if (id === "view-spec") setView("spec");
       else if (id === "view-mock") setView("mock");
       else if (id === "view-flow") setView("flow");
+      else if (id === "run-request") shortcutActions.current.run();
+      else if (id === "save-request") shortcutActions.current.save();
+      else if (id === "new-request") setQuickNewPrefix("");
+      else if (id === "new-folder") openNewFolder();
+      else if (id === "toggle-theme") setTheme(theme === "dark" ? "light" : "dark");
+      else if (id === "toggle-rail") toggleRail();
+      else if (id === "shortcuts") setShortcutsOpen(true);
     },
-    [doRun],
+    [doRun, openNewFolder, toggleRail, theme],
   );
 
   const jumpTo = useCallback(
@@ -1209,17 +1330,7 @@ export function App() {
         </button>
         <button
           className="btn ghost"
-          onClick={() => {
-            setRailHidden((v) => {
-              const next = !v;
-              try {
-                window.localStorage.setItem(RAIL_KEY, next ? "1" : "0");
-              } catch {
-                // private mode / storage disabled — the toggle still works for this session.
-              }
-              return next;
-            });
-          }}
+          onClick={toggleRail}
           disabled={!railFits}
           title={
             railFits
@@ -1715,6 +1826,8 @@ export function App() {
         </span>
         <span className="seg brandlet">TRUSPEC</span>
       </footer>
+
+      {shortcutsOpen && <ShortcutsModal onClose={() => setShortcutsOpen(false)} />}
 
       {paletteOpen && (
         <CommandPalette
