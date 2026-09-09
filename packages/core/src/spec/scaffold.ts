@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { parse } from "../format";
 import { SCHEMA_VERSION } from "../format/schema";
 import type { TruSpecMethod, TruSpecRequest } from "../format/types";
+import { generateExample } from "../mock/engine";
 import { parseOpenApi } from "./openapi";
 
 const VALID_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]);
@@ -67,6 +68,24 @@ export function scaffoldFromSpec(specText: string, opts: { baseUrlVar?: string }
       const varName = name[1] as string;
       const declared = op.parameters.find((p) => p.in === "path" && p.name === varName);
       pathVariables[varName] ??= declared?.sample ?? "example";
+    }
+
+    // A required query parameter the scaffold omits makes a request that cannot succeed against a
+    // conforming API — and `drift`, run against the very spec this came from, reports it as
+    // "missing required query param". Concrete samples rather than `{{templates}}`: a limit or a
+    // page size is a constant, not something that varies per environment the way an id does.
+    const requiredQuery = op.parameters.filter((p) => p.in === "query" && p.required);
+    if (requiredQuery.length > 0) {
+      request.query = Object.fromEntries(requiredQuery.map((p) => [p.name, p.sample ?? "example"]));
+    }
+
+    // Likewise a required request body. `generateExample` is the same schema-to-value walk the
+    // mock server uses, so the scaffold and the mock agree on what the spec describes.
+    if (op.requestBodyRequired && op.requestBodySchema) {
+      const example = generateExample(op.requestBodySchema, summary.document);
+      if (example !== null && example !== undefined) {
+        request.body = { type: "json", content: example };
+      }
     }
     const base = slug(label);
     const n = (used.get(base) ?? 0) + 1;

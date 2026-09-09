@@ -269,6 +269,13 @@ spec:
 - File names are slugified from the `operationId` (or the `METHOD path` key).
 - Operations with an unsupported HTTP method are skipped and reported.
 
+A scaffolded request carries what the spec says the operation cannot work without: the
+success status it documents, its path parameters as `{{variables}}`, every **required**
+query parameter (optional ones are left out — scaffolding them all buries the request in
+noise), and a JSON body when the operation requires one, generated from the request-body
+schema. That is the invariant `gen` and `drift` owe each other: **`truspec drift` against the
+spec a collection was generated from reports no drift.**
+
 After `gen`, flesh out the stubs (real assertions, bodies, auth) and your drift count drops
 to zero. Agents can do this too — see the
 [`truspec_scaffold_from_spec` MCP tool](./mcp.md#tools).
