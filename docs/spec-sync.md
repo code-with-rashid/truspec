@@ -43,6 +43,20 @@ diverged. It reports four categories:
 | **Changed** (`changed`) | Matched, but the request no longer satisfies the spec. | The contract tightened — e.g. a parameter became required — and the request didn't keep up. |
 | **Missing from live API** (`liveMissing`) | With `--live`, a spec operation a running API doesn't serve. | The deployed API and the spec disagree. |
 
+**Stale** and **Changed** entries name the request file they came from — fixing drift means
+editing a file, and the report already read it to notice:
+
+```
+Stale — not in the spec (1):
+  - GET /search  (api/legacy.tspec.yaml)
+
+Changed (2):
+  ~ GET /products: missing required query param 'limit'  (api/list.tspec.yaml)
+```
+
+(`--json` carries the same as `sources`, keyed by the entry text. **Untracked** has no file to
+name: that is the point of it.)
+
 "Changed" currently fires when:
 
 - the spec marks a **query parameter as required** and the request doesn't include it, or

@@ -2619,3 +2619,45 @@ turned off within a day.
 **Verification.** 1026 unit tests (5 new, including one that pins the values-differ case as a
 pass — the trap this flag could easily fall into), coverage 95.96% lines / 87.74% branches / 96.52%
 functions, typecheck 8/8, docs and usage updated.
+
+### 74 — drift named the operation and left you to find the file
+
+**What I looked for.** `drift` is the flagship: the reason the product exists is that a collection
+and a spec fall out of step. So I built a spec and a collection that disagree in every way the
+report knows about, and read what it says.
+
+The categories are right and the wording is good. One thing missing from every line:
+
+```
+Stale — not in the spec (1):
+  - GET /search
+
+Changed (2):
+  ~ GET /products: missing required query param 'limit'
+  ~ POST /products: missing required request body
+```
+
+Fixing any of these means editing a file. The report names an *operation* — so the reader greps a
+hundred requests for whichever one carries that reference. And the report knows: it read the file
+to notice in the first place, and `CollectionOp` has carried `filePath` all along.
+
+```
+  - GET /search  (api/legacy.tspec.yaml)
+  ~ GET /products: missing required query param 'limit'  (api/list.tspec.yaml)
+```
+
+`--json` carries the same as `sources`, keyed by the entry text, because the MCP tool and the web
+client have to make the same jump. When two requests produce the same entry — both pointing at a
+removed operation — both files are listed rather than one arbitrarily winning.
+
+**Untracked entries stay bare**, deliberately: an operation in the spec that no request references
+has no file to name, and that is precisely what the category means.
+
+**Same shape as 41, 51, 69, 71, 72** — the report has the fact and doesn't print it. That is now
+five iterations of one pattern, which suggests it is worth checking for directly rather than
+stumbling into: *for every line this tool prints, does it know something more specific it is
+withholding?*
+
+**Verification.** 1030 unit tests (4 new: three at the core level including the two-files case and
+one asserting a clean report carries no `sources` at all, one over the CLI output), coverage 95.97%
+lines / 87.77% branches / 96.53% functions, typecheck 8/8, docs updated.

@@ -46,6 +46,6 @@ export async function driftCommand(argv: string[], deps: Partial<CommandDeps> = 
     return 1;
   }
 
-  emit(d, values.json ? JSON.stringify(report, null, 2) : formatDrift(report), values.output);
+  emit(d, values.json ? JSON.stringify(report, null, 2) : formatDrift(report, d.cwd), values.output);
   return report.ok ? 0 : 1;
 }

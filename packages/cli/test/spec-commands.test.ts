@@ -1,4 +1,6 @@
-import { resolve } from "node:path";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { contractCommand } from "../src/commands/contract";
 import { coverageCommand } from "../src/commands/coverage";
@@ -129,5 +131,50 @@ describe("truspec contract", () => {
     });
     expect(code).toBe(2);
     expect(cap.err).toMatch(/Usage/);
+  });
+});
+
+describe("truspec drift names the file behind each entry", () => {
+  it("prints the request file for a stale reference and a changed one", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "truspec-drift-src-"));
+    try {
+      mkdirSync(join(dir, "api"), { recursive: true });
+      writeFileSync(
+        join(dir, "openapi.yaml"),
+        [
+          "openapi: 3.0.3",
+          'info: { title: S, version: "1" }',
+          "paths:",
+          "  /products:",
+          "    get:",
+          "      operationId: listProducts",
+          "      parameters: [ { name: limit, in: query, required: true, schema: { type: integer } } ]",
+          '      responses: { "200": { description: ok } }',
+          "",
+        ].join("\n"),
+      );
+      writeFileSync(
+        join(dir, "api", "list.tspec.yaml"),
+        'tspec: "0.1"\nname: List\nmethod: GET\nurl: "http://x/products"\nspec: { operation: "GET /products" }\nassertions: []\n',
+      );
+      writeFileSync(
+        join(dir, "api", "legacy.tspec.yaml"),
+        'tspec: "0.1"\nname: Legacy\nmethod: GET\nurl: "http://x/search"\nspec: { operation: "GET /search" }\nassertions: []\n',
+      );
+
+      const cap = capture();
+      const code = await driftCommand(["--spec", "openapi.yaml", "api"], {
+        cwd: dir,
+        stdout: cap.stdout,
+        stderr: cap.stderr,
+      });
+      expect(code).toBe(1);
+      expect(cap.out).toContain("- GET /search  (api/legacy.tspec.yaml)");
+      expect(cap.out).toContain("missing required query param 'limit'  (api/list.tspec.yaml)");
+      // An operation the spec has and the collection does not has no file to name.
+      expect(cap.out).not.toMatch(/\+ .*\.tspec\.yaml/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

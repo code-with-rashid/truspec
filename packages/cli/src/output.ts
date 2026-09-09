@@ -58,8 +58,16 @@ export function formatHuman(result: WorkspaceRunResult, cwd: string): string {
   return lines.join("\n");
 }
 
-export function formatDrift(report: DriftReport): string {
+export function formatDrift(report: DriftReport, cwd = process.cwd()): string {
   const lines: string[] = [];
+  // Drift names an operation; fixing it means editing a file. The report knows which one — it read
+  // the file to notice — so saying it here saves grepping a hundred requests for the reference.
+  const where = (entry: string): string => {
+    const files = report.sources?.[entry];
+    if (!files || files.length === 0) return "";
+    const rel = files.map((f) => toPosixPath(relative(cwd, f)));
+    return rel.length === 1 ? `  (${rel[0]})` : `  (${rel.length} files: ${rel.join(", ")})`;
+  };
   lines.push(
     `Spec operations: ${report.specOperations}   Collection operations: ${report.collectionOperations}`,
   );
@@ -69,11 +77,11 @@ export function formatDrift(report: DriftReport): string {
   }
   if (report.removed.length > 0) {
     lines.push("", `Stale — not in the spec (${report.removed.length}):`);
-    for (const k of report.removed) lines.push(`  - ${k}`);
+    for (const k of report.removed) lines.push(`  - ${k}${where(k)}`);
   }
   if (report.changed.length > 0) {
     lines.push("", `Changed (${report.changed.length}):`);
-    for (const k of report.changed) lines.push(`  ~ ${k}`);
+    for (const k of report.changed) lines.push(`  ~ ${k}${where(k)}`);
   }
   if (report.liveMissing && report.liveMissing.length > 0) {
     lines.push("", `Missing from live API (${report.liveMissing.length}):`);
