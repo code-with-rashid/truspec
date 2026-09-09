@@ -1008,3 +1008,38 @@ and both fail there, so neither is vacuous. 806 unit tests, coverage 95.60% line
 / 96.56% functions, typecheck 8/8, dogfood lint + deterministic-docs + schema gates clean. The
 extension README and `docs/editors.md` both claimed the lens appears on *every* `.tspec.yaml`;
 both now say what it actually does.
+
+### 34 — the suggestion menu that dismissed itself
+
+**Gap.** With the teardown hang fixed, CI came back green on everything except one test, which had
+by then failed twice on CI and never once locally: `var-autocomplete-auth.spec.ts:10` types `{{ba`
+into the bearer-token field and gets no suggestions at all — `14 x locator resolved to 0 elements`
+across the full five seconds. Not the wrong suggestions. None, and never recovering.
+
+I could not reproduce it: eight consecutive runs of that spec with every core pinned at 100%, and
+two full-suite runs under the same contention, all passed. So rather than call it flaky, I went
+looking for what in the component could produce exactly that signature — open, then permanently
+closed — and found it.
+
+`VarAwareInput` registered a **capture-phase `scroll` listener on `document` whose only job was to
+close the menu**. Any scroll event anywhere in the document, from any source, dismissed a menu the
+user was mid-selection in, with no way back except retyping `{{`. The original reasoning was that
+re-measuring on every scroll tick was not worth the churn — but the same comment notes the menu is
+only open for a few keystrokes, which bounds that cost to almost nothing. And the cost of being
+wrong is unbounded: a reflow that scrolls an ancestor closes the menu invisibly, which is precisely
+"typed the right thing, got no suggestions".
+
+**Change.** Scrolling now repositions the menu against the input instead of dismissing it, closing
+only when the input has actually scrolled out of the viewport. Window resize gets the same handler;
+it was not handled at all before, so resizing left the menu stranded away from its input.
+
+**Honesty about the cause.** This is the most plausible mechanism for the CI failure and it is a
+genuine defect on its own merits, but I did not reproduce that failure locally and cannot prove
+this was it. If a non-reproducible failure recurs here after this, it needs its own investigation.
+Deliberately not papering over it with `retries` in the Playwright config — a real hang has already
+hidden behind "CI is flaky" once in this campaign.
+
+**Verification.** 2 e2e tests, both written first and confirmed failing against the unfixed build
+(one scroll event destroyed the menu; the second test could not click a suggestion at all). 97 e2e
+now passing, 806 unit tests, coverage 95.60% lines / 87.72% branches / 96.56% functions, typecheck
+8/8, dogfood gates clean.
