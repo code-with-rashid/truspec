@@ -59,6 +59,7 @@ files **validate against the schema before writing**, so an agent can't land a m
 | `truspec_scaffold_from_spec` | `spec`, `out`, `baseUrlVar?` | Generate a request stub per operation (closes drift gaps). |
 | `truspec_mock_start` | `spec`, `port?`, `delay?`, `validate?` | Start a local mock server from a spec. |
 | `truspec_mock_stop` | — | Stop the running mock server, if any. |
+| `truspec_docs` | `dir?`, `lang?`, `title?` | Render a collection as deterministic Markdown documentation. |
 | `truspec_lint` | `dir?`, `disable?` | Static checks over a collection; findings carry stable rule ids. |
 | `truspec_import_har` | `path`, `out?`, `filter?`, `baseUrlVar?` | Convert a HAR export into request files. |
 | `truspec_import_curl` | `command`, `out?`, `name?` | Convert pasted curl command(s) into request files. |

@@ -22,15 +22,16 @@ packages/
     src/importers/   postman v2.1 + bruno + curl + HAR -> .tspec.yaml
     src/codegen/     request -> runnable snippet in 17 clients/languages
     src/lint/        static checks over a collection (secrets, dead assertions, undeclared vars)
+    src/docs/        collection -> deterministic Markdown documentation
     src/mock/        local mock server generated from a spec
     schema/          PUBLISHED JSON Schema (generated; do not hand-edit)
-  cli/           truspec — `run` / `drift` / `coverage` / `contract` / `gen` / `codegen` / `lint` / `import` / `mock`
-  mcp-server/    @truspec/mcp-server — 16 tools over the official MCP SDK
+  cli/           truspec — `run` / `drift` / `coverage` / `contract` / `gen` / `codegen` / `lint` / `docs` / `import` / `mock`
+  mcp-server/    @truspec/mcp-server — 17 tools over the official MCP SDK
 examples/        petstore + blog sample collections (+ openapi.yaml) for tests + demos
 ```
 
 Core modules are imported via subpaths: `@truspec/core/format`, `/runner`, `/workspace`,
-`/spec`, `/importers`, `/exporters`, `/codegen`, `/lint`, `/mock`. The filesystem/server modules (`workspace`, `spec`,
+`/spec`, `/importers`, `/exporters`, `/codegen`, `/lint`, `/docs`, `/mock`. The filesystem/server modules (`workspace`, `spec`,
 `importers`, `mock`) are kept out of the browser-safe main entry on purpose.
 
 ## File format (v0, schema version `0.1`)

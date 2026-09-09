@@ -2,6 +2,7 @@ import { codegenCommand } from "./commands/codegen";
 import { contractCommand } from "./commands/contract";
 import { coverageCommand } from "./commands/coverage";
 import { driftCommand } from "./commands/drift";
+import { docsCommand } from "./commands/docs";
 import { genCommand } from "./commands/gen";
 import { importCommand } from "./commands/import";
 import { initCommand } from "./commands/init";
@@ -24,6 +25,7 @@ Usage:
   truspec coverage --spec <openapi> [<dir>] [--min <percent>] [--json]
   truspec contract --spec <openapi> [<dir>] [--env <name>] [--json]
   truspec gen --spec <openapi> --out <dir> [--base-url-var <name>]
+  truspec docs [<dir>] [--out <file>] [--lang <target>]
   truspec lint [<dir>] [--strict] [--json] [--disable <rule>] [--list-rules]
   truspec codegen <request> [--lang <target>] [--env <name>] [--list]
   truspec import <postman|bruno|curl|har> <path|-> [--out <dir>] [--filter <substr>]
@@ -39,6 +41,7 @@ Commands:
   coverage   Report which spec operations have a tested request (--min to gate).
   contract   Run the collection and validate each response against the spec; non-zero exit on violation.
   gen        Scaffold a request stub per operation from an OpenAPI spec.
+  docs       Render a collection as committable Markdown documentation.
   lint       Static checks over a collection (inline secrets, dead assertions, undeclared vars).
   codegen    Render a request as a runnable snippet (curl, Python, Go, …); --list for targets.
   import     Convert a Postman/Bruno collection, curl command, or HAR export to .tspec.yaml.
@@ -75,6 +78,8 @@ export async function main(argv: string[]): Promise<number> {
       return codegenCommand(rest);
     case "lint":
       return lintCommand(rest);
+    case "docs":
+      return docsCommand(rest);
     case "import":
       return importCommand(rest);
     case "mock":

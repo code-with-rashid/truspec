@@ -174,6 +174,21 @@ export function createServer(ctx: ServerContext = {}): McpServer {
   );
 
   server.registerTool(
+    "truspec_docs",
+    {
+      title: "Document a collection",
+      description:
+        "Render a collection as Markdown: endpoints, parameters, headers, bodies, assertions, captures, and an example snippet per request. Deterministic — no timestamps — so it can be committed and re-generated without churning the diff.",
+      inputSchema: {
+        dir: z.string().default(".").describe("Collection directory."),
+        lang: z.string().default("curl").describe("Snippet language, or \"none\" to omit examples."),
+        title: z.string().optional().describe("Document title."),
+      },
+    },
+    async ({ dir, lang, title }) => json(tools.docsTool(c, dir, lang, title)),
+  );
+
+  server.registerTool(
     "truspec_lint",
     {
       title: "Lint a collection",

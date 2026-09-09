@@ -23,6 +23,7 @@ truspec --version
 | [`gen`](#gen) | Scaffold a request stub per operation from a spec. |
 | [`codegen`](#codegen) | Render a request as a runnable snippet in another client or language. |
 | [`lint`](#lint) | Static checks over a collection; non-zero exit on an error. |
+| [`docs`](#docs) | Render a collection as committable Markdown documentation. |
 | [`import`](#import) | Convert a Postman/Bruno collection or a curl command to `.tspec.yaml`. |
 | [`mock`](#mock) | Serve generated responses from a spec (offline). |
 | [`serve`](#serve) | Open the local web UI for a collection. |
@@ -432,6 +433,37 @@ Operations with an unsupported method are skipped and reported on stderr.
 truspec gen --spec openapi.yaml --out ./api
 # Generated 4 request(s) in ./api
 ```
+
+---
+
+## `docs`
+
+Render a collection as Markdown — endpoints, parameters, headers, bodies, assertions, captures,
+the linked spec operation, and a runnable example per request.
+
+```
+truspec docs [<dir>] [--out <file>] [--title <text>] [--lang <target>|none] [--base-level <n>]
+```
+
+| Flag | Alias | Description |
+|---|---|---|
+| `--out <file>` | `-o` | Write to a file instead of stdout. |
+| `--title <text>` | | Document title. Defaults to the directory name. |
+| `--lang <target>` | `-l` | Example language ([any codegen target](#codegen)), or `none`. Default `curl`. |
+| `--base-level <n>` | | Heading level to start at (1–5), for embedding in a larger page. |
+
+**The output is deterministic** — no timestamp, no absolute paths, no run data. That is the point:
+the document is meant to live next to the collection and be reviewed in a diff, and a
+"generated on ⟨date⟩" line would make every regeneration a change, which is exactly how generated
+docs stop being regenerated.
+
+```bash
+truspec docs ./api -o docs/api.md
+git diff --exit-code docs/api.md   # CI: docs are up to date with the collection
+```
+
+An unreadable file is reported *in* the document and on stderr, and does not fail the command —
+[`lint`](#lint) is the command whose job it is to fail on a broken file.
 
 ---
 

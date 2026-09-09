@@ -557,3 +557,31 @@ than at connect time.
 request through a built dispatcher, path resolution, the missing-file error, and the two CLI paths
 (warning, transport error). 631 unit tests, typecheck 8/8, build 5/5.
 
+### 20 — `truspec docs`, and the double-base-URL bug it exposed
+
+**Gap.** A collection is readable YAML, but nothing rendered it as *documentation* — the artifact
+you hand a teammate or publish next to the code. Postman's equivalent is a cloud page; for a
+local-first tool the right answer is a file in the repo.
+
+**Change.** `truspec docs [dir]` renders endpoints, parameters, headers, bodies, assertions,
+captures, the linked spec operation and a runnable example per request, grouped by folder with a
+linked table of contents. Also a `truspec_docs` MCP tool.
+
+**The output is deterministic** — no timestamp, no absolute paths, no run data. That is the design
+decision, not an omission: the document lives next to the collection and is reviewed in a diff, and
+a "generated on ⟨date⟩" line would make every regeneration a change, which is precisely how
+generated docs stop being regenerated. `git diff --exit-code docs/api.md` is then a usable CI check.
+
+Writing it exposed a **real bug in `resolveRequest`**: a request whose URL starts with
+`{{baseUrl}}`, in a folder that also sets `baseUrl`, got the base applied twice —
+`{{baseUrl}}/{{baseUrl}}/posts` in *every generated snippet*. The relative-URL test is
+`/^https?:\/\//`, which an unsubstituted template fails. It only bites under `onMissing: "keep"`
+(codegen, previews, docs); at run time the variable is substituted first, so the run was always
+correct and nothing caught it. A URL still beginning with a placeholder is now treated as
+absolute, which is a no-op at run time and correct everywhere else.
+
+**Verification.** 13 docs tests — including one asserting byte-identical output across two runs
+with no date and no absolute path anywhere, one pinning the double-base-URL regression, and one
+that documents this repository's own `examples/blog` end to end. 644 tests, typecheck 8/8,
+build 5/5.
+

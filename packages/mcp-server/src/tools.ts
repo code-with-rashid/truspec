@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
 import { CODEGEN_TARGETS, codegenTargetIds, generateCode } from "@truspec/core/codegen";
+import { collectionDocs } from "@truspec/core/docs";
 import { parse } from "@truspec/core/format";
 import {
   contractReport,
@@ -187,5 +188,19 @@ export function importHarTool(
     created: written.length,
     files: written.map((f) => relative(ctx.cwd, f)),
     ...(result.warnings.length > 0 ? { warnings: result.warnings } : {}),
+  };
+}
+
+/**
+ * Render a collection as Markdown. Deterministic by design, so an agent asked to "document the
+ * API" produces something that can be committed and re-generated without churning the diff.
+ */
+export function docsTool(ctx: ToolContext, dir = ".", lang = "curl", title?: string) {
+  const result = collectionDocs(confinePath(ctx.cwd, dir), { lang, ...(title ? { title } : {}) });
+  return {
+    dir,
+    count: result.count,
+    markdown: result.markdown,
+    ...(result.errors.length > 0 ? { errors: result.errors } : {}),
   };
 }

@@ -101,7 +101,13 @@ export function resolveRequest(req: TruSpecRequest, opts: ResolveOptions = {}): 
   const urlRes = interpolate(req.url, vars, io);
   missing.push(...urlRes.missing);
   let url = urlRes.value;
-  if (!/^https?:\/\//i.test(url) && opts.folder?.baseUrl) {
+  // A URL that still *starts with* an unresolved `{{var}}` is treated as absolute. That can only
+  // happen under `onMissing: "keep"` (code generation and previews) — at run time the variable is
+  // either substituted, making the http test decide, or the run fails on the missing variable. A
+  // leading placeholder is virtually always the base URL, so prepending the folder's on top of it
+  // produced `{{baseUrl}}/{{baseUrl}}/posts` in every generated snippet for a folder with a base.
+  const startsWithPlaceholder = url.startsWith("{{");
+  if (!startsWithPlaceholder && !/^https?:\/\//i.test(url) && opts.folder?.baseUrl) {
     const baseRes = interpolate(opts.folder.baseUrl, vars, io);
     missing.push(...baseRes.missing);
     url = joinUrl(baseRes.value, url);

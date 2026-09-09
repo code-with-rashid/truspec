@@ -15,6 +15,7 @@ export default defineConfig({
       { find: "@truspec/core/codegen", replacement: core("codegen/index.ts") },
       { find: "@truspec/core/lint", replacement: core("lint/index.ts") },
       { find: "@truspec/core/jsonpath", replacement: core("jsonpath/index.ts") },
+      { find: "@truspec/core/docs", replacement: core("docs/index.ts") },
       { find: "@truspec/core/mock", replacement: core("mock/index.ts") },
       { find: "@truspec/core/runner", replacement: core("runner/index.ts") },
       { find: "@truspec/core/format", replacement: core("format/index.ts") },
