@@ -87,13 +87,50 @@ const MAX_RESPONSE_BYTES = 50 * 1024 * 1024;
 class ResponseTooLargeError extends Error {}
 
 /**
+ * The charset the response declares, as a `TextDecoder` label.
+ *
+ * HTTP's historical default for `text/*` is ISO-8859-1, but in practice a response that omits a
+ * charset today means UTF-8, and decoding a modern JSON API as latin-1 would corrupt every
+ * non-ASCII byte in it. So: honour an explicit charset, default to UTF-8.
+ */
+function charsetOf(contentType: string): string {
+  return /charset\s*=\s*"?([\w.:+-]+)"?/i.exec(contentType)?.[1]?.toLowerCase() ?? "utf-8";
+}
+
+/**
+ * Decode a response body the way the response says to.
+ *
+ * Two things a plain `buf.toString("utf8")` gets wrong. A server that declares
+ * `charset=iso-8859-1` (legacy APIs still do) had every accented character replaced with U+FFFD,
+ * so `body contains "café"` could not match a body that plainly contained it. And a UTF-8 BOM —
+ * emitted by plenty of .NET and PHP stacks — is invisible in every viewer but makes `JSON.parse`
+ * throw, which surfaced as *every* jsonpath assertion reporting "(no match)" against a 200 whose
+ * body was obviously right. An unknown charset label is not a reason to fail the request; fall
+ * back to UTF-8, which is what would have happened anyway.
+ */
+export function decodeResponseBody(buf: Buffer, contentType: string): string {
+  const label = charsetOf(contentType);
+  let text: string;
+  if (label === "utf-8" || label === "utf8") text = buf.toString("utf8");
+  else {
+    try {
+      text = new TextDecoder(label).decode(buf);
+    } catch {
+      text = buf.toString("utf8");
+    }
+  }
+  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+}
+
+/**
  * Read a response body as text, but stop and throw once `maxBytes` is exceeded
  * (streaming, so we never buffer an unbounded body into memory). Falls back to
- * `response.text()` when the body isn't a readable stream (empty/HEAD responses).
+ * buffering the whole response when the body isn't a readable stream (empty/HEAD responses).
  */
 async function readResponseText(response: Response, maxBytes: number): Promise<string> {
+  const contentType = response.headers.get("content-type") ?? "";
   const body = response.body;
-  if (!body) return response.text();
+  if (!body) return decodeResponseBody(Buffer.from(await response.arrayBuffer()), contentType);
   const reader = body.getReader();
   const chunks: Uint8Array[] = [];
   let size = 0;
@@ -114,7 +151,7 @@ async function readResponseText(response: Response, maxBytes: number): Promise<s
     buf.set(c, offset);
     offset += c.byteLength;
   }
-  return buf.toString("utf8");
+  return decodeResponseBody(buf, contentType);
 }
 
 /**

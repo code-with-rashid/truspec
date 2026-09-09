@@ -1948,3 +1948,48 @@ have needed a second field added, and a fifth added later would have missed it. 
 **Verification.** 940 unit tests and 105 e2e (4 new e2e covering refuse / reload / overwrite / an
 ordinary save unaffected, 4 new server tests including one proving a save without a version still
 writes), typecheck 8/8, docs site builds.
+
+### 58 — the response body, decoded the way the response said to
+
+**What I looked for.** Everything so far has tested requests the runner sends. This time: responses
+real servers send that are not tidy UTF-8 JSON. I stood up a server returning a latin-1 body, a
+JSON body with a UTF-8 BOM, a PNG and an octet-stream, and looked at what came back.
+
+**Two defects, one function.** `readResponseText` ended in `buf.toString("utf8")`, unconditionally.
+
+*A declared charset was ignored.* A server saying `content-type: text/plain; charset=iso-8859-1`
+— legacy APIs still do — had every accented byte replaced with U+FFFD:
+
+```
+caf� na�ve r�sum�          (what TruSpec saw)
+café naïve résumé          (what the server sent)
+```
+
+So `body contains "café"` could not match a body that plainly contained it, and the response
+viewer showed mojibake.
+
+*A UTF-8 BOM broke every jsonpath assertion.* .NET and PHP stacks emit one routinely. `JSON.parse`
+throws on a leading U+FEFF, so `json` stayed undefined and the run reported:
+
+```
+✗ FAIL  bom  (api/r.tspec.yaml)  200 24ms
+      ✗ jsonpath $.id → (no match) fails == 7
+```
+
+A 200, a body that reads correctly in every viewer (the BOM is invisible), and an assertion that
+says "no match" with nothing to explain it. This is the kind of thing someone spends an afternoon
+on and then leaves the tool over.
+
+**The fix.** `decodeResponseBody(buf, contentType)` honours an explicit charset via `TextDecoder`,
+defaults to UTF-8 when none is declared (HTTP's historical latin-1 default would corrupt every
+modern JSON API), falls back to UTF-8 for a charset label nothing recognises rather than failing
+the request, and strips a leading BOM — an encoding marker, not content.
+
+**Deliberately left for the next iteration.** A binary body (`image/png`, `application/octet-stream`)
+is still decoded as text and comes back as replacement characters — lossy, so the web UI's download
+of a binary response cannot produce the real bytes. That needs the response to carry the bytes, not
+just a string, which is a wider change than this one and gets its own iteration rather than being
+smuggled into it.
+
+**Verification.** 946 unit tests (6 new: 4 pure decoder cases, 2 through a real server), coverage
+95.83% lines / 87.66% branches / 96.28% functions, typecheck 8/8, `lint examples --strict` clean.
