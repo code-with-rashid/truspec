@@ -508,6 +508,28 @@ the active environment, folder config, secrets, and values captured earlier in t
 - **Unresolved variables fail the request before it is sent**, and the run reports exactly
   which names were missing — nothing is silently sent with an empty value baked in.
 
+### Types in a JSON body
+
+In a `json` (or `graphql` variables) body, a value that is **exactly one placeholder** keeps the
+variable's own type. Anything else is text, because concatenation is a string operation:
+
+```yaml
+body:
+  type: json
+  content:
+    qty: "{{qty}}"        # qty = 2      -> 2      (a number)
+    live: "{{live}}"      # live = true  -> true   (a boolean)
+    sku: "sku-{{qty}}"    # qty = 2      -> "sku-2"
+```
+
+This matters most for a spec-validated API: an `integer` field sent as `"2"` fails its own schema.
+Typed values reach a run from an environment's `variables` (declared as `string | number | boolean`),
+from a `capture` (which stores the JSON value it read), and from a **JSON** dataset. A **CSV**
+dataset has no types — every cell is text — so use a JSON dataset when the type matters.
+
+URLs, headers, query parameters, `text` bodies and `form` fields are always text: those are string
+formats, and there is nothing to preserve.
+
 ---
 
 ## Folder config

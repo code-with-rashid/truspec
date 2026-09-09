@@ -1468,3 +1468,44 @@ what distinguishes the two skip reasons, and my first attempt at testing it was 
 against `status equals 200` is a *failed* request, not an undocumented-status skip). 877 unit
 tests, 97 e2e, coverage 95.70% lines / 87.41% branches / 96.18% functions, typecheck 8/8, dogfood
 gates clean.
+
+### 46 — a data-driven run could only ever send strings
+
+**Gap.** Probed `--data` and `--repeat`, which no iteration had touched. Most of it is sound: CSV
+quoting handles `"Comma, Name"`, JSON datasets work, `--repeat` is correctly ignored alongside
+`--data`, an empty dataset fails rather than quietly becoming one variable-less run, and a row
+missing a referenced column fails before the request is sent.
+
+One thing was wrong, and it undercuts the feature's main use. A JSON dataset row `{"qty": 1}`
+arrived at the server as `{"qty":"1"}`. `interpolateDeep` stringifies unconditionally, so **no
+data-driven run could send a non-string JSON value at all**.
+
+That collides with this project's own features: point `contract` at an API whose spec declares
+`qty` as an `integer` and it reports `expected integer, got string` — a violation the collection
+author has no way to fix. The format itself says types were meant to survive: an environment's
+`variables` are `string | number | boolean` in the schema, and `capture` stores the JSON value it
+read. Both are stringified the moment they reach a body.
+
+**Change.** In a `json` body (and in `graphql` variables, where an `Int!` argument sent as a string
+is rejected outright), a value that is **exactly one placeholder** now keeps the variable's type.
+Anything with concatenation stays text, because concatenation is a string operation:
+`qty: "{{qty}}"` sends `2`; `sku: "sku-{{qty}}"` sends `"sku-2"`.
+
+**Scope, deliberately narrow.** URLs, headers, query parameters, `text` bodies and `form` fields
+are untouched — those are string formats with nothing to preserve. And a CSV dataset still yields
+strings, because CSV cells genuinely are text; guessing types out of CSV is how `007` becomes `7`
+and a phone number gets mangled. Use a JSON dataset when the type matters, which the docs now say.
+
+**This is a behaviour change, and worth stating plainly.** A collection with `"{{var}}"` in a JSON
+body where the variable is a number or boolean now sends it typed rather than quoted. I judged the
+old behaviour the bug rather than the contract — the schema and `capture` both preserve types, so
+discarding them at the last step was the inconsistency — but anyone relying on the string form
+would see a difference. The full suite passes unchanged, so nothing in the repo depended on it.
+
+**Verification.** 13 tests: the type-preserving cases, the concatenation cases that must stay text,
+whitespace inside the braces, a missing variable under both policies, the `Object.prototype` guard
+(`{{toString}}` must be missing, not a function), nesting inside arrays, and — the one that bounds
+the change — that the behaviour is **off by default**, so every other field still interpolates as
+text. Plus end-to-end checks that a resolved request really puts `2` and not `"2"` on the wire.
+890 unit tests, 97 e2e, coverage 95.71% lines / 87.44% branches / 96.18% functions, typecheck 8/8,
+dogfood gates clean.

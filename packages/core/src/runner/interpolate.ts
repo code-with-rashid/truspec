@@ -21,7 +21,20 @@ export type MissingPolicy = "empty" | "keep";
 
 export interface InterpolateOptions {
   onMissing?: MissingPolicy;
+  /**
+   * Substitute the variable's own type, not its text, when a string is *exactly* one template.
+   *
+   * Only for bodies that are serialized as JSON. `"{{qty}}"` with `qty` the number `2` sends `2`;
+   * `"id-{{qty}}"` still sends the string `"id-2"`, because concatenation is a string operation.
+   * Without this a data-driven run can only ever send strings — and the environment schema, which
+   * declares variables as `string | number | boolean`, and `capture`, which stores typed JSON,
+   * both say types were meant to survive.
+   */
+  typed?: boolean;
 }
+
+/** A string that is one template and nothing else — the only case where a type can be preserved. */
+const EXACT_VAR_RE = /^\{\{\s*([\w.-]+)\s*\}\}$/;
 
 /** Replace `{{name}}` templates in a string; report any names not found in `vars`. */
 export function interpolate(input: string, vars: Vars, opts: InterpolateOptions = {}): Interpolated {
@@ -57,6 +70,16 @@ export function interpolateDeep<T>(
   const seen = new WeakSet<object>();
   const walk = (node: unknown, depth: number): unknown => {
     if (typeof node === "string") {
+      const exact = opts.typed ? EXACT_VAR_RE.exec(node) : null;
+      if (exact) {
+        const name = exact[1] as string;
+        if (Object.prototype.hasOwnProperty.call(vars, name)) {
+          const v = vars[name];
+          if (v !== undefined) return v; // number/boolean keep their type; a string is unchanged
+        }
+        missing.push(name);
+        return opts.onMissing === "keep" ? node : "";
+      }
       const r = interpolate(node, vars, opts);
       missing.push(...r.missing);
       return r.value;

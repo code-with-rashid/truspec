@@ -113,7 +113,9 @@ truspec run <path> [--env <name>] [--spec <openapi>] [--var k=v] [--grep <re>] [
 | `--timeout <ms>` | | Per-request timeout. Default `30000`. Use `0` to disable. |
 
 **Data-driven runs.** `--data` runs the whole selection once per row, with the row's columns
-available as `{{variables}}`:
+available as `{{variables}}`. A JSON dataset carries types into a JSON body (see
+[File format → Types in a JSON body](./file-format.md#types-in-a-json-body)); CSV cells are always
+text:
 
 ```csv
 # pets.csv
