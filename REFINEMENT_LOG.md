@@ -3181,3 +3181,53 @@ tables.
 functions, typecheck 8/8, docs site builds. Live: `serve examples` serves `examples`,
 `serve nope` refuses, `serve README.md` refuses, `mock <spec>` and `gen <spec>` both work
 positionally and by flag.
+
+### 86 — the security-relevant flags were tested for not throwing
+
+**Three probes cleared before this one, which is worth recording as much as the fix.**
+
+1. **Documented CLI invocations.** Having hand-corrected nineteen of them in iteration 85, I
+   extracted every `truspec …` line from the docs, the README and `CLAUDE.md`, and cross-checked
+   all 63 flag mentions against each command's real option set. **All 63 are real.** The reverse
+   too: **no flag ships undocumented.**
+2. **Network failure messages** — the errors people actually hit most. They are already excellent,
+   and a previous iteration clearly did this work well:
+   ```
+   error: Host not found: no-such-host-xyzzy.invalid — check the hostname, or the variable that produced it
+   error: Refusing to connect to 127.0.0.1:1: the HTTP client blocks that port number outright
+   error: TLS certificate for 127.0.0.1:47390 is self-signed (use --insecure, or --ca <file> to trust it)
+   error: Invalid URL: ht!tp://nope
+   ```
+   (Getting these required `NO_PROXY='*'` and a local self-signed HTTPS server — the sandbox's own
+   proxy answers for a remote host, and would have had me "fixing" its 403 instead.)
+3. **`--ca` end to end.** Generated a cert, served HTTPS, and confirmed `--ca` trusts it while the
+   default run refuses. It works. There is even a nice progression: a cert whose SAN does not
+   cover the host you asked for reports *"not valid for that hostname"* rather than repeating
+   "self-signed", so trusting the CA and matching the host read as the two different problems
+   they are.
+
+**So the defect is in the tests, not the code — and it is the iteration-81 class again.** The
+transport tests asserted that `buildFetch({ ca: [...] })` *does not throw*. Nothing asserted it
+actually verifies anything. A `--ca` that quietly did what `--insecure` does would have passed
+every test in the repo, and is a genuine security failure: a user who reaches for `--ca` instead of
+`--insecure` is choosing verification, and would have got none.
+
+**Five tests against a real HTTPS server** with a real self-signed certificate: default rejects,
+`--insecure` accepts, `--ca <that cert>` accepts, a relative `--ca` path resolves against the
+working directory — and the one that makes the others mean anything:
+
+> **`--ca` naming a *different* certificate must still reject.**
+
+Without that control, "`--ca` passed" is consistent with `--ca` disabling verification. Checked by
+making it do exactly that: only the control turns red.
+
+`openssl` generates the fixture at test time rather than committing a private key to the repo, and
+the suite skips where `openssl` is absent — the same judgement as iteration 82's curl test.
+
+**And the cleared probe still left a gate**, since it costs nothing: three assertions that every
+documented flag is real, that every real flag is documented, and that the option sets were actually
+parsed (so neither check can pass vacuously). A misspelled flag in the docs and an undocumented new
+flag each turn one red.
+
+**Verification.** 1149 unit tests (8 new), coverage 95.90% lines / 87.87% branches / 96.67%
+functions, typecheck 8/8.
