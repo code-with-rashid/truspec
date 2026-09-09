@@ -18,9 +18,9 @@ Fetch a single pet by its id.
 
 **Asserts**
 
-- `{"type":"status","equals":200}`
-- `{"type":"jsonpath","path":"$.id","exists":true}`
-- `{"type":"duration","ltMs":1000}`
+- status is 200
+- `$.id` exists
+- responds in under 1000ms
 
 <details><summary>Example (cURL)</summary>
 

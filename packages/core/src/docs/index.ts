@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, relative, sep } from "node:path";
 import { generateCode } from "../codegen";
-import { parse } from "../format";
+import { describeAssertion, describeCaptureSource, parse } from "../format";
 import type { TruSpecRequest } from "../format/types";
 import { loadFolderChain } from "../workspace/context";
 import { discoverRequests } from "../workspace/discover";
@@ -121,14 +121,17 @@ function requestSection(
     out.push("**Body**", "", "```" + bodyFence(req.body.type), bodySample(req.body), "```", "");
   }
   if (req.assertions.length > 0) {
+    // In words, not as the internal object. This document is read by people who do not have the
+    // schema open — printing `{"type":"jsonpath","path":"$.id","exists":true}` asks them to parse
+    // it themselves, in the one artifact whose entire purpose is being readable.
     out.push("**Asserts**", "");
-    for (const a of req.assertions) out.push(`- \`${JSON.stringify(a)}\``);
+    for (const a of req.assertions) out.push(`- ${describeAssertion(a)}`);
     out.push("");
   }
   if (req.capture && Object.keys(req.capture).length > 0) {
     out.push("**Captures**", "");
     for (const [name, source] of Object.entries(req.capture)) {
-      out.push(`- \`{{${name}}}\` ← \`${typeof source === "string" ? source : JSON.stringify(source)}\``);
+      out.push(`- \`{{${name}}}\` ← ${describeCaptureSource(source)}`);
     }
     out.push("");
   }

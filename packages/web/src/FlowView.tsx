@@ -1,3 +1,4 @@
+import { describeAssertion } from "@truspec/core/format";
 import { type ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   type AssertionResult,
@@ -66,12 +67,6 @@ function edgeStatus(e: Edge, steps: FlowStep[], getResult: (path: string) => Run
   if (!producer) return "unrun";
   if (!producer.ok || producer.captured?.[e.name] === undefined) return "broken";
   return "ok";
-}
-
-function describeAssertion(a: Record<string, unknown>): string {
-  const { type: _type, ...rest } = a;
-  const parts = Object.entries(rest).map(([k, v]) => `${k}: ${JSON.stringify(v)}`);
-  return parts.join(", ") || "—";
 }
 
 function captureSourceText(source: unknown): string {
@@ -624,7 +619,9 @@ function FlowDetail({
 }) {
   const assertionRows: Array<{ ok?: boolean; text: string }> = result
     ? result.assertions.map((a: AssertionResult) => ({ ok: a.ok, text: `${a.type} — ${a.message}` }))
-    : (detail.assertions ?? []).map((a) => ({ text: `${String(a.type)} — ${describeAssertion(a)}` }));
+    // The same words `truspec docs` and the Postman export use, rather than a second rendering of
+    // the same object that reads differently.
+    : (detail.assertions ?? []).map((a) => ({ text: describeAssertion(a as never) }));
 
   return (
     <div className="flow-detail-inner">

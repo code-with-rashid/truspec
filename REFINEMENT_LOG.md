@@ -2704,3 +2704,48 @@ proof. Its own rule id means a team with fixtures that trip it can disable exact
 must stay silent are what decides whether a rule like this survives contact with a real
 collection), coverage 95.98% lines / 87.77% branches / 96.55% functions, typecheck 8/8, and the
 project's own `lint examples --strict` is still clean.
+
+### 76 — the documentation printed the object instead of the sentence
+
+**What I looked for.** `truspec docs` produces a Markdown file people commit and other people read.
+So I read one.
+
+```markdown
+**Asserts**
+
+- `{"type":"status","equals":201}`
+- `{"type":"jsonpath","path":"$.id","exists":true}`
+```
+
+That is the internal object, printed into the one artifact whose entire purpose is being read by
+someone who does not have the schema open. Captures were half the same: `{"header":"X-Id"}`.
+
+Every other surface already speaks: the run report says `status 200 satisfies == 200`, the Postman
+export names its tests, the flow view had its own third rendering. Three renderings of one thing,
+each written separately, and the one people commit was the raw JSON.
+
+**`describeAssertion` is now the shared one**, in `@truspec/core/format` — pure and
+dependency-free, so the browser client uses it too:
+
+```
+- status is 201
+- `$.id` exists
+- responds in under 1000ms
+- `$.n` ≥ 1 and ≤ 9
+- header `Content-Type` contains "json"
+- body matches the spec's response schema for status 201 as application/json
+```
+
+Conditions read as they combine (`is under 300 and is at least 200`), because a `jsonpath` with
+four constraints is AND-ed and should say so. An assertion carrying no condition — `{ type: header,
+name: X }` — still says something (`header \`X\` is present`) rather than trailing off; a test
+pins that, since "never produces an empty description" is the failure mode a table like this has.
+
+The Flow view's own version is deleted and calls this one: two surfaces describing the same
+assertion differently is how a reader learns to distrust both.
+
+**The committed example docs regenerate** into the new form, which the CI determinism gate then
+compares byte-for-byte — the gate that already existed for exactly this kind of change.
+
+**Verification.** 1063 unit tests (16 new) and 115 e2e, coverage 96.00% lines / 87.60% branches /
+96.59% functions, typecheck 8/8, `git diff --exit-code examples` clean after regeneration.
