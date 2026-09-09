@@ -1043,3 +1043,46 @@ hidden behind "CI is flaky" once in this campaign.
 (one scroll event destroyed the menu; the second test could not click a suggestion at all). 97 e2e
 now passing, 806 unit tests, coverage 95.60% lines / 87.72% branches / 96.56% functions, typecheck
 8/8, dogfood gates clean.
+
+### 35 — a desktop app that crashed instead of explaining
+
+**Gap.** The Tauri desktop app was the last surface this campaign had never opened. Its sidecar
+launcher — the code that starts the bundled Node server the whole window depends on — handled
+every failure with `.expect()`. Four of them: the bundled server script missing, the client assets
+missing, the `node` sidecar not declared, and the spawn itself failing.
+
+A panic there is not an error message. `start` runs from Tauri's `setup` hook and from a menu
+action, so a panicking sidecar means the user double-clicks the app and gets a window that never
+appears, or one that never navigates anywhere. The likeliest real causes — a bundled `node` that
+macOS quarantined, or one that lost its execute bit to an antivirus or a bad unzip — are precisely
+the ones a user cannot diagnose and would report as "it just doesn't open".
+
+`CommandEvent::Terminated` was worse: logged, and nothing else. A sidecar that dies on its own
+after a successful start left the window sitting on whatever it last showed, permanently, with no
+indication anything had happened.
+
+**Change.** Every failure path now shows an error dialog naming what is missing and what to do
+about it, and returns instead of unwinding. An unexpected sidecar exit reports itself the same way
+— guarded by a generation counter on `SidecarState`, so the two cases where the sidecar is killed
+*on purpose* (switching collections, quitting) stay silent. The dialog is shown non-blocking;
+`blocking_show` on the main thread deadlocks the event loop it waits on.
+
+**Second gap, found while reading.** "New Collection…" scaffolds `folder.tspec.yaml` in Rust, which
+cannot import the Zod schema, so `tspec: "0.1"` is a literal there. CLAUDE.md requires a
+`SCHEMA_VERSION` bump to ship a migration — but nothing connected that rule to this literal, and the
+crate is only compile-checked in CI, never run. A bump would have left the desktop app quietly
+stamping the old version onto every collection it creates. There is now a test that reads the Rust
+source and asserts every version it stamps equals `SCHEMA_VERSION`; confirmed failing when the
+literal is changed to `0.2`.
+
+**Third gap.** CI built the desktop crate but never tested it, and there was nothing to test.
+Added three Rust unit tests for the scaffolder (fresh directory, existing files left alone, and a
+directory name containing a quote and a colon — the case the JSON-escaping trick exists for), plus
+the `cargo test` step that runs them, staged after the sidecar so the build script has what it
+needs.
+
+**Verification.** `cargo check` and `cargo test` clean (3/3) against a locally installed
+webkit2gtk/GTK toolchain, 807 unit tests, coverage 95.60% lines / 87.72% branches / 96.56%
+functions, typecheck 8/8, dogfood gates clean. The dialog paths are compile-verified but not
+runtime-exercised — they need a bundled app and a display, which neither this environment nor CI
+provides.
