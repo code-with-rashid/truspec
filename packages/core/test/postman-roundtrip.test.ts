@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -81,5 +81,39 @@ describe("a collection survives a Postman round-trip", () => {
     for (const { name, req } of requestsIn(out)) {
       expect(req.script?.post, `script kept for "${name}"`).toBeUndefined();
     }
+  });
+
+  it("carries the chain through Postman and back", () => {
+    // The capture is the part of a collection that is hardest to rebuild by hand, and both
+    // directions used to drop it: the export handed over a login that checked the response and
+    // threw the token away, and the import turned pm.environment.set into a comment.
+    const src = mkdtempSync(join(tmpdir(), "tspec-chain-"));
+    dirs.push(src);
+    writeFileSync(
+      join(src, "login.tspec.yaml"),
+      [
+        'tspec: "0.1"',
+        "name: Login",
+        "method: POST",
+        'url: "https://api.test/login"',
+        "assertions:",
+        "  - { type: status, equals: 200 }",
+        "capture:",
+        '  token: "$.access_token"',
+        "  rid: { header: X-Request-Id }",
+        "  code: { status: true }",
+        "",
+      ].join("\n"),
+    );
+    const out = mkdtempSync(join(tmpdir(), "tspec-chain-out-"));
+    dirs.push(out);
+    writeImport(importPostman(exportPostman(src).collection), out);
+    const [back] = requestsIn(out);
+    expect(back?.req.capture).toEqual({
+      token: "$.access_token",
+      rid: { header: "X-Request-Id" },
+      code: { status: true },
+    });
+    expect(back?.req.script?.post).toBeUndefined();
   });
 });

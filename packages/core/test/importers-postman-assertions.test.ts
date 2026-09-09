@@ -111,3 +111,83 @@ pm.response.to.have.status(200);
     ]);
   });
 });
+
+describe("the chain a Postman collection is built on", () => {
+  // `pm.environment.set("token", jsonData.access_token)` is how every Postman collection passes a
+  // login's token to the requests after it. It was imported as a commented-out script: the login
+  // ran, nothing was saved, and every request after it interpolated a variable that never existed.
+  it("recovers captures from the four ways Postman sets a variable", () => {
+    const { capture, complete } = assertionsFromPostmanTest(
+      [
+        "const jsonData = pm.response.json();",
+        'pm.environment.set("token", jsonData.access_token);',
+        'pm.collectionVariables.set("userId", jsonData.user.id);',
+        'pm.globals.set("reqId", pm.response.headers.get("X-Request-Id"));',
+        'pm.variables.set("code", pm.response.code);',
+      ].join("\n"),
+    );
+    expect(capture).toEqual({
+      token: "$.access_token",
+      userId: "$.user.id",
+      reqId: { header: "X-Request-Id" },
+      code: { status: true },
+    });
+    expect(complete).toBe(true);
+  });
+
+  it("reads the other shapes a path is written in", () => {
+    const { capture } = assertionsFromPostmanTest(
+      [
+        'pm.environment.set("a", pm.response.json().data.items[0].id);',
+        'pm.environment.set("b", _.get(json, "user.name"));',
+        'pm.environment.set("c", json["first"].second);',
+      ].join("\n"),
+    );
+    expect(capture).toEqual({
+      a: "$.data.items[0].id",
+      b: "$.user.name",
+      c: "$.first.second",
+    });
+  });
+
+  it("leaves a computed value to the human instead of guessing", () => {
+    const { capture, complete } = assertionsFromPostmanTest(
+      'pm.environment.set("n", jsonData.items.length + 1);',
+    );
+    expect(capture).toEqual({});
+    expect(complete).toBe(false);
+  });
+
+  it("does not read an unrelated local as a response path", () => {
+    const { capture, complete } = assertionsFromPostmanTest(
+      ["const cfg = { id: 1 };", 'pm.environment.set("x", cfg.id);'].join("\n"),
+    );
+    expect(capture).toEqual({});
+    expect(complete).toBe(false);
+  });
+
+  it("converts a single-line pm.test wrapper", () => {
+    // As common as the block form, and skipped entirely: the line starts with `pm.test(`, which
+    // the structural check treated as an opening brace with nothing in it.
+    const { assertions, complete } = assertionsFromPostmanTest(
+      'pm.test("status is 200", function () { pm.response.to.have.status(200); });',
+    );
+    expect(assertions).toEqual([{ type: "status", equals: 200 }]);
+    expect(complete).toBe(true);
+  });
+
+  it("converts an arrow-function one-liner too", () => {
+    const { assertions } = assertionsFromPostmanTest(
+      'pm.test("fast", () => { pm.expect(pm.response.responseTime).to.be.below(500); });',
+    );
+    expect(assertions).toEqual([{ type: "duration", ltMs: 500 }]);
+  });
+
+  it("still reports a one-liner it cannot convert", () => {
+    const { assertions, complete } = assertionsFromPostmanTest(
+      'pm.test("weird", function () { pm.expect(somethingElse()).to.be.ok; });',
+    );
+    expect(assertions).toEqual([]);
+    expect(complete).toBe(false);
+  });
+});

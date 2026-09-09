@@ -2152,3 +2152,55 @@ now both survive; `kvLines` stays a map for the blocks where a repeated key real
 functions, typecheck 8/8, docs updated and building. The first coverage run failed the functions
 threshold at 95.11% — the operator table is a lot of small functions — which is the gate doing its
 job: the table is now covered entry by entry rather than sampled.
+
+### 63 — the same missing chain, in the format most people arrive from
+
+**Straight after 62.** If the Bruno importer dropped the capture, what does the Postman one do? A
+two-request collection — login with a test script, then an authenticated call — imported as:
+
+```yaml
+assertions: []
+script:
+  post: |
+    // Ported from Postman — rewrite using TruSpec's tr API
+    // pm.test("status is 200", function () { pm.response.to.have.status(200); });
+    // const jsonData = pm.response.json();
+    // pm.environment.set("token", jsonData.access_token);
+```
+
+Both halves lost. `pm.environment.set` is *the* Postman chaining idiom — it is how every collection
+in existence passes a login's token to the requests after it — and it became a comment. And the
+assertion was skipped too, because the whole `pm.test(…)` was written on one line: the structural
+check treats a line starting with `pm.test(` as an opening brace with nothing in it, which is true
+of the block form and false of the one-liner.
+
+**Both fixed.** `pm.environment.set` / `collectionVariables.set` / `globals.set` / `variables.set`
+convert to `capture`, reading the four shapes a value is written in — `jsonData.a.b`,
+`pm.response.json().a.b`, `_.get(json, "a.b")`, `json["a"].b` — plus `pm.response.headers.get(…)`
+and `pm.response.code`. A computed right-hand side (`jsonData.items.length + 1`) is left to the
+human, and a local that was never bound to the response body is not read as one. One-line
+`pm.test` wrappers, `function ()` and arrow alike, are unwrapped before the structural check.
+
+Same collection now:
+
+```yaml
+assertions:
+  - type: status
+    equals: 200
+capture:
+  token: $.access_token
+  userId: $.user.id
+  reqId:
+    header: X-Request-Id
+```
+
+— and the commented script is gone, because everything in it was understood.
+
+**Then the other direction.** With the importer reading `pm.environment.set`, the exporter's
+silence about `capture` became the remaining half of the same hole: `truspec` → Postman handed over
+a login that checks the response and throws the token away. It now emits a `pm.test("capture", …)`
+block, so the round trip preserves the chain exactly — asserted as such: export, re-import, and the
+`capture` block comes back identical, with no leftover script.
+
+**Verification.** 976 unit tests (8 new, including the round trip), coverage 96.04% lines / 87.74%
+branches / 96.42% functions, typecheck 8/8, docs updated and building.

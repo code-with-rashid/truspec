@@ -1,4 +1,4 @@
-import type { TruSpecAssertion } from "../format/types";
+import type { TruSpecAssertion, TruSpecRequest } from "../format/types";
 
 /** A JSONPath simple enough to express with lodash `_.get`, which is what Postman ships. */
 const SIMPLE_JSONPATH = /^\$(\.[A-Za-z_$][\w$]*|\[\d+\]|\["[^"\\]*"\])*$/;
@@ -147,5 +147,41 @@ export function assertionsToPostmanTest(
     if (body.length === 0) continue;
     lines.push(`pm.test(${js(label(a))}, function () {`, ...body, "});");
   }
+  return lines;
+}
+
+/**
+ * `capture:` as the `pm.environment.set(...)` lines Postman chains requests with.
+ *
+ * Exporting the assertions but not the captures hands over a collection whose login checks the
+ * response and then throws the token away, so every request after it fails on an unset variable.
+ * The chain is the part of a collection that is hardest to rebuild by hand.
+ */
+export function capturesToPostmanTest(
+  capture: TruSpecRequest["capture"],
+  requestName: string,
+  warn: (message: string) => void,
+): string[] {
+  const entries = Object.entries(capture ?? {});
+  if (entries.length === 0) return [];
+  const lines: string[] = [];
+  const sets: string[] = [];
+  for (const [name, source] of entries) {
+    if (typeof source === "string" || (typeof source === "object" && "jsonpath" in source)) {
+      const path = typeof source === "string" ? source : source.jsonpath;
+      if (!SIMPLE_JSONPATH.test(path)) {
+        warn(`"${requestName}": capture \`${name}\` uses a jsonpath too complex for a Postman test`);
+        continue;
+      }
+      sets.push(`  pm.environment.set(${js(name)}, ${accessor(path)});`);
+    } else if ("header" in source) {
+      sets.push(`  pm.environment.set(${js(name)}, pm.response.headers.get(${js(source.header)}));`);
+    } else if ("status" in source) {
+      sets.push(`  pm.environment.set(${js(name)}, pm.response.code);`);
+    }
+  }
+  if (sets.length === 0) return [];
+  // `json` is what the assertion lines above already bind; declare it only if nothing else did.
+  lines.push("pm.test(\"capture\", function () {", "  const json = pm.response.json();", ...sets, "});");
   return lines;
 }

@@ -215,6 +215,14 @@ function convertRequest(item: Record<string, unknown>, warnings: string[]): TruS
       `"${name}": recovered ${recovered.assertions.length} assertion(s) from the Postman test script`,
     );
   }
+  if (recovered && Object.keys(recovered.capture).length > 0) {
+    // `pm.environment.set("token", jsonData.access_token)` is how every Postman collection chains
+    // a login into the requests after it. Left as a comment, the import ran but saved nothing.
+    out.capture = recovered.capture;
+    warnings.push(
+      `"${name}": recovered ${Object.keys(recovered.capture).length} capture(s) from the Postman test script`,
+    );
+  }
   const keepPost = scripts.post !== undefined && !recovered?.complete;
   if (scripts.pre || keepPost) {
     out.script = { ...(scripts.pre ? { pre: scripts.pre } : {}), ...(keepPost ? { post: scripts.post } : {}) };

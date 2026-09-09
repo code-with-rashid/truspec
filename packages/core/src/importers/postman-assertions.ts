@@ -153,6 +153,52 @@ const RULES: Rule[] = [
   },
 ];
 
+/** A capture source, in the shape `capture:` accepts. */
+type CaptureSource = string | { header: string } | { status: true };
+
+/**
+ * The `pm.*.set(name, value)` calls a Postman test script uses to chain requests.
+ *
+ * This is how every Postman collection passes a token from a login to the calls that follow, and
+ * it was imported as a commented-out script — so the login ran, nothing was saved, and every
+ * request after it interpolated a variable that did not exist. TruSpec has `capture:` for exactly
+ * this, and the common forms convert mechanically.
+ */
+const SET_RE = new RegExp(
+  `pm\\.(?:environment|collectionVariables|globals|variables)\\.set\\(\\s*${QUOTED}\\s*,\\s*([^;]+?)\\s*\\)\\s*;?\\s*$`,
+);
+
+/** Turn the right-hand side of a `set(...)` into a capture source, or `undefined` if it is code. */
+function captureSourceOf(expr: string, jsonVars: ReadonlySet<string>): CaptureSource | undefined {
+  const text = expr.trim();
+  const header = new RegExp(`^pm\\.response\\.headers\\.get\\(\\s*${QUOTED}\\s*\\)$`).exec(text);
+  if (header) return { header: header[1] ?? header[2] ?? "" };
+  if (text === "pm.response.code" || text === "pm.response.status") return { status: true };
+
+  const lodash = new RegExp(`^_\\.get\\(\\s*(\\w+)\\s*,\\s*${QUOTED}\\s*\\)$`).exec(text);
+  if (lodash && (jsonVars.has(lodash[1] ?? "") || lodash[1] === "pm")) {
+    return toJsonPath(lodash[2] ?? lodash[3] ?? "");
+  }
+
+  // `jsonData.access_token`, `pm.response.json().user.id`, `json["a"].b`
+  const chain = /^(?:(\w+)|pm\.response\.json\(\))((?:\.[A-Za-z_$][\w$]*|\[\d+\]|\["[^"]+"\])*)$/.exec(text);
+  if (!chain) return undefined;
+  const root = chain[1];
+  if (root !== undefined && !jsonVars.has(root)) return undefined;
+  return toJsonPath((chain[2] ?? "").replace(/\["([^"]+)"\]/g, ".$1"));
+}
+
+/** Names bound to `pm.response.json()` in this script, so `jsonData.x` can be read as a path. */
+function jsonVariables(script: string): Set<string> {
+  const names = new Set<string>();
+  for (const m of script.matchAll(/(?:const|let|var)\s+(\w+)\s*=\s*pm\.response\.json\(\)/g)) {
+    if (m[1]) names.add(m[1]);
+  }
+  // The conventional names, so a script that uses one without declaring it still reads.
+  for (const n of ["json", "jsonData", "data", "body", "responseJson"]) names.add(n);
+  return names;
+}
+
 /** Lines that carry no assertion and whose absence means nothing was lost. */
 function isStructural(line: string): boolean {
   const t = line.trim();
@@ -168,6 +214,8 @@ function isStructural(line: string): boolean {
 
 export interface RecoveredAssertions {
   assertions: TruSpecAssertion[];
+  /** `capture:` entries recovered from `pm.environment.set(...)` and friends. */
+  capture: Record<string, CaptureSource>;
   /** True when every non-structural line was understood, so keeping the script adds nothing. */
   complete: boolean;
 }
@@ -175,13 +223,29 @@ export interface RecoveredAssertions {
 /** Extract the assertions a Postman test script expresses, and say whether anything was left over. */
 export function assertionsFromPostmanTest(script: string): RecoveredAssertions {
   const assertions: TruSpecAssertion[] = [];
+  const capture: Record<string, CaptureSource> = {};
+  const jsonVars = jsonVariables(script);
   let leftover = false;
 
   for (const rawLine of script.split("\n")) {
-    if (isStructural(rawLine)) continue;
+    // Unwrap before the structural check: a one-line `pm.test("name", function () { … });` is as
+    // common as the block form, and `isStructural` skipped the whole line as a `pm.test(` opener,
+    // taking the assertion inside it with it.
+    const line = unwrapOneLineTest(rawLine);
+    if (line === "" || isStructural(line)) continue;
+
+    const set = line.match(SET_RE);
+    if (set) {
+      const source = captureSourceOf(set[3] ?? "", jsonVars);
+      const name = set[1] ?? set[2] ?? "";
+      if (source !== undefined && name) capture[name] = source;
+      else leftover = true;
+      continue;
+    }
+
     let matched = false;
     for (const rule of RULES) {
-      const m = rawLine.match(rule.re);
+      const m = line.match(rule.re);
       if (!m) continue;
       const built = rule.build(m);
       if (built) {
@@ -192,5 +256,17 @@ export function assertionsFromPostmanTest(script: string): RecoveredAssertions {
     }
     if (!matched) leftover = true;
   }
-  return { assertions, complete: assertions.length > 0 && !leftover };
+  const recovered = assertions.length > 0 || Object.keys(capture).length > 0;
+  return { assertions, capture, complete: recovered && !leftover };
+}
+
+/**
+ * The inside of a single-line `pm.test("…", function () { … });`, or the line unchanged.
+ *
+ * Returns `""` for a wrapper with nothing but structure inside it, which is not a loss.
+ */
+function unwrapOneLineTest(line: string): string {
+  const m = /^\s*pm\.test\s*\(.*?(?:function\s*\([^)]*\)|\([^)]*\)\s*=>)\s*\{(.*)\}\s*\)\s*;?\s*$/.exec(line);
+  if (!m) return line;
+  return (m[1] ?? "").trim();
 }

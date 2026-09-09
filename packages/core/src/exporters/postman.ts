@@ -4,7 +4,7 @@ import { parse } from "../format";
 import type { TruSpecAuth, TruSpecBody, TruSpecRequest } from "../format/types";
 import { discoverRequests } from "../workspace/discover";
 import { toPosixPath } from "../workspace/paths";
-import { assertionsToPostmanTest } from "./postman-tests";
+import { assertionsToPostmanTest, capturesToPostmanTest } from "./postman-tests";
 
 export interface ExportResult {
   collection: Record<string, unknown>;
@@ -128,6 +128,7 @@ function convertEvents(req: TruSpecRequest, warn: (message: string) => void): un
     events.push({ listen: "prerequest", script: { type: "text/javascript", exec: req.script.pre.split("\n") } });
   }
   const test = [...assertionsToPostmanTest(req.assertions, req.name, warn)];
+  test.push(...capturesToPostmanTest(req.capture, req.name, warn));
   if (req.script?.post) test.push(...req.script.post.split("\n"));
   if (test.length > 0) {
     events.push({ listen: "test", script: { type: "text/javascript", exec: test } });

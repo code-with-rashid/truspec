@@ -184,6 +184,10 @@ The importer maps the common surface of each format onto TruSpec's
   `res.headers['name']`. Two constraints on the same field both survive.
 - **Bruno `vars:post-response`** — becomes [`capture`](./file-format.md#chaining-with-capture),
   so a login that saves a token still saves it and the chain still runs.
+- **Postman `pm.test(...)` assertions and `pm.environment.set(...)` captures** — the common idioms
+  convert to assertions and [`capture`](./file-format.md#chaining-with-capture). Export puts them
+  back as `pm.test` and `pm.environment.set`, so a collection survives the round trip with its
+  chain intact.
 
 Everything is run through the schema and **validated before it's written**, so an import
 never produces a file that won't parse.
