@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { buildFetch, mergeTransport, transportFromEnv } from "../src/transport";
+import { buildFetch, bypassesProxy, mergeTransport, transportFromEnv } from "../src/transport";
 
 let dir: string;
 beforeEach(() => {
@@ -81,5 +81,61 @@ describe("buildFetch", () => {
 
   it("reports a missing certificate file rather than failing later at connect time", () => {
     expect(() => buildFetch({ ca: ["nope.pem"] }, dir)).toThrow(/ENOENT|no such file/i);
+  });
+});
+
+describe("bypassesProxy", () => {
+  it("bypasses an exact host, and a subdomain of a bare suffix entry", () => {
+    expect(bypassesProxy("http://127.0.0.1:3000/x", "127.0.0.1")).toBe(true);
+    expect(bypassesProxy("https://api.example.com/x", "example.com")).toBe(true);
+    expect(bypassesProxy("https://example.com/x", "example.com")).toBe(true);
+    expect(bypassesProxy("https://api.example.com/x", ".example.com")).toBe(true);
+  });
+
+  it("matches on a label boundary, so a lookalike host is still proxied", () => {
+    // The bug a naive `endsWith` gives you: notexample.com is a different company.
+    expect(bypassesProxy("https://notexample.com/x", "example.com")).toBe(false);
+    expect(bypassesProxy("https://example.com.evil.net/x", "example.com")).toBe(false);
+  });
+
+  it("honours `*` as bypass-everything", () => {
+    expect(bypassesProxy("https://anything.at.all/x", "*")).toBe(true);
+  });
+
+  it("respects a port pinned on the entry", () => {
+    expect(bypassesProxy("http://localhost:3000/x", "localhost:3000")).toBe(true);
+    expect(bypassesProxy("http://localhost:4000/x", "localhost:3000")).toBe(false);
+    // A default port counts as the port.
+    expect(bypassesProxy("https://internal.corp/x", "internal.corp:443")).toBe(true);
+    expect(bypassesProxy("http://internal.corp/x", "internal.corp:80")).toBe(true);
+  });
+
+  it("is case-insensitive and tolerates whitespace and empty entries", () => {
+    expect(bypassesProxy("https://API.Example.COM/x", " example.com , ")).toBe(true);
+    expect(bypassesProxy("https://api.example.com/x", ",,")).toBe(false);
+  });
+
+  it("proxies when there is no list, and never throws on a malformed URL", () => {
+    expect(bypassesProxy("https://example.com/x", undefined)).toBe(false);
+    expect(bypassesProxy("https://example.com/x", "")).toBe(false);
+    expect(bypassesProxy("not a url", "example.com")).toBe(false);
+  });
+
+  it("handles a bracketed IPv6 host", () => {
+    expect(bypassesProxy("http://[::1]:8080/x", "::1")).toBe(true);
+    expect(bypassesProxy("http://[::1]:8080/x", "[::1]")).toBe(true);
+  });
+});
+
+describe("transportFromEnv reads the bypass list", () => {
+  it("picks up NO_PROXY, no_proxy and TRUSPEC_NO_PROXY", () => {
+    expect(transportFromEnv({ NO_PROXY: "a.com" }).noProxy).toBe("a.com");
+    expect(transportFromEnv({ no_proxy: "b.com" }).noProxy).toBe("b.com");
+    // The namespaced one wins, same as TRUSPEC_PROXY does for the proxy itself.
+    expect(transportFromEnv({ TRUSPEC_NO_PROXY: "c.com", NO_PROXY: "a.com" }).noProxy).toBe("c.com");
+  });
+
+  it("leaves it unset when the environment says nothing", () => {
+    expect(transportFromEnv({}).noProxy).toBeUndefined();
   });
 });

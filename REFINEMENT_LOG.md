@@ -1304,3 +1304,49 @@ feeding it a report with no `unasserted` at all. 837 unit tests, 97 e2e, 19 VS C
 **Also probed and cleared.** Drift correctly reports a renamed path parameter (`{id}` -> `{petId}`)
 as one stale and one untracked operation. Noisy for a rename, but not wrong — they are genuinely
 different operation keys, and silently pairing them up would hide a real spec change.
+
+### 42 — a proxy with no way out, found by a harness that could not reach its own server
+
+**What I set out to do.** Verify `codegen`. Seventeen targets is a lot of surface, and a snippet
+that doesn't send what the engine sends is the classic defect there. Syntax-checking is not enough,
+so I built a differential harness: an echo server, a request loaded with everything that stresses
+escaping (a header holding `he said "hi" and \ that`, query values `a&b=c d` and `it's`, a JSON
+body with `Say "hello"`, `C:\temp\x`, `$100 \`tick\``, and `héllo → 世界`), then run the engine
+and each snippet against it and compare what actually arrived.
+
+**Codegen came back clean**, which is worth recording as a result rather than a non-event. Across
+curl, wget, python-requests, ruby, php and JS: method, path, both query parameters, the
+backslash-and-quote header and every body value arrive byte-identical to the engine. The only
+differences are that snippets pretty-print their JSON (semantically identical, and nicer to read in
+a snippet), python's `json.dumps` escapes non-ASCII by default, and undici adds `accept-language`
+and `sec-fetch-mode` of its own that no other client sends. `javascript-fetch` is byte-identical.
+
+**The bug was in the harness's own failure.** The engine could not reach the echo server on
+`127.0.0.1`, even with `NO_PROXY=127.0.0.1` set. That was not a harness problem:
+`transportFromEnv` reads `HTTPS_PROXY`/`HTTP_PROXY` — added in iteration 26 — and **never reads
+`NO_PROXY`**. Once a proxy is in the environment, every request goes through it, including
+localhost, with no way to opt out. Proven both directions: with the proxy set and `NO_PROXY` set
+the local server is never reached; with the proxy variables removed it is.
+
+That is a developer behind a corporate proxy being unable to run TruSpec against their own dev
+server, using the escape hatch curl, wget, git, Go and Python all honour. It also explains a `405`
+I had written off as a sandbox artifact several iterations ago.
+
+**Change.** `NO_PROXY`/`no_proxy`/`TRUSPEC_NO_PROXY` are honoured, and `--no-proxy` added to `run`
+and `serve` alongside `--proxy`. The dispatcher choice moved from once-per-run to **per request**,
+because that is what the feature means: the dev server on localhost goes direct while everything
+else still goes through the proxy. Matching follows the curl/wget convention — `*` bypasses
+everything, an entry may be a host, a `.suffix` or a `host:port`, and a bare suffix matches on a
+label boundary.
+
+**A bug in my own first implementation.** Detecting a pinned port as "text after the last colon"
+is wrong for IPv6: `::1` parses as host `:` on port `1`, so the entry silently never matches. The
+test I wrote for bracketed IPv6 caught it before the commit; only a bracketed address or a
+single-colon name carries a port.
+
+**Verification.** 9 new tests covering the label-boundary case (`example.com` must not bypass
+`notexample.com`), `*`, pinned and default ports, case and whitespace, a malformed URL, IPv6 in
+both forms, and the three environment variables. Then end to end against a real local server:
+`NO_PROXY`, `--no-proxy 127.0.0.1` and `--no-proxy '*'` all reach it, and with no bypass the
+request still goes to the proxy — the proxy itself still works. 846 unit tests, 97 e2e, coverage
+95.75% lines / 87.68% branches / 96.64% functions, typecheck 8/8, dogfood gates clean.

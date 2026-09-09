@@ -102,6 +102,7 @@ truspec run <path> [--env <name>] [--spec <openapi>] [--var k=v] [--grep <re>] [
 | `--watch` | `-w` | Re-run whenever a request, environment, `.env` or spec file changes. |
 | `--insecure` | `-k` | Skip TLS certificate verification (warns on stderr). |
 | `--proxy <url>` | | Route requests through a proxy. |
+| `--no-proxy <list>` | | Hosts that bypass `--proxy`, in `NO_PROXY` syntax. |
 | `--ca <file>` | | Trust an extra CA certificate. Repeatable. |
 | `--client-cert <file>` | | Client certificate for mutual TLS. |
 | `--client-key <file>` | | Client key for mutual TLS. |
@@ -161,11 +162,18 @@ needed. curl, git and every CI tool draw the line in the same place.
 ```bash
 truspec run ./api --env staging --ca ./corp-root.pem
 truspec run ./api --proxy http://proxy.corp:8080
+truspec run ./api --proxy http://proxy.corp:8080 --no-proxy localhost,127.0.0.1,.internal
 truspec run ./api --client-cert ./client.pem --client-key ./client.key
 ```
 
-`TRUSPEC_PROXY`, `HTTPS_PROXY`/`HTTP_PROXY` and `NODE_EXTRA_CA_CERTS` are read from the
-environment so CI can configure them once; an explicit flag wins per field.
+`TRUSPEC_PROXY`, `HTTPS_PROXY`/`HTTP_PROXY`, `TRUSPEC_NO_PROXY`/`NO_PROXY` and
+`NODE_EXTRA_CA_CERTS` are read from the environment so CI can configure them once; an explicit
+flag wins per field.
+
+The bypass list follows the convention curl and wget use: a comma-separated list where `*` means
+never proxy, an entry may be a host, a `.suffix`, or a `host:port`, and a bare suffix matches on a
+label boundary (`example.com` covers `api.example.com`, never `notexample.com`). It is what makes
+your own dev server on `localhost` reachable while everything else still goes through the proxy.
 The same flags and variables are accepted by [`serve`](#serve), so the web UI reaches the same
 hosts the CLI does.
 `NODE_TLS_REJECT_UNAUTHORIZED` is deliberately **not** honored — turning off verification should
@@ -662,7 +670,7 @@ engine (no CORS), and the UI is served from `@truspec/web`. See
 
 ```
 truspec serve [--dir <collection>] [--port <n>]
-             [--insecure] [--proxy <url>] [--ca <file>]
+             [--insecure] [--proxy <url>] [--no-proxy <list>] [--ca <file>]
              [--client-cert <file>] [--client-key <file>] [--client-key-passphrase <s>]
 ```
 

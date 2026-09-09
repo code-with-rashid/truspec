@@ -28,6 +28,7 @@ export async function runCommand(argv: string[], deps: Partial<CommandDeps> = {}
     watch: { type: "boolean", short: "w" },
     insecure: { type: "boolean", short: "k" },
     proxy: { type: "string" },
+    "no-proxy": { type: "string" },
     ca: { type: "string", multiple: true },
     "client-cert": { type: "string" },
     "client-key": { type: "string" },
@@ -52,6 +53,7 @@ export async function runCommand(argv: string[], deps: Partial<CommandDeps> = {}
     watch?: boolean;
     insecure?: boolean;
     proxy?: string;
+    "no-proxy"?: string;
     ca?: string[];
     "client-cert"?: string;
     "client-key"?: string;
@@ -95,6 +97,7 @@ export async function runCommand(argv: string[], deps: Partial<CommandDeps> = {}
       mergeTransport(transportFromEnv(d.processEnv), {
         insecure: values.insecure,
         proxy: values.proxy,
+        noProxy: values["no-proxy"],
         ca: values.ca,
         clientCert: values["client-cert"],
         clientKey: values["client-key"],
