@@ -171,7 +171,7 @@ it:
   ├─ importers   Postman v2.1 + Bruno → .tspec.yaml
   └─ mock        local mock server generated from a spec
 truspec              — the CLI
-@truspec/mcp-server  — the agent surface (11 MCP tools)
+@truspec/mcp-server  — the agent surface (23 MCP tools)
 @truspec/web         — the local web UI (truspec serve)
 ```
 

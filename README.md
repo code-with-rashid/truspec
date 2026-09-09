@@ -141,7 +141,7 @@ Tools exposed: `truspec_list_collections`, `truspec_run_request`, `truspec_run_c
   ├─ importers   Postman v2.1 + Bruno → .tspec.yaml
   └─ mock        local mock server generated from a spec
 truspec              — the CLI (run / drift / coverage / contract / gen / import / mock / serve)
-@truspec/mcp-server  — the agent surface (10 MCP tools)
+@truspec/mcp-server  — the agent surface (23 MCP tools)
 @truspec/web         — the web UI + local server (truspec serve)
 ```
 
@@ -175,7 +175,7 @@ The CLI runs on Node ≥ 22. A Bun-compiled single binary for zero-install distr
 
 ## Status & roadmap
 
-**Shipped:** format + JSON Schema · runner (REST + GraphQL, auth, request chaining/capture, **pre-/post-request scripts**) · CLI (`run` [+ JUnit], `drift`, `coverage`, `contract`, `gen`, `import`, `mock`, `serve`) · OpenAPI drift (added/removed/**changed** + **`--live`** API probe) + coverage + **response contract validation** (`{ type: schema }` · `run --spec` · `contract`) · **local mock server** (latency + **request validation**) · `.env` + secrets (**masked in run output**) · Postman/Bruno import · MCP server (11 tools) · **web UI** (`truspec serve`, with a **Flow view** for visualizing + running request chains as a graph) · **installable desktop app** (Tauri; unsigned installers for Windows/macOS/Linux — see [Download](#download)) · **VS Code extension** (CodeLens + results view, pre-release).
+**Shipped:** format + JSON Schema · runner (REST + GraphQL, auth, request chaining/capture, **pre-/post-request scripts**) · CLI (`run` [+ JUnit], `drift`, `coverage`, `contract`, `gen`, `import`, `mock`, `serve`) · OpenAPI drift (added/removed/**changed** + **`--live`** API probe) + coverage + **response contract validation** (`{ type: schema }` · `run --spec` · `contract`) · **local mock server** (latency + **request validation**) · `.env` + secrets (**masked in run output**) · Postman/Bruno import · MCP server (23 tools) · **web UI** (`truspec serve`, with a **Flow view** for visualizing + running request chains as a graph) · **installable desktop app** (Tauri; unsigned installers for Windows/macOS/Linux — see [Download](#download)) · **VS Code extension** (CodeLens + results view, pre-release).
 **Next:** publish to the Marketplace · **Bun single-binary** distribution · **in-UI request editing**.
 
 Deferred by design (not bloat): hosted dashboards, visual flow builders, exotic protocols, mandatory cloud sync.

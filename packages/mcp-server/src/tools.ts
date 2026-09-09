@@ -1,8 +1,8 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
 import { CODEGEN_TARGETS, codegenTargetIds, generateCode } from "@truspec/core/codegen";
 import { collectionDocs } from "@truspec/core/docs";
-import { parse } from "@truspec/core/format";
+import { buildJsonSchemas, parse, SCHEMA_VERSION } from "@truspec/core/format";
 import {
   contractReport,
   coverageReport,
@@ -67,6 +67,57 @@ export async function runCollectionTool(ctx: ToolContext, dir: string, env?: str
   return runPath(resolve(ctx.cwd, dir), { env, cwd: ctx.cwd, fetch: ctx.fetch });
 }
 
+/**
+ * Read one request: the parsed object *and* the raw YAML.
+ *
+ * `truspec_update_request` merges its patch one level deep, so patching `headers` replaces the
+ * whole map rather than adding to it. Without a way to read a request first, an agent could only
+ * patch safely by already knowing every field it wasn't changing — which is to say, not safely.
+ */
+export function readRequest(ctx: ToolContext, path: string) {
+  const abs = confinePath(ctx.cwd, path);
+  if (!existsSync(abs)) return { ok: false as const, error: `Not found: ${path}` };
+  const raw = readFileSync(abs, "utf8");
+  const result = parse.request.safeParse(raw);
+  if (!result.ok || !result.data) return { ok: false as const, path: relative(ctx.cwd, abs), error: result.error, raw };
+  return { ok: true as const, path: relative(ctx.cwd, abs), request: result.data, raw };
+}
+
+/**
+ * Check a request object against the schema without writing anything.
+ *
+ * The errors name the key a typo was probably meant to be, so a failed validation is a correction
+ * rather than a rejection — which is the difference between an agent converging and an agent
+ * guessing again.
+ */
+export function validateRequest(request: unknown) {
+  const result = parse.request.validate(request);
+  return result.ok ? { ok: true as const } : { ok: false as const, error: result.error };
+}
+
+export function deleteRequest(ctx: ToolContext, path: string) {
+  const abs = confinePath(ctx.cwd, path);
+  if (!existsSync(abs)) return { ok: false as const, error: `Not found: ${path}` };
+  // Only ever a request file: an agent that mistypes a path must not be able to remove a spec, an
+  // environment, or anything else that happens to sit in the workspace.
+  if (!abs.endsWith(".tspec.yaml")) {
+    return { ok: false as const, error: `Refusing to delete a file that is not a .tspec.yaml request: ${path}` };
+  }
+  rmSync(abs);
+  return { ok: true as const, path: relative(ctx.cwd, abs) };
+}
+
+/**
+ * The published JSON Schema for a file kind, so an agent connecting to this server can learn the
+ * format from the server rather than from whatever it remembers about it.
+ */
+export function formatReference(kind: "request" | "folder" | "environment" = "request") {
+  // Generated from the Zod schema that actually validates, not read off disk: a reference that can
+  // drift from the validator is worse than none, and the package layout differs between a source
+  // checkout and an install.
+  return { kind, version: SCHEMA_VERSION, schema: buildJsonSchemas()[`${kind}.schema.json`] };
+}
+
 export function createRequest(ctx: ToolContext, path: string, request: unknown) {
   const validation = parse.request.validate(request);
   if (!validation.ok || !validation.data) return { ok: false as const, error: validation.error };
@@ -76,11 +127,22 @@ export function createRequest(ctx: ToolContext, path: string, request: unknown) 
   return { ok: true as const, path: relative(ctx.cwd, abs) };
 }
 
+/**
+ * Merge a patch into a request, one level deep.
+ *
+ * `null` removes a key — otherwise there is no way to clear an optional field through a merge, and
+ * an agent that wanted to drop `auth` would have to delete and recreate the file.
+ */
 export function updateRequest(ctx: ToolContext, path: string, patch: Record<string, unknown>) {
   const abs = confinePath(ctx.cwd, path);
   if (!existsSync(abs)) return { ok: false as const, error: `Not found: ${path}` };
   const current = parse.request.parse(readFileSync(abs, "utf8"));
-  const validation = parse.request.validate({ ...current, ...patch });
+  const merged: Record<string, unknown> = { ...current };
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === null) delete merged[key];
+    else merged[key] = value;
+  }
+  const validation = parse.request.validate(merged);
   if (!validation.ok || !validation.data) return { ok: false as const, error: validation.error };
   writeFileSync(abs, parse.request.serialize(validation.data));
   return { ok: true as const, path: relative(ctx.cwd, abs) };

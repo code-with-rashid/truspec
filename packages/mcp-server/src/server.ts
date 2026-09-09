@@ -61,6 +61,54 @@ export function createServer(ctx: ServerContext = {}): McpServer {
   );
 
   server.registerTool(
+    "truspec_read_request",
+    {
+      title: "Read request",
+      description:
+        "Read one .tspec.yaml request: the parsed object and the raw YAML. Read before patching — `truspec_update_request` merges one level deep, so patching a nested field like `headers` replaces it wholesale.",
+      inputSchema: { path: z.string().describe("Path to a .tspec.yaml file.") },
+    },
+    async ({ path }) => json(tools.readRequest(c, path)),
+  );
+
+  server.registerTool(
+    "truspec_validate_request",
+    {
+      title: "Validate request",
+      description:
+        "Check a request object against the schema without writing it. Errors name the key a typo was probably meant to be.",
+      inputSchema: { request: z.record(z.string(), z.unknown()).describe("A TruSpec request object.") },
+    },
+    async ({ request }) => json(tools.validateRequest(request)),
+  );
+
+  server.registerTool(
+    "truspec_delete_request",
+    {
+      title: "Delete request",
+      description: "Delete a .tspec.yaml request file. Refuses any path that is not a request file.",
+      inputSchema: { path: z.string().describe("Path to a .tspec.yaml file.") },
+    },
+    async ({ path }) => json(tools.deleteRequest(c, path)),
+  );
+
+  server.registerTool(
+    "truspec_format_reference",
+    {
+      title: "Format reference",
+      description:
+        "The JSON Schema for a TruSpec file kind (request, folder or environment), generated from the schema that validates. Use it to author a valid file without guessing at the format.",
+      inputSchema: {
+        kind: z
+          .enum(["request", "folder", "environment"])
+          .default("request")
+          .describe("Which file kind to describe."),
+      },
+    },
+    async ({ kind }) => json(tools.formatReference(kind)),
+  );
+
+  server.registerTool(
     "truspec_create_request",
     {
       title: "Create request",
@@ -78,7 +126,8 @@ export function createServer(ctx: ServerContext = {}): McpServer {
     "truspec_update_request",
     {
       title: "Update request",
-      description: "Merge a partial patch into an existing request file; validated before writing.",
+      description:
+        "Merge a partial patch into an existing request file, one level deep — a patched object field replaces the whole field, so read the request first. `null` removes a key. Validated before writing.",
       inputSchema: {
         path: z.string(),
         patch: z.record(z.string(), z.unknown()).describe("Fields to merge into the request."),

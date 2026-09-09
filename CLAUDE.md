@@ -26,7 +26,7 @@ packages/
     src/mock/        local mock server generated from a spec
     schema/          PUBLISHED JSON Schema (generated; do not hand-edit)
   cli/           truspec — `run` / `drift` / `coverage` / `contract` / `gen` / `codegen` / `lint` / `docs` / `env` / `import` / `mock`
-  mcp-server/    @truspec/mcp-server — 19 tools over the official MCP SDK
+  mcp-server/    @truspec/mcp-server — 23 tools over the official MCP SDK
 examples/        petstore + blog sample collections (+ openapi.yaml) for tests + demos
 ```
 

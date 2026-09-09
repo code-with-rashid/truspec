@@ -811,3 +811,36 @@ refuse unrelated keys.
 schema wrapper, the "advice must parse" invariant), 6 over surviving a bad file mid-run — plus 3
 reporter tests, 2 CLI tests and 3 e2e. 776 unit tests, 92 e2e, coverage 95.50% lines / 87.57%
 branches / 96.51% functions, typecheck 8/8, own lint/docs/schema gates clean.
+
+### 28 — the agent surface had no way to read what it was editing
+
+**Gap.** "Agent-native by design" is one of this project's four stated principles, and the MCP
+server is where that promise is kept. It exposed 19 tools — and **no way to read a single request**.
+An agent could list summaries (name, method, url) and patch a request, but never see one. That
+matters more than it sounds, because `truspec_update_request` merges one level deep: patching
+`headers` to add a trace header silently replaces every other header. Safe patching required
+already knowing every field you weren't changing, which is to say it wasn't safe. There was also no
+way to validate a draft without writing it, no delete (every other CRUD verb was there), and no way
+for an agent to learn the file format from the server rather than from whatever it remembered.
+
+**Change.** Four tools, and one fix to an existing one:
+
+| tool | why |
+|---|---|
+| `truspec_read_request` | the parsed object *and* the raw YAML; for a file that doesn't parse it returns the error **and** the raw text, so the agent can still fix it |
+| `truspec_validate_request` | check a draft without writing; errors name the key a typo was meant to be (iteration 27), so a failure is a correction rather than a rejection |
+| `truspec_delete_request` | completes CRUD; refuses any path that is not a `.tspec.yaml`, so a mistyped path can't remove a spec or an environment |
+| `truspec_format_reference` | the JSON Schema for request/folder/environment, **generated from the Zod schema that validates** rather than read off disk — a reference that can drift from the validator is worse than none, and the package layout differs between a checkout and an install |
+
+`truspec_update_request` now treats `null` as "remove this key". Without it a merge could never
+clear an optional field, so dropping `auth` meant deleting and recreating the file. Its description
+now states the shallow-merge semantics instead of leaving them to be discovered.
+
+**Also.** The published tool count was documented as 10, 11 and 19 in four different places, none
+of them right. All corrected to 23, and `docs/mcp.md` gained the new rows plus a "read before you
+patch" note.
+
+**Verification.** 7 new MCP tests driven through a real in-memory client↔server pair — including
+that a path escaping the workspace is refused for both read and delete, and that the format
+reference's properties match the validator's. 783 unit tests, coverage 95.55% lines / 87.62%
+branches / 96.55% functions — up on all three — typecheck 8/8, own lint/docs/schema gates clean.

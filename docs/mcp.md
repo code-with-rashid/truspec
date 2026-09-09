@@ -51,8 +51,12 @@ files **validate against the schema before writing**, so an agent can't land a m
 | `truspec_list_collections` | `dir?` (default `.`) | List requests under a directory: name, method, URL, linked operation, assertion count. |
 | `truspec_run_request` | `path`, `env?` | Run one `.tspec.yaml`; returns status, timing, body, and assertion results. |
 | `truspec_run_collection` | `dir`, `env?` | Run every request in a directory; returns aggregate pass/fail plus per-request results. |
+| `truspec_read_request` | `path` | Read one request: the parsed object *and* its raw YAML. Read before patching. |
 | `truspec_create_request` | `path`, `request` | Create a request file from a request object (validated first). |
-| `truspec_update_request` | `path`, `patch` | Merge a partial patch into an existing request (validated first). |
+| `truspec_update_request` | `path`, `patch` | Merge a patch one level deep (a patched object field replaces the whole field); `null` removes a key. Validated first. |
+| `truspec_delete_request` | `path` | Delete a request file. Refuses any path that is not a `.tspec.yaml`. |
+| `truspec_validate_request` | `request` | Check a request object against the schema without writing it. |
+| `truspec_format_reference` | `kind?` | The JSON Schema for `request` / `folder` / `environment`, generated from the schema that validates. |
 | `truspec_drift` | `dir`, `spec`, `live?` | Diff a collection against an OpenAPI spec; optionally probe a live API. |
 | `truspec_coverage` | `dir`, `spec`, `min?` | Report which spec operations are exercised by a request with assertions. |
 | `truspec_contract` | `dir`, `spec`, `env?` | Run the collection and validate each response against the spec's response schema. |
@@ -105,6 +109,13 @@ properties that make TruSpec good for humans make it good for agents.
 
 If you're driving TruSpec from an agent (or writing the prompt/instructions for one):
 
+- **Read before you patch.** `truspec_update_request` merges one level deep, so a patch to
+  `headers` replaces the whole map. `truspec_read_request` returns the current object; `null` in a
+  patch removes a key.
+- **Learn the format from the server.** `truspec_format_reference` returns the JSON Schema
+  generated from the same Zod schema that validates writes, so it cannot drift from what will
+  actually be accepted. `truspec_validate_request` checks a draft without writing it, and its
+  errors name the key a typo was probably meant to be.
 - **Validate before writing.** Prefer `truspec_create_request` / `truspec_update_request`
   over raw file writes — they run the schema and reject unknown keys, so typos surface
   immediately.
