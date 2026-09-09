@@ -37,6 +37,12 @@ export interface RunResult {
     durationMs: number;
     bodyText: string;
     headers: Record<string, string>;
+    /** Size as it arrived, in bytes — not the length of the decoded string. */
+    bytes?: number;
+    /** The body is not text; `bodyText` is a lossy decode of it and must not be shown as one. */
+    binary?: boolean;
+    /** The real bytes of a binary body, base64-encoded, when small enough to carry. */
+    bodyBase64?: string;
   };
   assertions: AssertionResult[];
   captured?: Record<string, unknown>;

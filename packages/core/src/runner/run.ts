@@ -63,6 +63,20 @@ export interface RunResult {
     durationMs: number;
     headers: Record<string, string>;
     bodyText: string;
+    /** Size of the body as it arrived, in bytes — not the length of the decoded string. */
+    bytes?: number;
+    /**
+     * The body is not text: it decoded with replacement characters or NUL bytes. `bodyText` is
+     * then lossy and must not be shown as if it were the response — a viewer that prints it emits
+     * mojibake (and whatever terminal escapes the bytes happen to contain).
+     */
+    binary?: boolean;
+    /**
+     * The body's real bytes, base64-encoded, for a binary response small enough to carry
+     * ({@link MAX_BINARY_BASE64_BYTES}). Without it a client can only offer to save the mojibake,
+     * which produces a file that is not the one the server sent.
+     */
+    bodyBase64?: string;
   };
   assertions: AssertionResult[];
   captured?: Record<string, VarValue>;
@@ -123,14 +137,47 @@ export function decodeResponseBody(buf: Buffer, contentType: string): string {
 }
 
 /**
+ * Whether a decoded body is not text after all.
+ *
+ * Decided on content rather than on the content type: plenty of servers label JSON as
+ * `application/octet-stream`, and plenty label a PDF `text/plain`. A replacement character means
+ * the bytes were not valid in the declared encoding; a NUL means they were never text.
+ */
+function looksBinary(text: string): boolean {
+  return text.includes("\uFFFD") || text.includes("\u0000");
+}
+
+/** Ceiling on a binary body carried along as base64 — past this, only the size is reported. */
+export const MAX_BINARY_BASE64_BYTES = 8 * 1024 * 1024;
+
+/**
  * Read a response body as text, but stop and throw once `maxBytes` is exceeded
  * (streaming, so we never buffer an unbounded body into memory). Falls back to
  * buffering the whole response when the body isn't a readable stream (empty/HEAD responses).
  */
-async function readResponseText(response: Response, maxBytes: number): Promise<string> {
+interface ReadBody {
+  text: string;
+  bytes: number;
+  binary: boolean;
+  base64?: string;
+}
+
+/** Package a buffer as the runner's view of a body: decoded text, plus the bytes if it is binary. */
+function describeBody(buf: Buffer, contentType: string): ReadBody {
+  const text = decodeResponseBody(buf, contentType);
+  if (!looksBinary(text)) return { text, bytes: buf.byteLength, binary: false };
+  return {
+    text,
+    bytes: buf.byteLength,
+    binary: true,
+    ...(buf.byteLength <= MAX_BINARY_BASE64_BYTES ? { base64: buf.toString("base64") } : {}),
+  };
+}
+
+async function readResponseText(response: Response, maxBytes: number): Promise<ReadBody> {
   const contentType = response.headers.get("content-type") ?? "";
   const body = response.body;
-  if (!body) return decodeResponseBody(Buffer.from(await response.arrayBuffer()), contentType);
+  if (!body) return describeBody(Buffer.from(await response.arrayBuffer()), contentType);
   const reader = body.getReader();
   const chunks: Uint8Array[] = [];
   let size = 0;
@@ -151,7 +198,7 @@ async function readResponseText(response: Response, maxBytes: number): Promise<s
     buf.set(c, offset);
     offset += c.byteLength;
   }
-  return decodeResponseBody(buf, contentType);
+  return describeBody(buf, contentType);
 }
 
 /**
@@ -312,13 +359,14 @@ export async function runRequest(req: TruSpecRequest, ctx: RunContext = {}): Pro
   const response = sent.response;
 
   const durationMs = now() - start;
-  let bodyText: string;
+  let body: ReadBody;
   try {
-    bodyText = await readResponseText(response, ctx.maxResponseBytes ?? MAX_RESPONSE_BYTES);
+    body = await readResponseText(response, ctx.maxResponseBytes ?? MAX_RESPONSE_BYTES);
   } catch (e) {
     // The response started arriving and then stopped; name the same causes the send path does.
     return { ...head, ok: false, error: describeTransportError(e, eff.url), assertions: [] };
   }
+  const bodyText = body.text;
   const headers: Record<string, string> = {};
   response.headers.forEach((value, key) => {
     headers[key.toLowerCase()] = value;
@@ -360,7 +408,16 @@ export async function runRequest(req: TruSpecRequest, ctx: RunContext = {}): Pro
     ...(sent.redirects.length > 0 ? { redirects: sent.redirects } : {}),
     ...(sent.redirectLimitHit ? { redirectLimitHit: true } : {}),
     ...(sent.attempts > 0 ? { retries: sent.attempts } : {}),
-    response: { status: response.status, statusText: response.statusText, durationMs, headers, bodyText },
+    response: {
+      status: response.status,
+      statusText: response.statusText,
+      durationMs,
+      headers,
+      bodyText,
+      bytes: body.bytes,
+      ...(body.binary ? { binary: true } : {}),
+      ...(body.base64 !== undefined ? { bodyBase64: body.base64 } : {}),
+    },
     assertions,
     ...(scriptError ? { error: `Script error: ${scriptError}` } : {}),
     ...(Object.keys(captured).length > 0 ? { captured } : {}),

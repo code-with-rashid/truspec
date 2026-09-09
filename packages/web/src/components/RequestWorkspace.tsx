@@ -87,6 +87,37 @@ function useResponseHeight() {
   return [height, onDragStart] as const;
 }
 
+/** File extension for a saved response, by content type. `bin` is the honest default for bytes. */
+function extensionFor(contentType: string, binary: boolean): string {
+  const type = contentType.split(";")[0]?.trim().toLowerCase() ?? "";
+  const known: Record<string, string> = {
+    "application/json": "json",
+    "text/html": "html",
+    "application/xml": "xml",
+    "text/xml": "xml",
+    "application/pdf": "pdf",
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/gif": "gif",
+    "image/webp": "webp",
+    "image/svg+xml": "svg",
+    "application/zip": "zip",
+  };
+  if (known[type]) return known[type];
+  if (type.includes("json")) return "json";
+  if (type.includes("html")) return "html";
+  if (type.includes("xml")) return "xml";
+  return binary ? "bin" : "txt";
+}
+
+/** Decode base64 to the bytes it stands for, without pulling in a dependency for it. */
+function bytesFromBase64(b64: string): ArrayBuffer {
+  const binary = atob(b64);
+  const out = new Uint8Array(new ArrayBuffer(binary.length));
+  for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
+  return out.buffer;
+}
+
 export function RequestWorkspace({
   detail,
   draft,
@@ -151,9 +182,15 @@ export function RequestWorkspace({
   const downloadResponse = (): void => {
     if (!result?.response) return;
     const contentType = Object.entries(result.response.headers).find(([k]) => k.toLowerCase() === "content-type")?.[1] ?? "";
-    const ext = contentType.includes("json") ? "json" : contentType.includes("html") ? "html" : contentType.includes("xml") ? "xml" : "txt";
+    const ext = extensionFor(contentType, result.response.binary === true);
     const slug = effective.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "response";
-    const blob = new Blob([result.response.bodyText], { type: contentType || "text/plain" });
+    // A binary body's `bodyText` is a lossy decode — saving it produces a file that is not what
+    // the server sent (a PNG saved that way will not open). Write the real bytes when we have them.
+    const payload =
+      result.response.binary && result.response.bodyBase64 !== undefined
+        ? bytesFromBase64(result.response.bodyBase64)
+        : result.response.bodyText;
+    const blob = new Blob([payload], { type: contentType || "text/plain" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -431,7 +468,7 @@ export function RequestWorkspace({
                 {result.response.status} {result.response.statusText}
               </span>
               <span className="time">{result.response.durationMs}ms</span>
-              <span className="bytes">{result.response.bodyText.length}b</span>
+              <span className="bytes">{result.response.bytes ?? result.response.bodyText.length}b</span>
             </>
           ) : result?.error ? (
             <span className="err" style={{ margin: 0 }}>
@@ -468,6 +505,10 @@ export function RequestWorkspace({
                 {respTab === "body" ? (
                   <ResponseBody
                     bodyText={result.response.bodyText}
+                    binary={result.response.binary}
+                    bytes={result.response.bytes}
+                    bodyBase64={result.response.bodyBase64}
+                    contentType={Object.entries(result.response.headers).find(([k]) => k.toLowerCase() === "content-type")?.[1]?.split(";")[0]}
                     onAssert={(path) =>
                       onFieldChange("assertions", [
                         ...(effective.assertions ?? []),

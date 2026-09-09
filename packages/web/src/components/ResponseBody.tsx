@@ -32,12 +32,27 @@ interface Match {
  * the real response, shows exactly what it selects, and offers one click to assert or capture it.
  * A filter that doesn't start with `$` is a plain text search over the body instead.
  */
+/** A human-readable size for the binary notice: bytes below 1KB, then KB. */
+function sizeLabel(bytes: number): string {
+  return bytes < 1024 ? `${bytes} bytes` : `${Math.round(bytes / 1024)}KB`;
+}
+
 export function ResponseBody({
   bodyText,
+  binary,
+  bytes,
+  bodyBase64,
+  contentType,
   onAssert,
   onCapture,
 }: {
   bodyText: string;
+  /** The body is not text. Showing `bodyText` would print mojibake and claim it is the response. */
+  binary?: boolean;
+  bytes?: number;
+  /** The real bytes, base64-encoded, when the server sent something worth previewing. */
+  bodyBase64?: string;
+  contentType?: string;
   /** Append `{ type: jsonpath, path, exists: true }` to the request's assertions. */
   onAssert?: (path: string) => void;
   /** Capture the value at `path` into a named variable. */
@@ -92,6 +107,27 @@ export function ResponseBody({
   }, [filter, isPathFilter, shown]);
 
   const singleMatch = pathResult && !pathResult.error && pathResult.matches.length === 1;
+
+  // A binary body has no text to filter, assert on, or read. Printing its lossy decode would be
+  // mojibake presented as the response; say what it is and let it be saved or previewed instead.
+  if (binary) {
+    const isImage = contentType?.startsWith("image/") === true && bodyBase64 !== undefined;
+    return (
+      <div className="response-body">
+        <div className="body-binary" role="status">
+          <strong>Binary response</strong>
+          <span>
+            {contentType || "unknown type"} · {sizeLabel(bytes ?? 0)}
+          </span>
+          <span className="muted">Not shown as text. Use ⇩ save to write the bytes to a file.</span>
+        </div>
+        {isImage && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img className="body-image" alt="response body" src={`data:${contentType};base64,${bodyBase64}`} />
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="response-body">

@@ -105,12 +105,18 @@ function responseDetails(response: {
   statusText: string;
   headers: Record<string, string>;
   bodyText: string;
+  bytes?: number;
+  binary?: boolean;
 }): string {
   const headers = Object.entries(response.headers)
     .map(([k, v]) => `${k}: ${v}`)
     .join("\n");
   // Bodies can be megabytes; a report nobody can open is no report. Truncate with a clear marker.
-  const body = truncate(response.bodyText, MAX_BODY_CHARS);
+  // A binary body has no text to show: its decode is mojibake, and printing that in a report a
+  // reviewer opens to understand a failure is worse than saying plainly what arrived.
+  const body = response.binary
+    ? `<binary response, ${response.bytes ?? 0} bytes>`
+    : truncate(response.bodyText, MAX_BODY_CHARS);
   return `      <details>
         <summary>response · ${response.status} ${esc(response.statusText)}</summary>
         <h3>headers</h3>

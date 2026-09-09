@@ -1993,3 +1993,39 @@ smuggled into it.
 
 **Verification.** 946 unit tests (6 new: 4 pure decoder cases, 2 through a real server), coverage
 95.83% lines / 87.66% branches / 96.28% functions, typecheck 8/8, `lint examples --strict` clean.
+
+### 59 — a PNG shown as mojibake, and saved as a file that will not open
+
+**The half iteration 58 deferred.** A binary body — `image/png`, `application/pdf`,
+`application/octet-stream` — was decoded as UTF-8 like everything else and passed on as a string:
+what came back for a PNG was `<U+FFFD>PNG\r\n...IHDR...`, with every byte that is not valid UTF-8
+replaced.
+
+That string is what the response viewer printed, and what ⇩ save wrote to disk. The bytes are gone
+by then — invalid sequences became U+FFFD on the way in — so a saved PNG was not a PNG. The header
+also read `130b`, which was the character count of the mangled string rather than the 131 bytes
+that actually arrived.
+
+**Detected by content, not by label.** Plenty of servers send JSON as `application/octet-stream`
+and PDFs as `text/plain`; the content type is the least reliable thing in the response. A body is
+binary when its decode produced replacement characters or NULs — which is exactly the condition
+under which `bodyText` stopped being trustworthy.
+
+**What each surface does now.**
+
+- The runner reports `binary`, `bytes` (as they arrived), and `bodyBase64` for a binary body up to
+  8MB — without the bytes, every client can only offer to save the mangled decode.
+- The web UI shows what arrived (`image/png · 131 bytes`) instead of the mojibake, previews an
+  image inline on a checkerboard so a transparent PNG isn't invisible, and saves the real bytes
+  with a real extension (`png.png`, not `png.txt`).
+- The HTML report prints `<binary response, 131 bytes>` rather than a screenful of garbage in the
+  one artifact a reviewer opens to understand a failure.
+- The byte counter reports bytes. `"café"` is 4 characters and 5 bytes; it said 4.
+
+`bodyText` keeps its lossy value rather than being blanked: text assertions see exactly what they
+saw before, so nothing silently changes meaning for an existing collection.
+
+**Verification.** 949 unit tests and 108 e2e. The e2e is the one that matters: it captures the
+Blob the save button builds and asserts it is byte-for-byte the PNG the server sent, and reads
+`naturalWidth`/`naturalHeight` off the rendered preview — the browser decoding the image is proof
+the bytes survived. Coverage 95.83% lines / 87.64% branches / 96.29% functions, typecheck 8/8.

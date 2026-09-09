@@ -3154,6 +3154,34 @@ select:focus {
 }
 
 /* Large-response notice: the body view is bounded to stay responsive, and says so. */
+/* A binary body: say what arrived instead of printing a lossy decode of it. */
+.body-binary {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-2, transparent);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.body-image {
+  display: block;
+  max-width: 100%;
+  margin-top: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  /* A transparent PNG on a dark panel is invisible; a checkerboard is what image viewers do. */
+  background-image: linear-gradient(45deg, var(--line) 25%, transparent 25%),
+    linear-gradient(-45deg, var(--line) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, var(--line) 75%),
+    linear-gradient(-45deg, transparent 75%, var(--line) 75%);
+  background-size: 12px 12px;
+  background-position: 0 0, 0 6px, 6px -6px, -6px 0;
+}
+
 .body-truncated {
   padding: 6px 10px;
   margin-bottom: 6px;
