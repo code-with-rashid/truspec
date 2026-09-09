@@ -3245,3 +3245,45 @@ flag each turn one red.
 
 **Verification.** 1149 unit tests (8 new), coverage 95.90% lines / 87.87% branches / 96.67%
 functions, typecheck 8/8.
+
+### 87 — the three tabs that told you nothing
+
+**Found by looking at the app, not the code.** I opened the web UI on a request with a three-part
+multipart body, bearer auth and a pre-request script, and read the tab strip:
+
+```
+params 0   headers 0   body   auth   script   capture 0   assertions 1
+```
+
+`params`, `headers`, `capture` and `assertions` have always carried a count — so the tab strip is a
+request's table of contents. **Except for the three that matter most.** A request with a four-part
+multipart body looked exactly like one with no body at all. Bearer auth looked exactly like none.
+And a request carrying a **script** was completely silent about it.
+
+That last one is not just a convenience. A script runs with the same access as the `truspec`
+process — every environment variable, every readable file — which is why `truspec lint` has a
+`script-runs-unsandboxed` warning at all. The UI is where someone opens a collection they did not
+write, and it gave no sign.
+
+**Now:**
+
+```
+params 0   headers 0   body [multipart 3]   auth [bearer]   script [pre]   capture 0   assertions 1
+```
+
+Three judgements in that:
+
+- **Count for the keyed body types, name for the rest.** `multipart 3` and `form 2` — the count is
+  the useful part. `json`, `text`, `graphql` — the type is; a count would be meaningless.
+- **An absent thing shows nothing.** `params 0` reads fine as a count; `body none` would read worse
+  than a bare tab. So no body, no auth and no script each render exactly as before.
+- **The script badge is styled apart** — amber in both themes, measured as a different computed
+  colour, with a title saying why. It is the one that should catch the eye.
+
+Everything needed was already on the client. The tab strip simply never asked.
+
+**Verification.** 1157 unit tests (8 new for the badge functions, including that an *empty*
+multipart body still reports `multipart 0` — the type is a fact even when the count is zero — and
+that an empty script string is not a script), 3 new Playwright tests, and the **full 120-test e2e
+suite green including the axe-core accessibility pass**. Coverage 95.90% lines / 87.87% branches /
+96.67% functions, typecheck 8/8.

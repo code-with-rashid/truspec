@@ -88,6 +88,34 @@ function useResponseHeight() {
 }
 
 /** File extension for a saved response, by content type. `bin` is the honest default for bytes. */
+/**
+ * What the `body`, `auth` and `script` tabs say about themselves.
+ *
+ * `params`, `headers`, `capture` and `assertions` have always carried a count, so a glance at the
+ * tab strip told you what a request contained — except for the three that matter most. A request
+ * with a four-part multipart body looked exactly like one with no body at all; a request with
+ * bearer auth looked exactly like one with none; and a request carrying a **script** — which runs
+ * with the same access as the `truspec` process, and which `truspec lint` warns about for that
+ * reason — was completely silent about it. The client already had all three.
+ */
+export function bodyBadge(body: RequestDetail["body"]): string | undefined {
+  if (!body || body.type === "none") return undefined;
+  // For the keyed body types the count is the useful part; for the rest, the type is.
+  if (body.type === "multipart") return `multipart ${Object.keys(body.fields).length}`;
+  if (body.type === "form") return `form ${Object.keys(body.content).length}`;
+  return body.type;
+}
+
+export function authBadge(auth: RequestDetail["auth"]): string | undefined {
+  if (!auth || auth.type === "none") return undefined;
+  return auth.type;
+}
+
+export function scriptBadge(script: RequestDetail["script"]): string | undefined {
+  const phases = [script?.pre ? "pre" : undefined, script?.post ? "post" : undefined].filter(Boolean);
+  return phases.length > 0 ? phases.join("+") : undefined;
+}
+
 function extensionFor(contentType: string, binary: boolean): string {
   const type = contentType.split(";")[0]?.trim().toLowerCase() ?? "";
   const known: Record<string, string> = {
@@ -382,13 +410,20 @@ export function RequestWorkspace({
           headers <span className="tab-count">{Object.keys(rowsToObject(headerRows)).length}</span>
         </button>
         <button className={`tab ${tab === "body" ? "active" : ""}`} onClick={() => onTab("body")}>
-          body
+          body {bodyBadge(effective.body) && <span className="tab-badge">{bodyBadge(effective.body)}</span>}
         </button>
         <button className={`tab ${tab === "auth" ? "active" : ""}`} onClick={() => onTab("auth")}>
-          auth
+          auth {authBadge(effective.auth) && <span className="tab-badge">{authBadge(effective.auth)}</span>}
         </button>
         <button className={`tab ${tab === "script" ? "active" : ""}`} onClick={() => onTab("script")}>
-          script
+          script{" "}
+          {scriptBadge(effective.script) && (
+            // A script has the same access as the process running it — `truspec lint` warns about
+            // one for that reason. The tab strip is where a reader would notice, so it says so.
+            <span className="tab-badge warn" title="this request runs a script, with the same access as the truspec process">
+              {scriptBadge(effective.script)}
+            </span>
+          )}
         </button>
         <button className={`tab ${tab === "capture" ? "active" : ""}`} onClick={() => onTab("capture")}>
           capture <span className="tab-count">{Object.keys(effective.capture ?? {}).length}</span>

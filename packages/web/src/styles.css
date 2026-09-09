@@ -3265,3 +3265,26 @@ select:focus {
 .script-log.debug {
   color: var(--dim);
 }
+
+/* A tab that carries a badge rather than a count: the body's type, the auth scheme, the script's
+   phases. `params 0` reads fine as a count; `body none` would not, so an empty one says nothing. */
+.tab-badge {
+  display: inline-block;
+  margin-left: 5px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--panel-3);
+  border: 1px solid var(--line-2);
+  font-size: 10px;
+  letter-spacing: 0.4px;
+  color: var(--dim);
+  vertical-align: 1px;
+}
+.tab.active .tab-badge {
+  color: var(--text);
+}
+/* A script runs unsandboxed, so its badge is the one that should catch the eye. */
+.tab-badge.warn {
+  color: var(--amber);
+  border-color: color-mix(in srgb, var(--amber) 45%, transparent);
+}
