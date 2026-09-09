@@ -223,6 +223,31 @@ See [Programmatic API → importers](./api.md#importers--postman--bruno).
 
 ---
 
+## Exporting back to Postman
+
+Going the other way — handing a collection to someone who works in Postman — is available from the
+web UI's export button and from `@truspec/core/exporters`:
+
+```ts
+import { exportPostman } from "@truspec/core/exporters";
+
+const { collection, warnings, stats } = exportPostman("./api");
+```
+
+**Assertions come with it.** Each request's declarative assertions are rendered as a Postman test
+script (`pm.test(...)`), so the exported collection still checks what the TruSpec one checked
+rather than becoming a set of requests that assert nothing. `status`, `header`, `body` and
+`duration` map directly; a `jsonpath` maps when it is simple enough for the lodash `_.get` Postman
+ships (`$.data.items[0].id` yes, a filter or a `..` descent no).
+
+Anything with no Postman equivalent is reported in `warnings` rather than dropped silently:
+`schema` assertions (they need the OpenAPI spec, which a Postman collection does not carry), a
+`jsonpath` too complex to express, transport `options`, OAuth2 `audience`/`extra`, and the `spec`
+link itself. Those survive only in the `.tspec.yaml` files you exported from — which is the
+argument for keeping those the source of truth.
+
+---
+
 ## See also
 
 - **[CLI reference → import](./cli.md#import)**

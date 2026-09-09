@@ -1350,3 +1350,44 @@ both forms, and the three environment variables. Then end to end against a real 
 `NO_PROXY`, `--no-proxy 127.0.0.1` and `--no-proxy '*'` all reach it, and with no bypass the
 request still goes to the proxy — the proxy itself still works. 846 unit tests, 97 e2e, coverage
 95.75% lines / 87.68% branches / 96.64% functions, typecheck 8/8, dogfood gates clean.
+
+### 43 — exporting to Postman handed over requests that tested nothing
+
+**Gap.** A round-trip is the sharpest test an importer/exporter pair can face, so I built one:
+export `examples/blog` to Postman, import it straight back, and compare every field of every
+request against the original.
+
+Three requests survived. Every **assertion** did not, and neither did any **spec link** — and the
+export said nothing about either.
+
+That is the whole value proposition leaving the building. A TruSpec collection's assertions are why
+it can gate CI; exporting one to Postman produced a set of requests that check nothing, handed to a
+colleague who has no way to know something was removed. The exporter already emits Postman `event`
+blocks for a JS `script.post`, so it was exporting the *escape hatch* while dropping the declarative
+assertions the format is built around.
+
+**Change.** Assertions are rendered as a Postman test script. `status`, `header`, `body` and
+`duration` map directly onto `pm.expect`; a `jsonpath` maps when it is simple enough for the lodash
+`_.get` that Postman ships (`$.data.items[0].id` yes, a filter or `..` descent no). Tests are named
+the way TruSpec names the assertion, so a Postman failure reads the same as a TruSpec one.
+Assertions run before an existing `script.post`, matching the order TruSpec uses.
+
+**What is deliberately not mapped, and now says so.** A `schema` assertion needs the OpenAPI spec,
+which a Postman collection does not carry. A `jsonpath` with a filter or wildcard has no lodash
+equivalent — and a silently *wrong* assertion in someone's Postman run is worse than an absent one,
+so the path is named in `warnings` instead. The `spec` link has no Postman home either and now
+warns rather than vanishing. Nothing is dropped in silence any more.
+
+**Verification.** 11 tests. Two carry weight beyond the mapping table: one feeds a value chosen to
+break out of the generated JavaScript (`");alert(1);//`) and asserts it stays inert data, and one
+renders every assertion form at once and compiles the result with `new Function`, which is a real
+syntax check — a generated script that does not parse would otherwise surface only when someone
+pressed Send in Postman. 857 unit tests, 97 e2e, coverage 95.77% lines / 87.73% branches / 96.71%
+functions, typecheck 8/8, dogfood gates clean. The exporter was also undocumented; `docs/importing.md`
+now covers it, including exactly what does not survive the trip.
+
+**Left for its own iteration.** The importer still turns Postman test scripts into commented-out
+`script.post`, so importing a real Postman collection yields requests with zero assertions — the
+same "tests nothing" shape, in the other direction. Recognising the common `pm.test` patterns and
+converting them back into declarative assertions is a larger piece of work and deserves its own
+pass rather than being bolted onto this one.
