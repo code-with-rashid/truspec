@@ -487,13 +487,14 @@ Inspect the workspace's environments without opening the files.
 
 ```
 truspec env [<name>] [--dir <collection>] [--json]
-truspec env --diff <a> <b> [--json]
+truspec env --diff <a> <b> [--strict] [--json]
 ```
 
 ```bash
-truspec env                      # every environment, with unresolved-secret warnings
-truspec env prod                 # one environment's variables and secret status
-truspec env --diff staging prod  # what differs
+truspec env                               # every environment, with unresolved-secret warnings
+truspec env prod                          # one environment's variables and secret status
+truspec env --diff staging prod           # what differs
+truspec env --diff staging prod --strict  # exit 1 if either declares a name the other does not
 ```
 
 **Secret values are never printed** — only whether each resolves, and from where (the OS
@@ -504,7 +505,12 @@ it solved.
 `--diff` exists for one boring failure in particular: staging declares a variable production does
 not, so the collection runs green everywhere except where it matters. A name present on only one
 side is reported as prominently as a changed value, and a name that is a plain variable on one side
-and a secret on the other is flagged as the real difference in kind that it is.
+and a secret on the other is flagged as the real difference in kind that it is. Names that are
+secrets are marked `(secret)`, because the fix differs: a missing variable is added to the file, a
+missing secret is set in the environment that runs it.
+
+`--strict` turns it into a CI gate — exit 1 when either side declares a name the other does not.
+Differing *values* never fail: environments are supposed to differ that way.
 
 ---
 

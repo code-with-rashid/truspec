@@ -2585,3 +2585,37 @@ shows the reason where its URL would be, since the URL is the one thing you alre
 **Verification.** 115 e2e (3 new), 1021 unit tests, typecheck 8/8. The third e2e is the one that
 keeps this honest: a chain whose capture *does* succeed must show none of it, so the badge cannot
 degenerate into decoration that is always on.
+
+### 73 — a diff you could read but not gate on
+
+**What I looked for.** `truspec env` is the command that has to be careful with secrets, so I ran
+all of it against a workspace with two environments, a `.env`, and one secret set in the OS
+environment. The listing and the per-environment view are good — values never printed, each secret
+annotated with *where* it resolved from. Two gaps in the diff.
+
+**It did not say which names are secrets.**
+
+```
+only in local (2):
+  - apiKey
+  - petId
+```
+
+`apiKey` is a secret and `petId` is a variable, and the fix for each is different: a missing
+variable is added to the file, a missing secret is set in the environment that runs the collection.
+Reading the diff, you cannot tell which you are looking at without opening both files — which is
+the work the command exists to save. They are marked `(secret)` now, and `secretNames` is on the
+JSON too, because the MCP tool hands this object to an agent that has to make the same distinction.
+
+**And it could not fail.** The doc says `--diff` "exists for one boring failure in particular:
+staging declares a variable production does not, so the collection runs green everywhere except
+where it matters" — and then the command exits 0 whatever it finds. The one failure it was built
+for was the one thing it could not gate on.
+
+`--strict` exits 1 when either side declares a name the other does not. Differing *values* never
+fail: environments are supposed to differ that way, and a gate that fires on `baseUrl` would be
+turned off within a day.
+
+**Verification.** 1026 unit tests (5 new, including one that pins the values-differ case as a
+pass — the trap this flag could easily fall into), coverage 95.96% lines / 87.74% branches / 96.52%
+functions, typecheck 8/8, docs and usage updated.

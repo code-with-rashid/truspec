@@ -119,3 +119,40 @@ describe("truspec env", () => {
     expect(r.out).toContain("local");
   });
 });
+
+describe("truspec env --diff, as a gate", () => {
+  it("marks which of the differing names are secrets", async () => {
+    // "only in prod: apiKey" reads as a missing variable unless you know apiKey is a secret — and
+    // the fix differs: a variable is added to the file, a secret is set where the run happens.
+    const r = await run(["--diff", "local", "prod"]);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("+ apiKey  (secret)");
+    expect(r.out).toContain("- petId");
+    expect(r.out).not.toContain("- petId  (secret)");
+  });
+
+  it("--strict fails when either side declares a name the other does not", async () => {
+    const r = await run(["--diff", "local", "prod", "--strict"]);
+    expect(r.code).toBe(1);
+    expect(r.err).toMatch(/2 name\(s\) declared in only one of local, prod/);
+  });
+
+  it("--strict does not fail on a differing value, which is the point of environments", async () => {
+    writeFileSync(
+      join(dir, "environments", "b.env.yaml"),
+      'tspec: "0.1"\nname: b\nvariables: { baseUrl: "https://other.example.com", petId: "9" }\nsecrets: [token]\n',
+    );
+    const r = await run(["--diff", "local", "b", "--strict"]);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain("different (2)");
+  });
+
+  it("still exits 0 without --strict, because a difference is information", async () => {
+    expect((await run(["--diff", "local", "prod"])).code).toBe(0);
+  });
+
+  it("reports the secret names in --json, for a machine that has to decide the same thing", async () => {
+    const r = await run(["--diff", "local", "prod", "--json"]);
+    expect(JSON.parse(r.out).secretNames).toEqual(["apiKey", "token"]);
+  });
+});

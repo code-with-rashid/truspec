@@ -80,6 +80,14 @@ export interface EnvDiff {
   changed: Array<{ name: string; a: string; b: string }>;
   /** Names present in both with the same value. */
   same: string[];
+  /**
+   * Of every name compared, the ones declared as a **secret** in either environment.
+   *
+   * "only in local: apiKey" reads as a missing variable unless you happen to know that apiKey is
+   * a secret — and the fix is different: a variable is added to the file, a secret is set in the
+   * environment that runs it.
+   */
+  secretNames: string[];
 }
 
 /**
@@ -109,5 +117,6 @@ export function diffEnvironments(a: EnvironmentReport, b: EnvironmentReport): En
     else if (av === bv) same.push(name);
     else changed.push({ name, a: av ?? "(secret)", b: bv ?? "(secret)" });
   }
-  return { a: a.name, b: b.name, onlyInA, onlyInB, changed, same };
+  const secretNames = [...new Set([...a.secrets, ...b.secrets].map((s) => s.name))].sort();
+  return { a: a.name, b: b.name, onlyInA, onlyInB, changed, same, secretNames };
 }
