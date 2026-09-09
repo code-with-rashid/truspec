@@ -1086,3 +1086,38 @@ webkit2gtk/GTK toolchain, 807 unit tests, coverage 95.60% lines / 87.72% branche
 functions, typecheck 8/8, dogfood gates clean. The dialog paths are compile-verified but not
 runtime-exercised — they need a bundled app and a display, which neither this environment nor CI
 provides.
+
+### 36 — the CLI knew how to suggest, and didn't
+
+**Gap.** A fresh pass over what the CLI does when a user simply mistypes something. Exit codes were
+already right (2 for misuse, 1 for failure, 0 for bare help). The messages were not.
+
+`truspec lnit` answered `Unknown command: lnit` followed by the whole help text, with no suggestion
+— even though this project has shipped an edit-distance suggester since iteration 27 and uses it to
+say *"did you mean 'headers'?"* about a mistyped key in a file. The CLI's own surface had never been
+given the same treatment.
+
+`truspec lint --stict` was worse, because the message was actively misleading: Node's `parseArgs`
+answers an unknown option by explaining how to pass a *positional* argument that begins with a dash
+(`place it at the end of the command after '--'`). That is accurate and almost never the cause. All
+thirteen commands relayed it verbatim, and most did not print their own usage line alongside it, so
+the reader was left with neither the right flag nor the list of real ones.
+
+**Change.** `closest()` (the same optimal-string-alignment metric, same tightness — it refuses to
+guess rather than guess wrong) now backs both. An unknown command suggests the command; an unknown
+option names the command it was given to, suggests the flag, and prints that command's usage. One
+shared `argError` replaced thirteen copies of the same catch block.
+
+**What this turned up.** The dispatch lived in `index.ts`, which runs `main(process.argv)` on
+import — so no test could import it, and `vitest.config.ts` excluded it from coverage as an
+"index.ts re-export barrel". It was neither of those things: it was the entire command routing
+table, untested and uncounted, where a copy-paste `case "docs": return driftCommand(rest)` would
+have been caught by nothing. The dispatch moved to `dispatch.ts` (`index.ts` stays the published
+`bin`, so CI's `node packages/cli/dist/index.js ...` invocations are untouched), and `main` takes
+injectable streams. There is now a test that stubs all thirteen command modules and asserts each
+name routes to its own handler with the right argv.
+
+**Verification.** 21 new tests. 823 unit tests, coverage 95.70% lines / 87.77% branches / 96.61%
+functions — above where this iteration started, having also brought a previously excluded file into
+the count. Typecheck 8/8, 97 e2e, dogfood gates clean, and the built binary re-checked against the
+exact commands CI runs.

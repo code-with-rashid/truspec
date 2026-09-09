@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { type MockServerHandle, startMockServer } from "@truspec/core/mock";
 import { type CommandDeps, num, resolveDeps } from "./deps";
+import { argError } from "../args";
 
 export interface MockDeps extends Partial<CommandDeps> {
   /** Called once the server is listening (used by tests to grab the handle). */
@@ -25,7 +26,7 @@ export async function mockCommand(argv: string[], deps: MockDeps = {}): Promise<
   try {
     values = parseArgs({ args: argv, allowPositionals: true, options }).values;
   } catch (e) {
-    d.stderr(`${(e as Error).message}\n`);
+    d.stderr(argError(e, "mock", options));
     return 2;
   }
   if (!values.spec) {

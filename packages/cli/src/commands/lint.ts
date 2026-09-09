@@ -3,6 +3,7 @@ import { relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { LINT_RULES, type LintReport, lintWorkspace } from "@truspec/core/lint";
 import { type CommandDeps, emit, resolveDeps } from "./deps";
+import { argError } from "../args";
 
 const USAGE =
   "Usage: truspec lint [<dir>] [--strict] [--json] [--disable <rule>] [--output <file>] [--list-rules]\n";
@@ -31,7 +32,7 @@ export async function lintCommand(argv: string[], deps: Partial<CommandDeps> = {
     values = parsed.values;
     positionals = parsed.positionals;
   } catch (e) {
-    d.stderr(`${(e as Error).message}\n`);
+    d.stderr(argError(e, "lint", options, USAGE));
     return 2;
   }
 

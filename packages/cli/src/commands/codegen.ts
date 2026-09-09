@@ -2,6 +2,7 @@ import { parseArgs } from "node:util";
 import { CODEGEN_TARGETS, codegenTargetIds, generateCode } from "@truspec/core/codegen";
 import { prepareRequest } from "@truspec/core/workspace";
 import { type CommandDeps, emit, resolveDeps } from "./deps";
+import { argError } from "../args";
 
 const USAGE =
   "Usage: truspec codegen <request.tspec.yaml> [--lang <target>] [--env <name>] [--output <file>] [--list]\n";
@@ -23,7 +24,7 @@ export async function codegenCommand(
   try {
     parsed = parseArgs({ args: argv, allowPositionals: true, options }) as typeof parsed;
   } catch (e) {
-    d.stderr(`${(e as Error).message}\n`);
+    d.stderr(argError(e, "codegen", options, USAGE));
     return 2;
   }
   const { values, positionals } = parsed;

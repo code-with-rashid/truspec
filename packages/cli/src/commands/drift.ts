@@ -3,6 +3,7 @@ import { parseArgs } from "node:util";
 import { driftReport, liveDriftReport } from "@truspec/core/spec";
 import { formatDrift } from "../output";
 import { type CommandDeps, emit, num, resolveDeps } from "./deps";
+import { argError } from "../args";
 
 /** `truspec drift --spec <openapi> [<dir>]` — exits non-zero when the collection has drifted. */
 export async function driftCommand(argv: string[], deps: Partial<CommandDeps> = {}): Promise<number> {
@@ -22,7 +23,7 @@ export async function driftCommand(argv: string[], deps: Partial<CommandDeps> = 
     values = parsed.values;
     positionals = parsed.positionals;
   } catch (e) {
-    d.stderr(`${(e as Error).message}\n`);
+    d.stderr(argError(e, "drift", options));
     return 2;
   }
 

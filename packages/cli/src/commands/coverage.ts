@@ -3,6 +3,7 @@ import { parseArgs } from "node:util";
 import { coverageReport } from "@truspec/core/spec";
 import { formatCoverage } from "../output";
 import { type CommandDeps, emit, num, resolveDeps } from "./deps";
+import { argError } from "../args";
 
 /** `truspec coverage --spec <openapi> [<dir>] [--min <percent>]` — gates when below `--min`. */
 export async function coverageCommand(argv: string[], deps: Partial<CommandDeps> = {}): Promise<number> {
@@ -21,7 +22,7 @@ export async function coverageCommand(argv: string[], deps: Partial<CommandDeps>
     values = parsed.values;
     positionals = parsed.positionals;
   } catch (e) {
-    d.stderr(`${(e as Error).message}\n`);
+    d.stderr(argError(e, "coverage", options));
     return 2;
   }
 

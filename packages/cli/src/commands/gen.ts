@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { scaffoldFromSpec, writeScaffold } from "@truspec/core/spec";
 import { type CommandDeps, resolveDeps } from "./deps";
+import { argError } from "../args";
 
 /** `truspec gen --spec <openapi> --out <dir>` — scaffold a request stub per operation. */
 export async function genCommand(argv: string[], deps: Partial<CommandDeps> = {}): Promise<number> {
@@ -17,7 +18,7 @@ export async function genCommand(argv: string[], deps: Partial<CommandDeps> = {}
   try {
     values = parseArgs({ args: argv, allowPositionals: true, options }).values;
   } catch (e) {
-    d.stderr(`${(e as Error).message}\n`);
+    d.stderr(argError(e, "gen", options));
     return 2;
   }
   if (!values.spec || !values.out) {

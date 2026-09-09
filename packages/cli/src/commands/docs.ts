@@ -4,6 +4,7 @@ import { parseArgs } from "node:util";
 import { CODEGEN_TARGETS } from "@truspec/core/codegen";
 import { collectionDocs } from "@truspec/core/docs";
 import { type CommandDeps, emit, resolveDeps } from "./deps";
+import { argError } from "../args";
 
 const USAGE =
   "Usage: truspec docs [<dir>] [--out <file>] [--title <text>] [--lang <target>|none] [--base-level <n>]\n";
@@ -25,7 +26,7 @@ export async function docsCommand(argv: string[], deps: Partial<CommandDeps> = {
     values = parsed.values;
     positionals = parsed.positionals;
   } catch (e) {
-    d.stderr(`${(e as Error).message}\n${USAGE}`);
+    d.stderr(argError(e, "docs", options, USAGE));
     return 2;
   }
 

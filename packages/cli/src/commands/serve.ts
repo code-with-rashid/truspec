@@ -2,6 +2,7 @@ import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { buildFetch, mergeTransport, transportFromEnv } from "../transport";
 import { type CommandDeps, num, resolveDeps } from "./deps";
+import { argError } from "../args";
 
 interface WebServerHandle {
   url: string;
@@ -45,7 +46,7 @@ export async function serveCommand(argv: string[], deps: ServeDeps = {}): Promis
   try {
     values = parseArgs({ args: argv, allowPositionals: true, options }).values;
   } catch (e) {
-    d.stderr(`${(e as Error).message}\n`);
+    d.stderr(argError(e, "serve", options));
     return 2;
   }
 

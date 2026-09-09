@@ -7,6 +7,7 @@ import {
   listEnvironments,
 } from "@truspec/core/workspace";
 import { type CommandDeps, emit, resolveDeps } from "./deps";
+import { argError } from "../args";
 
 const USAGE =
   "Usage: truspec env [<name>] [--dir <collection>] [--json]\n       truspec env --diff <a> <b> [--json]\n";
@@ -28,7 +29,7 @@ export async function envCommand(argv: string[], deps: Partial<CommandDeps> = {}
     values = parsed.values;
     positionals = parsed.positionals;
   } catch (e) {
-    d.stderr(`${(e as Error).message}\n${USAGE}`);
+    d.stderr(argError(e, "env", options, USAGE));
     return 2;
   }
 

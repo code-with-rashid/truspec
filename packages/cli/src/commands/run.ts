@@ -4,6 +4,7 @@ import { formatHuman, formatJson, formatJunit } from "../output";
 import { formatHtml } from "../report-html";
 import { buildFetch, mergeTransport, transportFromEnv } from "../transport";
 import { type CommandDeps, emit, num, resolveDeps } from "./deps";
+import { argError } from "../args";
 
 /** `truspec run <path>` — returns a process exit code (0 ok, 1 failures/error, 2 usage). */
 export async function runCommand(argv: string[], deps: Partial<CommandDeps> = {}): Promise<number> {
@@ -62,7 +63,7 @@ export async function runCommand(argv: string[], deps: Partial<CommandDeps> = {}
     values = parsed.values;
     positionals = parsed.positionals;
   } catch (e) {
-    d.stderr(`${(e as Error).message}\n`);
+    d.stderr(argError(e, "run", options));
     return 2;
   }
 
@@ -82,7 +83,7 @@ export async function runCommand(argv: string[], deps: Partial<CommandDeps> = {}
   try {
     overrides = parseVarFlags(values.var ?? []);
   } catch (e) {
-    d.stderr(`${(e as Error).message}\n`);
+    d.stderr(argError(e, "run", options));
     return 2;
   }
 

@@ -11,6 +11,7 @@ import {
   writeImport,
 } from "@truspec/core/importers";
 import { type CommandDeps, resolveDeps } from "./deps";
+import { argError } from "../args";
 
 const SOURCES = ["postman", "bruno", "insomnia", "curl", "har"] as const;
 type Source = (typeof SOURCES)[number];
@@ -58,7 +59,7 @@ export async function importCommand(argv: string[], deps: Partial<CommandDeps> =
     values = parsed.values;
     positionals = parsed.positionals;
   } catch (e) {
-    d.stderr(`${(e as Error).message}\n`);
+    d.stderr(argError(e, "import", options, USAGE));
     return 2;
   }
 

@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { initNextSteps, type InitResult, initProject } from "@truspec/core/workspace";
 import { type CommandDeps, resolveDeps } from "./deps";
+import { argError } from "../args";
 
 const USAGE =
   "Usage: truspec init [<dir>] [--spec <openapi>] [--dir <requests>] [--base-url <url>] [--env <name>] [--force]\n";
@@ -25,7 +26,7 @@ export async function initCommand(argv: string[], deps: Partial<CommandDeps> = {
     values = parsed.values;
     positionals = parsed.positionals;
   } catch (e) {
-    d.stderr(`${(e as Error).message}\n${USAGE}`);
+    d.stderr(argError(e, "init", options, USAGE));
     return 2;
   }
 
