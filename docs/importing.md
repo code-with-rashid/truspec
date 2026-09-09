@@ -178,6 +178,12 @@ The importer maps the common surface of each format onto TruSpec's
   [`body` types](./file-format.md#bodies).
 - **Auth** — bearer, basic, and API-key auth map to TruSpec [`auth`](./file-format.md#auth).
 - **Folder structure** — preserved as directories of `.tspec.yaml` files.
+- **Bruno `assert` blocks** — `res.status`, `res.responseTime` (to a `duration` assertion),
+  `res.body.<path>` with any of `eq neq gt gte lt lte contains matches length isDefined
+  isUndefined isNull isEmpty isNotEmpty isString isNumber isBoolean isArray`, and
+  `res.headers['name']`. Two constraints on the same field both survive.
+- **Bruno `vars:post-response`** — becomes [`capture`](./file-format.md#chaining-with-capture),
+  so a login that saves a token still saves it and the chain still runs.
 
 Everything is run through the schema and **validated before it's written**, so an import
 never produces a file that won't parse.

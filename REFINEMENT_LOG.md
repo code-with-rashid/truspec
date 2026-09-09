@@ -2109,3 +2109,46 @@ the source: 3 failed, 20 passed) and the other two hold the lines that must not 
 cookie still withheld from plain http off-loopback, and widening to a real registrable domain still
 allowed. 958 unit tests, coverage 95.86% lines / 87.73% branches / 96.31% functions, typecheck 8/8,
 docs updated and building.
+
+### 62 — the Bruno import that dropped the chain
+
+**Why here.** Bruno is the closest competitor — local-first, files in your repo, the same
+argument. Anyone who switches arrives through `truspec import bruno`, and what that import loses is
+the first impression. So I wrote a realistic two-request Bruno collection (login → capture token →
+authenticated call, with an assert block and a tests block) and imported it.
+
+**What came out.** The `capture` was gone. Bruno's
+
+```
+vars:post-response {
+  token: res.body.access_token
+}
+```
+
+is exactly TruSpec's `capture:` — and it was dropped, with no warning. The login still ran, the
+token was no longer saved, and the next request interpolated an undefined `{{token}}`. Chaining is
+the reason a collection has more than one request in it; an importer that drops it produces
+something that looks like a successful import and isn't.
+
+Four more, from the same two files:
+
+- `res.responseTime: lt 2000` was warned-about and skipped, though `{ type: duration, ltMs: 2000 }`
+  is an exact equivalent. So were `neq`, `gt`, `lte`, `contains`, `matches`, `length`, every
+  `is*` predicate, and every header assertion. The whole operator table is mapped now, and the
+  test iterates it, so a missing one is a failing test rather than a warning nobody reads.
+- `res.body.id: neq null` imported as the *string* `"null"` — an assertion that passes against a
+  body whose field really is null, which is the case it was written to catch.
+- `url: {{baseUrl}}/me?expand=profile` plus a `query { expand: profile }` block produced
+  `?expand=profile&expand=profile`. Bruno shows those as one thing kept in sync; importing both
+  duplicates every parameter, and plenty of APIs read a repeated parameter as an array.
+- A `tests { }` block vanished silently. It cannot be converted — but it can be named.
+
+**And one the tests found.** Writing the operator-table test surfaced that assert lines were being
+collapsed into a `Map` keyed by the left-hand side. `res.status: gte 200` followed by
+`res.status: lt 300` — an ordinary range check — kept only the second. Two constraints on one field
+now both survive; `kvLines` stays a map for the blocks where a repeated key really is a conflict.
+
+**Verification.** 964 unit tests (10 new), coverage 96.04% lines / 87.91% branches / 96.39%
+functions, typecheck 8/8, docs updated and building. The first coverage run failed the functions
+threshold at 95.11% — the operator table is a lot of small functions — which is the gate doing its
+job: the table is now covered entry by entry rather than sampled.
