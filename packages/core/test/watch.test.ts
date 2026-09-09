@@ -4,13 +4,23 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { isRelevantChange, watchWorkspace } from "../src/workspace";
 
-/** Poll until `ready()` holds, or fail loudly at the deadline rather than asserting on a sleep. */
-async function waitFor(ready: () => boolean, timeoutMs = 5000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
+/**
+ * Poll until `ready()` holds, running `tick` before each attempt, and report how long it took.
+ *
+ * Fails loudly at the deadline rather than asserting on a sleep.
+ */
+async function waitFor(
+  ready: () => boolean,
+  { timeoutMs = 8000, tick }: { timeoutMs?: number; tick?: () => void } = {},
+): Promise<number> {
+  const started = Date.now();
+  const deadline = started + timeoutMs;
   while (!ready()) {
     if (Date.now() > deadline) throw new Error(`condition not met within ${timeoutMs}ms`);
-    await new Promise((r) => setTimeout(r, 20));
+    tick?.();
+    await new Promise((r) => setTimeout(r, 25));
   }
+  return Date.now() - started;
 }
 
 let dir: string;
@@ -201,19 +211,24 @@ describe("watchWorkspace", () => {
     const stop = watchWorkspace(join(dir, "api"), () => {
       fired += 1;
     }, { debounceMs: 5 });
-    writeFileSync(join(dir, "api", "b.tspec.yaml"), 'tspec: "0.1"\nname: B\nurl: "https://x.test"\n');
-    // Wait for the event rather than for a fixed 250ms: fs.watch is backed by FSEvents on macOS,
-    // which coalesces and can take most of a second to deliver. A sleep long enough to be safe
-    // there would slow every run; polling is both faster and not a race.
-    await waitFor(() => fired >= 1);
+
+    // Keep writing until an event arrives, rather than writing once and waiting. `fs.watch` is
+    // backed by FSEvents on macOS, which does not arm synchronously — a file written in the same
+    // tick as the watcher is created can be missed entirely, so a single write is a coin toss
+    // there (and was: this test timed out on every macOS run). What is being asserted is that a
+    // real filesystem change reaches the watcher, not that the very first one does.
+    const write = (name: string): void =>
+      writeFileSync(join(dir, "api", name), `tspec: "0.1"\nname: B\nurl: "https://x.test"\n# ${Date.now()}\n`);
+    const deliveryMs = await waitFor(() => fired >= 1, { tick: () => write("b.tspec.yaml") });
     stop();
     expect(fired).toBeGreaterThanOrEqual(1);
 
-    // Nothing fires after teardown, which is what keeps a finished run from hanging. This one has
-    // to be a real wait — the assertion is that nothing arrives — but it is bounded and short.
+    // Nothing fires after teardown, which is what keeps a finished run from hanging. The wait has
+    // to be a real one — the assertion is that nothing arrives — and it is scaled by how long
+    // delivery actually took above, so on a platform where events lag it is not a vacuous pass.
     const after = fired;
-    writeFileSync(join(dir, "api", "c.tspec.yaml"), 'tspec: "0.1"\nname: C\nurl: "https://x.test"\n');
-    await new Promise((r) => setTimeout(r, 150));
+    write("c.tspec.yaml");
+    await new Promise((r) => setTimeout(r, Math.max(300, deliveryMs * 3)));
     expect(fired).toBe(after);
   });
 

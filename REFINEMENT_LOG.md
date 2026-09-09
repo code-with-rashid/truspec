@@ -2802,3 +2802,39 @@ failed the contract test until both were documented in `docs/api.md` and `docs/c
 **Verification.** 1075 unit tests (12 new), coverage 96.00% lines / 87.68% branches / 96.62%
 functions, typecheck 8/8, docs updated in three places, and the competitive table at the top of
 this log now has no open ✗.
+
+### 78 — the macOS watcher failure, diagnosed properly this time
+
+**What the last fix actually bought.** Iteration 65 changed this test from sleeping 250ms and
+asserting `fired >= 1` to polling for the condition with a 5s ceiling. It kept failing on macOS —
+but now it failed *legibly*:
+
+```
+× watchWorkspace > uses the real filesystem watcher by default and tears it down cleanly
+  → Test timed out in 5000ms.
+```
+
+That is the difference between a wrong assertion (`expected 0 to be greater than or equal to 1`,
+which reads like the watcher is broken) and the truth: **on macOS the event never arrives at all**,
+not within 250ms and not within five seconds.
+
+**Why.** `fs.watch` is backed by FSEvents on macOS, and FSEvents does not arm synchronously. The
+test created the watcher and wrote the file in the same tick, so on that platform the write
+happened before the watch was live — and no later event ever came, because there was no later
+write. A single write is a coin toss there, and the coin was landing the same way every time.
+
+**The fix is to keep writing until an event arrives**, rather than writing once and waiting. What
+the test asserts is that *a real filesystem change reaches the watcher* — not that the very first
+one does, which is a claim about FSEvents' arming latency and not about this code.
+
+**And the second half was a vacuous pass waiting to happen.** After teardown it wrote a file and
+waited 150ms to assert nothing fired. On a platform where delivery takes longer than that, nothing
+firing proves nothing — the assertion would pass against a watcher that was simply deaf. It now
+waits three times however long delivery actually took in the first half, which the polling loop
+returns. A measured bound instead of a guess.
+
+**Not a re-run.** The failure had a cause, the cause is gone, and the test is stronger on every
+platform than it was before it started failing.
+
+**Verification.** 1075 unit tests, watcher suite 11/11 in 345ms (faster than the fixed sleep it
+replaced), typecheck 8/8.
