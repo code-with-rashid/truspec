@@ -220,3 +220,44 @@ describe("formatHuman shows the redirect chain", () => {
     expect(withRedirects([])).not.toContain("followed");
   });
 });
+
+describe("formatHuman names a capture that produced nothing", () => {
+  // Reported on the passing request that should have produced the value. The only other sign is a
+  // failure several files later that names the consumer ("Unresolved variables: {{token}}").
+  const text = formatHuman(
+    {
+      results: [
+        {
+          name: "Login",
+          filePath: "/w/01-login.tspec.yaml",
+          request: { method: "POST", url: "http://a/login" },
+          ok: true,
+          response: { status: 200, statusText: "OK", durationMs: 5, bodyText: "{}", headers: {} },
+          assertions: [],
+          missedCaptures: [
+            {
+              name: "token",
+              source: "$.access_token",
+              reason: '$ has no "access_token"; keys: token_value',
+            },
+          ],
+        },
+      ],
+      passed: 1,
+      failed: 0,
+      skipped: 0,
+      ok: true,
+      missingSecrets: [],
+    } as never,
+    "/w",
+  );
+
+  it("names the variable, where it looked, and what was there", () => {
+    expect(text).toContain("! capture token ← $.access_token matched nothing");
+    expect(text).toContain('$ has no "access_token"; keys: token_value');
+  });
+
+  it("still reports the request itself as passing, because it did", () => {
+    expect(text).toContain("✓ PASS  Login");
+  });
+});

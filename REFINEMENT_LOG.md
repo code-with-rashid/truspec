@@ -2419,3 +2419,46 @@ reports `missing: ["body"]`, which is what iteration 54's test pinned.
 **Verification.** 1003 unit tests (8 new: seven at the engine level, one over real HTTP proving the
 server actually reads the body), coverage 95.98% lines / 87.80% branches / 96.49% functions,
 typecheck 8/8, docs updated with the exact shape of the 400.
+
+### 69 — the capture that quietly captured nothing
+
+**Following iteration 66.** If "(no match)" was worth explaining for an assertion, the same miss in
+a `capture` is worse: an assertion at least fails where the problem is. A capture that matches
+nothing fails somewhere else entirely.
+
+The probe — a login whose response field is `token_value` and whose capture reads
+`$.access_token`, then a request that uses `{{token}}`:
+
+```
+✓ PASS  Login  (api/01-login.tspec.yaml)  200 28ms
+✗ FAIL  Me     (api/02-me.tspec.yaml)
+      error: Unresolved variables: {{token}}
+```
+
+The run fails, which is right. But everything it says is about the *consumer*. The request that
+was supposed to produce the value is a clean green tick, and nothing anywhere mentions that its
+capture came back empty. In a collection of any size the reader now goes looking for who was
+supposed to set `token`.
+
+**Now the producer says so, on its own line, with the reason:**
+
+```
+✓ PASS  Login  (api/01-login.tspec.yaml)  200 25ms
+      ! capture token ← $.access_token matched nothing — $ has no "access_token"; keys: token_value
+```
+
+The whole diagnosis — which request, which variable, where it looked, and what is actually
+there — in one line, because iteration 66's `explainJsonPathMiss` already knew how to say the last
+part. A `{ header }` capture gets the equivalent (`the response has no X-Request-Id header`).
+
+**It is a warning, not a failure**, and deliberately so: a collection may capture something nothing
+consumes, and turning that into a red run would break working collections to report a
+non-problem. Where it *does* matter, the run already goes red — at the consumer — and now the
+producer's line explains it. The request that missed still reports `✓ PASS`, because it did pass.
+
+The web UI shows the same thing beside the captured values, in the warning colour, so the "not
+captured" chips sit next to the ones that worked.
+
+**Verification.** 1011 unit tests (8 new) and 112 e2e, coverage 95.95% lines / 87.73% branches /
+96.51% functions, typecheck 8/8, docs updated (the file-format note that used to read "simply
+skipped" now shows what is printed instead).

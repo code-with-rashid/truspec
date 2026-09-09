@@ -28,6 +28,12 @@ export function formatHuman(result: WorkspaceRunResult, cwd: string): string {
     for (const a of r.assertions) {
       if (!a.ok) lines.push(`      ✗ ${a.message}`);
     }
+    // A capture that matched nothing is reported on the request that *should have produced* the
+    // value. Without it the only sign is a failure several files later that names the consumer
+    // ("Unresolved variables: {{token}}") and says nothing about which request went wrong.
+    for (const m of r.missedCaptures ?? []) {
+      lines.push(`      ! capture ${m.name} ← ${m.source} matched nothing${m.reason ? ` — ${m.reason}` : ""}`);
+    }
   }
   // Before the summary, and never silently: a file that did not parse ran no request at all, so it
   // appears in no other line of this report.

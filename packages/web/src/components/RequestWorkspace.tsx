@@ -551,6 +551,22 @@ export function RequestWorkspace({
                     <span className="captured-hint">→ available to later requests</span>
                   </div>
                 )}
+
+                {/* Shown on the request that should have produced the value: without it the only
+                    sign is a later request failing on a variable nothing ever set. */}
+                {(result?.missedCaptures?.length ?? 0) > 0 && (
+                  <div className="captured missed" role="status">
+                    <span className="captured-title">not captured</span>
+                    {result?.missedCaptures?.map((m) => (
+                      <span key={m.name} className="captured-chip missed">
+                        <span className="k">{m.name}</span>
+                        <span className="muted">←</span>
+                        <span className="v">{m.source}</span>
+                        {m.reason && <span className="muted"> — {m.reason}</span>}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             </>
           ) : (

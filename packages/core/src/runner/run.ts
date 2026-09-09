@@ -7,7 +7,7 @@ import {
   evaluateSchemaAssertion,
   type ResponseView,
 } from "./assertions";
-import { evaluateCaptures } from "./capture";
+import { captureValues, type MissedCapture } from "./capture";
 import { type CookieJar, setCookiesOf } from "./cookies";
 import type { VarValue, Vars } from "./interpolate";
 import { type OAuth2Auth, resolveOAuthToken, type TokenCache } from "./oauth";
@@ -80,6 +80,12 @@ export interface RunResult {
   };
   assertions: AssertionResult[];
   captured?: Record<string, VarValue>;
+  /**
+   * Captures that matched nothing. Not a failure on its own — nothing may consume the variable —
+   * but the request that does consume it fails several files later with "Unresolved variables",
+   * naming the consumer rather than the producer. Reporting it here names the producer.
+   */
+  missedCaptures?: MissedCapture[];
   /** Redirect hops actually followed, when `options.followRedirects` is on. */
   redirects?: string[];
   /** The chain stopped because `maxRedirects` was reached, not because the server stopped redirecting. */
@@ -390,7 +396,8 @@ export async function runRequest(req: TruSpecRequest, ctx: RunContext = {}): Pro
   if (ctx.contract?.auto && !req.assertions.some((a) => a.type === "schema")) {
     assertions.push(evaluateSchemaAssertion({ type: "schema" }, view, contractCtx));
   }
-  const captured = evaluateCaptures(req.capture, view);
+  const capture = captureValues(req.capture, view);
+  const captured = capture.values;
 
   let scriptError: string | undefined;
   if (req.script?.post) {
@@ -421,5 +428,6 @@ export async function runRequest(req: TruSpecRequest, ctx: RunContext = {}): Pro
     assertions,
     ...(scriptError ? { error: `Script error: ${scriptError}` } : {}),
     ...(Object.keys(captured).length > 0 ? { captured } : {}),
+    ...(capture.missed.length > 0 ? { missedCaptures: capture.missed } : {}),
   };
 }

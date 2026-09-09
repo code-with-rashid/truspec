@@ -468,7 +468,17 @@ Notes:
 - Requests run in `order` (ascending), then by file path — so lower-`order` requests can
   feed higher ones.
 - A jsonpath that selects an object/array is captured as its JSON string.
-- A capture whose source resolves to nothing is simply skipped (the variable stays unset).
+- A capture whose source resolves to nothing leaves the variable unset, and **says so on the
+  request that should have produced it**:
+
+  ```
+  ✓ PASS  Login  (api/01-login.tspec.yaml)  200 25ms
+        ! capture token ← $.access_token matched nothing — $ has no "access_token"; keys: token_value
+  ```
+
+  It is not a failure by itself — nothing may consume the variable — but the request that does
+  consume it fails with `Unresolved variables: {{token}}`, which names the consumer rather than
+  the producer. The web UI shows the same thing beside the values that were captured.
 - Captures flow forward only within a single `run` invocation; they are not persisted.
 
 ---

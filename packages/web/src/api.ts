@@ -46,6 +46,8 @@ export interface RunResult {
   };
   assertions: AssertionResult[];
   captured?: Record<string, unknown>;
+  /** Captures that matched nothing — the reason a later request fails on an unresolved variable. */
+  missedCaptures?: Array<{ name: string; source: string; reason?: string }>;
 }
 
 export interface WorkspaceRunResult {

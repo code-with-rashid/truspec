@@ -3200,3 +3200,13 @@ select:focus {
   justify-content: center;
   margin: 4px 0 8px;
 }
+
+/* A capture that matched nothing sits beside the ones that did, in the warning colour. */
+.captured.missed .captured-title,
+.captured-chip.missed .k {
+  color: var(--amber);
+}
+
+.captured-chip.missed {
+  border-color: color-mix(in oklab, var(--amber) 40%, var(--line));
+}
