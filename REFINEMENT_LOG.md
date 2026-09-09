@@ -1391,3 +1391,39 @@ now covers it, including exactly what does not survive the trip.
 same "tests nothing" shape, in the other direction. Recognising the common `pm.test` patterns and
 converting them back into declarative assertions is a larger piece of work and deserves its own
 pass rather than being bolted onto this one.
+
+### 44 — importing from Postman produced a collection that checked nothing
+
+**Gap.** The other half of iteration 43. Every Postman `test` script became a commented-out
+`script.post`, so importing a real Postman collection produced requests with **zero assertions**: it
+ran without checking anything and reported 0% coverage. For a product whose pitch to a Postman user
+is "bring your collection", that is the worst possible first impression — the import appears to
+succeed, and quietly hands back something that tests nothing.
+
+**Change.** A recogniser for the Postman test idioms that actually occur: `pm.response.to.have.status(200)`
+(the most-pasted test script in existence), `pm.expect(pm.response.code)` in its `eql`/`equal`/
+`oneOf`/`below`/`at.least` spellings, `responseTime`, header existence and equality/negation,
+`pm.response.text()` inclusion, and a JSON value reached either by accessor chain (`jsonData.data.id`)
+or by `_.get`. Single-quoted strings are handled, because they are valid JS and invalid JSON.
+
+**The rule that keeps it honest.** Anything unrecognised marks the script incomplete, the ported
+comment is kept, and a human still sees the original — a guessed assertion is worse than an honest
+gap. Only when *every* non-structural line was understood is the comment dropped, because a
+commented copy of a script whose meaning now lives in `assertions` is noise. A `const jsonData =
+pm.response.json()` line carries no assertion and correctly counts as structural rather than as a
+leftover.
+
+**Verification.** 11 recogniser tests written against hand-written Postman styles rather than only
+the shape this project's own exporter emits — that distinction is the point, since the feature
+exists for *other people's* collections. Two of them assert the negative: a script with a `reduce`
+over the body recovers the one status check it contains and still reports incomplete, and a script
+that only sets an environment variable recovers nothing and claims nothing.
+
+Then the property that ties both iterations together, now a committed test: export `examples/blog`
+to Postman, import it straight back, and every assertion is identical — with a guard that the
+fixture really does carry assertions, so it cannot pass by comparing two empty lists. Method, URL
+and body round-trip too. The only thing that still does not survive is the `spec` link, which has
+no Postman representation and says so in `warnings`.
+
+872 unit tests, 97 e2e, coverage 95.76% lines / 87.42% branches / 96.18% functions, typecheck 8/8,
+dogfood gates clean.

@@ -234,6 +234,13 @@ import { exportPostman } from "@truspec/core/exporters";
 const { collection, warnings, stats } = exportPostman("./api");
 ```
 
+**Assertions come back too.** Importing a Postman collection recovers declarative assertions from
+its `test` scripts — `pm.response.to.have.status(200)`, `pm.expect(pm.response.code).to.eql(201)`,
+response-time and header checks, `pm.expect(pm.response.text()).to.include(...)`, and a value read
+off `pm.response.json()` by accessor chain or `_.get`. Anything not recognised stays in the ported
+comment for you to port by hand, because a guessed assertion is worse than an honest gap. Before
+this, an imported collection ran without checking anything and reported 0% coverage.
+
 **Assertions come with it.** Each request's declarative assertions are rendered as a Postman test
 script (`pm.test(...)`), so the exported collection still checks what the TruSpec one checked
 rather than becoming a set of requests that assert nothing. `status`, `header`, `body` and

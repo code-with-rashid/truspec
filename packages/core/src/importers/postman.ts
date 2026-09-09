@@ -2,19 +2,23 @@ import { parse } from "../format";
 import { SCHEMA_VERSION } from "../format/schema";
 import type { TruSpecAuth, TruSpecBody, TruSpecMethod, TruSpecRequest } from "../format/types";
 import { safeDecodeURIComponent } from "../util/uri";
+import { assertionsFromPostmanTest } from "./postman-assertions";
 import { asRecord, type ImportedFile, type ImportResult, normalizeMethod, portedScript, slug } from "./types";
 
 /** Pull Postman `prerequest`/`test` event scripts (preserved as comments to port to the tr API). */
-function postmanScripts(event: unknown): { pre?: string; post?: string } {
+function postmanScripts(event: unknown): { pre?: string; post?: string; rawPost?: string } {
   if (!Array.isArray(event)) return {};
-  const out: { pre?: string; post?: string } = {};
+  const out: { pre?: string; post?: string; rawPost?: string } = {};
   for (const e of event) {
     const er = asRecord(e);
     const exec = asRecord(er?.script)?.exec;
     const code = Array.isArray(exec) ? exec.filter((l): l is string => typeof l === "string").join("\n") : "";
     if (!code.trim()) continue;
     if (er?.listen === "prerequest") out.pre = portedScript(code, "Postman");
-    else if (er?.listen === "test") out.post = portedScript(code, "Postman");
+    else if (er?.listen === "test") {
+      out.post = portedScript(code, "Postman");
+      out.rawPost = code; // the un-commented source, for assertion recovery
+    }
   }
   return out;
 }
@@ -201,8 +205,19 @@ function convertRequest(item: Record<string, unknown>, warnings: string[]): TruS
   const body = convertBody(req.body, warnings, name);
   if (body) out.body = body;
   const scripts = postmanScripts(item.event);
-  if (scripts.pre || scripts.post) {
-    out.script = { ...(scripts.pre ? { pre: scripts.pre } : {}), ...(scripts.post ? { post: scripts.post } : {}) };
+  // Recover what the test script actually asserts. Without this an imported collection runs
+  // without checking anything and reports 0% coverage, which is the opposite of why it was
+  // imported. Anything unrecognised stays in the ported comment rather than being guessed at.
+  const recovered = scripts.rawPost ? assertionsFromPostmanTest(scripts.rawPost) : undefined;
+  if (recovered && recovered.assertions.length > 0) {
+    out.assertions = recovered.assertions;
+    warnings.push(
+      `"${name}": recovered ${recovered.assertions.length} assertion(s) from the Postman test script`,
+    );
+  }
+  const keepPost = scripts.post !== undefined && !recovered?.complete;
+  if (scripts.pre || keepPost) {
+    out.script = { ...(scripts.pre ? { pre: scripts.pre } : {}), ...(keepPost ? { post: scripts.post } : {}) };
     warnings.push(`"${name}": Postman scripts imported as comments — port to the tr API`);
   }
   return out;
