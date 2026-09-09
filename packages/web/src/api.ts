@@ -138,12 +138,31 @@ export interface RequestDetail {
   spec?: { operation?: string; operationId?: string };
   /** Raw YAML source of the file, for the editor. */
   raw?: string;
+  /**
+   * Version tag of the exact bytes this detail was read from. Sent back on save so the server can
+   * refuse to overwrite an edit that landed on disk in between (an agent, a `git pull`, another
+   * editor) instead of silently discarding it.
+   */
+  version?: string;
+}
+
+/**
+ * Strip the fields the client adds to a request detail — the raw YAML the editor round-trips and
+ * the version tag used for conflict detection — before the object is validated as a request.
+ * The schema is `.strict()`, so anything left over is rejected by name.
+ */
+export function requestFields(detail: RequestDetail): Record<string, unknown> {
+  const { raw: _raw, version: _version, ...rest } = detail;
+  return rest as unknown as Record<string, unknown>;
 }
 
 export interface SaveResult {
   ok: boolean;
   path?: string;
   error?: string;
+  /** The save was refused because the file changed on disk; `current` is what is there now. */
+  conflict?: boolean;
+  current?: string;
 }
 
 export interface CreateFolderResult {
@@ -309,10 +328,13 @@ export const drift = (spec: string) =>
   api<DriftReport>("/api/drift", { method: "POST", body: JSON.stringify({ spec }) });
 export const coverage = (spec: string) =>
   api<CoverageReport>("/api/coverage", { method: "POST", body: JSON.stringify({ spec }) });
-export const saveRequest = (path: string, content: string) =>
-  api<SaveResult>("/api/request", { method: "POST", body: JSON.stringify({ path, content }) });
-export const saveRequestObject = (path: string, request: Record<string, unknown>) =>
-  api<SaveResult>("/api/request/object", { method: "POST", body: JSON.stringify({ path, request }) });
+export const saveRequest = (path: string, content: string, baseVersion?: string) =>
+  api<SaveResult>("/api/request", { method: "POST", body: JSON.stringify({ path, content, baseVersion }) });
+export const saveRequestObject = (path: string, request: Record<string, unknown>, baseVersion?: string) =>
+  api<SaveResult>("/api/request/object", {
+    method: "POST",
+    body: JSON.stringify({ path, request, baseVersion }),
+  });
 export const createFolder = (path: string) =>
   api<CreateFolderResult>("/api/folder", { method: "POST", body: JSON.stringify({ path }) });
 export const renamePath = (path: string, newPath: string) =>

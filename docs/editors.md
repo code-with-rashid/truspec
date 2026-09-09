@@ -44,6 +44,12 @@ edit the `.tspec.yaml` files directly (with [schema-backed
 autocomplete](./file-format.md#editor-integration)) or use the VS Code extension below; the files
 are the source of truth either way.
 
+If a file changes on disk while you have it open — an agent editing it through the [MCP
+server](./mcp.md), a `git pull`, your own editor — a save is **refused rather than silently
+overwriting it**. The UI says the file changed and offers both ways out: reload to take what is on
+disk (discarding your unsaved edits to that request), or overwrite it with what is in the tab. Your
+repo is the source of truth, and more than one thing writes to it.
+
 `tags` shown next to the request's name are the ones `truspec run --tag <name>` selects on, so the
 subset your CI runs is visible in the client you author in. Transport `options` (timeout, retries,
 retry delay, redirect following) sit below the description.

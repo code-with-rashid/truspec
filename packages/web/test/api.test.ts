@@ -548,3 +548,77 @@ describe("web server api — spec-aware run (contract validation)", () => {
     }
   });
 });
+
+describe("a save that would overwrite an edit made on disk", () => {
+  const REQ = 'tspec: "0.1"\nname: R\nmethod: GET\nurl: "http://x/y"\nassertions: []\n';
+  const setup = (): { dir: string; file: string } => {
+    const dir = mkdtempSync(join(tmpdir(), "truspec-web-conflict-"));
+    const file = join(dir, "r.tspec.yaml");
+    writeFileSync(file, REQ);
+    return { dir, file };
+  };
+
+  it("hands out a version with the file, and takes it back on save", async () => {
+    const { dir, file } = setup();
+    try {
+      const read = await handleApi("GET", "/api/request", new URLSearchParams({ path: "r.tspec.yaml" }), undefined, { dir });
+      const { version } = read.json as { version: string };
+      expect(version).toMatch(/^[0-9a-f]{16}$/);
+
+      const ok = await handleApi("POST", "/api/request", noQuery, { path: "r.tspec.yaml", content: REQ.replace("GET", "PUT"), baseVersion: version }, { dir });
+      expect((ok.json as { ok: boolean }).ok).toBe(true);
+      expect(readFileSync(file, "utf8")).toContain("method: PUT");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses it, and returns what is on disk instead of writing", async () => {
+    const { dir, file } = setup();
+    try {
+      const read = await handleApi("GET", "/api/request", new URLSearchParams({ path: "r.tspec.yaml" }), undefined, { dir });
+      const { version } = read.json as { version: string };
+      writeFileSync(file, `${REQ}docs: "someone else"\n`);
+
+      const r = await handleApi("POST", "/api/request", noQuery, { path: "r.tspec.yaml", content: REQ.replace("GET", "PUT"), baseVersion: version }, { dir });
+      const body = r.json as { ok: boolean; conflict: boolean; current: string };
+      expect(body.ok).toBe(false);
+      expect(body.conflict).toBe(true);
+      expect(body.current).toContain("someone else");
+      expect(readFileSync(file, "utf8")).toContain("someone else"); // nothing written
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses a structured save the same way", async () => {
+    const { dir, file } = setup();
+    try {
+      const read = await handleApi("GET", "/api/request", new URLSearchParams({ path: "r.tspec.yaml" }), undefined, { dir });
+      const { version } = read.json as { version: string };
+      writeFileSync(file, `${REQ}docs: "someone else"\n`);
+
+      const r = await handleApi("POST", "/api/request/object", noQuery, {
+        path: "r.tspec.yaml",
+        request: { tspec: "0.1", name: "R", method: "PUT", url: "http://x/y", assertions: [] },
+        baseVersion: version,
+      }, { dir });
+      expect((r.json as { conflict: boolean }).conflict).toBe(true);
+      expect(readFileSync(file, "utf8")).toContain("someone else");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("writes without a version — an overwrite the user asked for, and any other client", async () => {
+    const { dir, file } = setup();
+    try {
+      writeFileSync(file, `${REQ}docs: "someone else"\n`);
+      const r = await handleApi("POST", "/api/request", noQuery, { path: "r.tspec.yaml", content: REQ.replace("GET", "PUT") }, { dir });
+      expect((r.json as { ok: boolean }).ok).toBe(true);
+      expect(readFileSync(file, "utf8")).not.toContain("someone else");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

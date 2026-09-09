@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type PointerEvent as ReactPointerEvent } from "react";
-import type { RequestDetail, RunResult, SaveResult } from "../api";
+import { requestFields, type RequestDetail, type RunResult, type SaveResult } from "../api";
 import { OptionsEditor } from "./OptionsEditor";
 import { TagsEditor } from "./TagsEditor";
 import { AssertionsEditor } from "./AssertionsEditor";
@@ -203,8 +203,7 @@ export function RequestWorkspace({
     setSaving(true);
     setSaveErr(null);
     try {
-      const { raw: _raw, ...request } = draft;
-      const res = await onSave(request);
+      const res = await onSave(requestFields(draft));
       if (!res.ok) setSaveErr(res.error ?? "save failed");
     } catch (e) {
       setSaveErr(String(e));

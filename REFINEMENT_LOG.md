@@ -1902,3 +1902,49 @@ under test, which is also a more honest fixture.
 **Verification.** 936 unit tests (4 new pinning the boundary, including one proving what is
 *inside* still runs), coverage 95.85% lines / 87.64% branches / 96.47% functions, typecheck 8/8,
 docs site builds.
+
+### 57 — the lost update at the centre of the pitch
+
+**What I looked for.** The claim this product rests on is that the files in your repo are the
+source of truth and *more than one thing writes to them* — you in the UI, an agent through the MCP
+server, `git pull`, your own editor. Nothing in this campaign had tested what happens when two of
+those touch the same file at once.
+
+**What happens.** Open a request in the web UI, edit a field, and while it is open let something
+else append to that file. Hit save:
+
+```
+--- file after save ---
+tspec: "0.1"
+name: Get pet
+method: POST                      <- my edit, saved
+url: "{{baseUrl}}/pets/1"
+...                               <- the other edit: gone
+external edit survived: false
+any warning shown: 0
+```
+
+A textbook lost update, with no warning, in the one workflow the product exists to support. The
+web server had no notion of the file's version at all: `GET /api/request` handed over content,
+`POST /api/request` wrote whatever came back, and everything in between was discarded.
+
+**The fix.** `GET /api/request` now returns a `version` — a truncated sha256 of the exact bytes,
+content rather than mtime, because a `git checkout` that restores a file byte-for-byte is not a
+conflict. The client sends it back as `baseVersion`; if the file on disk no longer matches, the
+save is refused and the current content comes back with the refusal. A save with no `baseVersion`
+writes as before, so nothing else that talks to this API changes behaviour.
+
+The UI then offers the choice that actually exists — **reload from disk** (take theirs, drop your
+draft) or **overwrite** (take yours) — rather than a warning the user can only click through.
+Cancel leaves the tab exactly as it was, which matters: the user may want to copy something out of
+their draft before deciding.
+
+**One thing this shook out.** The version rides along on the request detail, and the request schema
+is `.strict()` — so a draft carrying `version` would have been rejected by name on the next save.
+There were four places stripping the client-only `raw` field by destructuring, each of which would
+have needed a second field added, and a fifth added later would have missed it. Replaced with one
+`requestFields(detail)` helper the four call sites share.
+
+**Verification.** 940 unit tests and 105 e2e (4 new e2e covering refuse / reload / overwrite / an
+ordinary save unaffected, 4 new server tests including one proving a save without a version still
+writes), typecheck 8/8, docs site builds.

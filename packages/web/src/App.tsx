@@ -27,6 +27,7 @@ import {
   run as apiRun,
   saveRequest,
   saveRequestObject,
+  requestFields,
   type CoverageReport,
   type DriftReport,
   type MockLogEntry,
@@ -249,6 +250,14 @@ export function App() {
   const [editorPath, setEditorPath] = useState("");
   const [editorText, setEditorText] = useState("");
   const [editorErr, setEditorErr] = useState<string | null>(null);
+  /**
+   * A save refused because the file changed on disk since the tab was opened. Holds what the user
+   * was trying to write, so the choice offered is a real one: take what is on disk, or overwrite it.
+   */
+  const [conflict, setConflict] = useState<
+    | { path: string; save: { kind: "raw"; text: string } | { kind: "object"; request: Record<string, unknown> } }
+    | null
+  >(null);
   const [saving, setSaving] = useState(false);
   const [railTab, setRailTab] = useState<RailTab>("spec");
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -669,8 +678,9 @@ export function App() {
         const detail = await getRequest(finalPath).catch(() => null);
         if (detail && detail.name !== displayName) {
           const renamed = { ...detail, name: displayName };
-          const { raw: _raw, ...requestObject } = renamed;
-          const saved = await saveRequestObject(finalPath, requestObject).catch(() => null);
+          const saved = await saveRequestObject(finalPath, requestFields(renamed), detail.version).catch(
+            () => null,
+          );
           if (saved?.ok) {
             setTabs((prev) => prev.map((t) => (t.path === finalPath ? { ...t, detail: renamed, draft: renamed } : t)));
           }
@@ -993,11 +1003,18 @@ export function App() {
     [openNew, openNewFolder],
   );
 
-  const doSave = useCallback(async (path: string, text: string) => {
+  // `force` skips the version check, for the one case where the user has been shown the conflict
+  // and chose to overwrite anyway.
+  const doSave = useCallback(async (path: string, text: string, force = false) => {
     setSaving(true);
     setEditorErr(null);
     try {
-      const res = await saveRequest(path, text);
+      const base = force ? undefined : tabsRef.current.find((t) => t.path === path)?.detail?.version;
+      const res = await saveRequest(path, text, base);
+      if (res.conflict) {
+        setConflict({ path, save: { kind: "raw", text } });
+        return;
+      }
       if (!res.ok) {
         setEditorErr(res.error ?? "save failed");
         return;
@@ -1023,8 +1040,20 @@ export function App() {
     }
   }, []);
 
-  const doSaveInline = useCallback(async (path: string, request: Record<string, unknown>) => {
-    const res = await saveRequestObject(path, request);
+  /** Discard a tab's draft and take what is on disk — the safe half of a conflict. */
+  const reloadTab = useCallback(async (path: string) => {
+    const fresh = await getRequest(path).catch(() => null);
+    if (!fresh) return;
+    setTabs((prev) => prev.map((t) => (t.path === path ? { ...t, detail: fresh, draft: fresh, dirty: false } : t)));
+  }, []);
+
+  const doSaveInline = useCallback(async (path: string, request: Record<string, unknown>, force = false) => {
+    const base = force ? undefined : tabsRef.current.find((t) => t.path === path)?.detail?.version;
+    const res = await saveRequestObject(path, request, base);
+    if (res.conflict) {
+      setConflict({ path, save: { kind: "object", request } });
+      return res;
+    }
     if (res.ok) {
       const saved = res.path ?? path;
       setState(await getState());
@@ -1164,8 +1193,7 @@ export function App() {
   const saveActiveTab = useCallback((): void => {
     const tab = tabsRef.current.find((t) => t.path === activeTabPathRef.current);
     if (!tab?.draft || !tab.dirty) return;
-    const { raw: _raw, ...request } = tab.draft as typeof tab.draft & { raw?: string };
-    void doSaveInline(tab.path, request as unknown as Record<string, unknown>);
+    void doSaveInline(tab.path, requestFields(tab.draft));
   }, [doSaveInline]);
 
   /** Move `delta` tabs from the active one, wrapping at both ends. */
@@ -1900,6 +1928,28 @@ export function App() {
             setDeleteTarget(null);
             setDeleteErr(null);
           }}
+        />
+      )}
+
+      {conflict && (
+        <ConfirmModal
+          title="changed on disk"
+          body={`"${baseName(conflict.path)}" was edited on disk after you opened it — by an agent, a git operation, or another editor. Reload to take what is on disk (your unsaved edits to this request are discarded), or overwrite it with what is in this tab.`}
+          confirmLabel="overwrite"
+          secondaryLabel="reload from disk"
+          danger
+          onSecondary={() => {
+            const path = conflict.path;
+            setConflict(null);
+            void reloadTab(path);
+          }}
+          onConfirm={() => {
+            const c = conflict;
+            setConflict(null);
+            if (c.save.kind === "raw") void doSave(c.path, c.save.text, true);
+            else void doSaveInline(c.path, c.save.request, true);
+          }}
+          onCancel={() => setConflict(null)}
         />
       )}
 
