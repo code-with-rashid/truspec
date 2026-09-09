@@ -249,4 +249,31 @@ describe("truspec run", () => {
     expect(cap.err).toMatch(/Unknown --reporter "xml"/);
     expect(cap.err).toMatch(/human, json, junit, html/);
   });
+
+  it("warns loudly when TLS verification is disabled", async () => {
+    const cap = capture();
+    let t = 0;
+    await runCommand(["examples/petstore", "--env", "local", "--insecure"], {
+      cwd: repoRoot,
+      fetch: okFetch({ id: 1 }),
+      now: () => (t += 5),
+      processEnv: { token: "secret" },
+      stdout: cap.stdout,
+      stderr: cap.stderr,
+    });
+    // A run that silently accepted any certificate would be a gate that proves nothing.
+    expect(cap.err).toMatch(/--insecure disables TLS certificate verification/);
+  });
+
+  it("reports an unreadable certificate path instead of failing at connect time", async () => {
+    const cap = capture();
+    const code = await runCommand(["examples/petstore", "--ca", "nope.pem"], {
+      cwd: repoRoot,
+      processEnv: {},
+      stdout: cap.stdout,
+      stderr: cap.stderr,
+    });
+    expect(code).toBe(1);
+    expect(cap.err).toMatch(/could not configure transport/);
+  });
 });

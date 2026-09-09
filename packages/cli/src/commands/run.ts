@@ -2,6 +2,7 @@ import { parseArgs } from "node:util";
 import { runPath, watchWorkspace, type WorkspaceRunResult } from "@truspec/core/workspace";
 import { formatHuman, formatJson, formatJunit } from "../output";
 import { formatHtml } from "../report-html";
+import { buildFetch, mergeTransport, transportFromEnv } from "../transport";
 import { type CommandDeps, emit, num, resolveDeps } from "./deps";
 
 /** `truspec run <path>` — returns a process exit code (0 ok, 1 failures/error, 2 usage). */
@@ -24,6 +25,12 @@ export async function runCommand(argv: string[], deps: Partial<CommandDeps> = {}
     data: { type: "string", short: "d" },
     repeat: { type: "string" },
     watch: { type: "boolean", short: "w" },
+    insecure: { type: "boolean", short: "k" },
+    proxy: { type: "string" },
+    ca: { type: "string", multiple: true },
+    "client-cert": { type: "string" },
+    "client-key": { type: "string" },
+    "client-key-passphrase": { type: "string" },
   } as const;
 
   let values: {
@@ -42,6 +49,12 @@ export async function runCommand(argv: string[], deps: Partial<CommandDeps> = {}
     data?: string;
     repeat?: string;
     watch?: boolean;
+    insecure?: boolean;
+    proxy?: string;
+    ca?: string[];
+    "client-cert"?: string;
+    "client-key"?: string;
+    "client-key-passphrase"?: string;
   };
   let positionals: string[];
   try {
@@ -73,6 +86,31 @@ export async function runCommand(argv: string[], deps: Partial<CommandDeps> = {}
     return 2;
   }
 
+  // Transport settings come from flags and the environment — never from a request file. See
+  // ../transport.ts for why that line is drawn there.
+  let transportFetch: typeof globalThis.fetch | undefined;
+  try {
+    transportFetch = buildFetch(
+      mergeTransport(transportFromEnv(d.processEnv), {
+        insecure: values.insecure,
+        proxy: values.proxy,
+        ca: values.ca,
+        clientCert: values["client-cert"],
+        clientKey: values["client-key"],
+        clientKeyPassphrase: values["client-key-passphrase"],
+      }),
+      d.cwd,
+    );
+  } catch (e) {
+    d.stderr(`Error: could not configure transport: ${(e as Error).message}\n`);
+    return 1;
+  }
+  if (values.insecure) {
+    // Loud on purpose: an unverified connection cannot detect a man in the middle, and a run that
+    // silently accepted any certificate would be a gate that proves nothing.
+    d.stderr("Warning: --insecure disables TLS certificate verification for this run.\n");
+  }
+
   const reporter = values.reporter ?? (values.json ? "json" : "human");
   if (!REPORTERS.includes(reporter as Reporter)) {
     d.stderr(`Unknown --reporter "${reporter}". Known: ${REPORTERS.join(", ")}.\n`);
@@ -87,7 +125,8 @@ export async function runCommand(argv: string[], deps: Partial<CommandDeps> = {}
         env: values.env,
         spec: values.spec,
         cwd: d.cwd,
-        fetch: d.fetch,
+        // An injected fetch (tests, embedding) always wins over the transport flags.
+        fetch: d.fetch ?? transportFetch,
         now: d.now,
         processEnv: d.processEnv,
         timeoutMs: num(values.timeout),

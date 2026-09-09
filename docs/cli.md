@@ -98,6 +98,12 @@ truspec run <path> [--env <name>] [--spec <openapi>] [--var k=v] [--grep <re>] [
 | `--data <file>` | `-d` | Run the selection once per row of a CSV or JSON dataset. |
 | `--repeat <n>` | | Run the selection `n` times (ignored when `--data` is given). |
 | `--watch` | `-w` | Re-run whenever a request, environment, `.env` or spec file changes. |
+| `--insecure` | `-k` | Skip TLS certificate verification (warns on stderr). |
+| `--proxy <url>` | | Route requests through a proxy. |
+| `--ca <file>` | | Trust an extra CA certificate. Repeatable. |
+| `--client-cert <file>` | | Client certificate for mutual TLS. |
+| `--client-key <file>` | | Client key for mutual TLS. |
+| `--client-key-passphrase <s>` | | Passphrase for an encrypted client key. |
 | `--json` | | Shorthand for `--reporter json`. |
 | `--reporter <fmt>` | | Output format: `human` (default), `json`, `junit`, or `html`. |
 | `--output <file>` | `-o` | Write the report to a file instead of stdout. |
@@ -142,6 +148,23 @@ A burst of filesystem events from one editor save is debounced into a single run
 *during* a run is coalesced into exactly one follow-up (rather than queueing runs faster than they
 complete), and a run that throws is reported without ending the watch — a broken file is precisely
 when you keep editing. Watch mode exits only on Ctrl-C, returning the last run's exit code.
+
+**TLS and proxy are flags, never request fields.** Whether to trust a self-signed certificate or
+route through a corporate proxy is a property of *where you are running*, not of the request — and
+a committed file saying "skip TLS verification" is a liability that outlives the afternoon it was
+needed. curl, git and every CI tool draw the line in the same place.
+
+```bash
+truspec run ./api --env staging --ca ./corp-root.pem
+truspec run ./api --proxy http://proxy.corp:8080
+truspec run ./api --client-cert ./client.pem --client-key ./client.key
+```
+
+`TRUSPEC_PROXY`, `HTTPS_PROXY`/`HTTP_PROXY` and `NODE_EXTRA_CA_CERTS` are read from the
+environment so CI can configure them once; an explicit flag wins per field.
+`NODE_TLS_REJECT_UNAUTHORIZED` is deliberately **not** honored — turning off verification should
+be visible at the call site, not inherited from a variable someone set months ago for another
+tool. `--insecure` always warns.
 
 **Cookies.** A run shares one in-memory cookie jar, so a login request's session cookie is sent by
 the requests that follow — including cookies set on a redirect hop. The jar is never written to

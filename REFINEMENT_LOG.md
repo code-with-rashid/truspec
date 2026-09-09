@@ -529,3 +529,31 @@ filesystem events or real time: relevance filtering, which directories get watch
 the overlap guard, teardown ignoring an armed timer and a late event, and the throwing-run case.
 619 unit tests, typecheck 8/8, build 5/5.
 
+### 19 — TLS and proxy: flags, deliberately not request fields
+
+**Gap.** No way to reach a staging box with a self-signed certificate, an internal CA, mutual TLS,
+or a corporate proxy — a hard blocker in exactly the environments a CI gate runs in.
+
+**Design decision worth stating.** These are **CLI flags and environment variables, never
+request-file fields**. Whether to trust a certificate or route through a proxy is a property of
+*where you are running*, not of the request; a committed file saying "skip TLS verification" is a
+liability that outlives the afternoon it was needed. curl, git and every CI tool draw the line in
+the same place, and it keeps the format honest.
+
+`--insecure/-k`, `--proxy`, `--ca` (repeatable), `--client-cert`, `--client-key`,
+`--client-key-passphrase`, plus `TRUSPEC_PROXY`/`HTTPS_PROXY`/`NODE_EXTRA_CA_CERTS` from the
+environment with flags winning per field. `--insecure` always warns on stderr: a run that silently
+accepted any certificate would be a gate that proves nothing.
+
+`NODE_TLS_REJECT_UNAUTHORIZED` is **not** honored, on purpose — disabling verification should be
+visible at the call site, not inherited from an ambient variable set for an unrelated tool.
+
+Implemented with `undici` (the same library Node's own global `fetch` is built on) as a **CLI**
+dependency, injected through the `fetch` seam core already had — core keeps its two runtime
+dependencies. A certificate path that can't be read fails immediately with a clear message rather
+than at connect time.
+
+**Verification.** 12 tests — environment precedence, per-field merge, the no-op case, a real
+request through a built dispatcher, path resolution, the missing-file error, and the two CLI paths
+(warning, transport error). 631 unit tests, typecheck 8/8, build 5/5.
+
