@@ -2548,3 +2548,40 @@ collected on the user's behalf and then kept to itself.
 **Verification.** 1021 unit tests (7 new: five over the message, two over the report), coverage
 95.95% lines / 87.72% branches / 96.51% functions, typecheck 8/8, docs updated in both the
 `options` reference and the `--json` field table.
+
+### 72 — the view of the chain, with the break invisible
+
+**What I looked for.** The Flow view is the feature that draws `capture → consume` edges between
+requests: the picture of the chain. Iteration 69 made a missed capture visible in the CLI and the
+workspace view; the Flow view is where it matters most. So I built a two-step chain whose capture
+cannot succeed, ran it, and read the screen.
+
+```
+3  POST  Login   {{baseUrl}}/login   pass · 200
+4  GET   Me      {{baseUrl}}/me      fail
+```
+
+Both lines are wrong in the same way. The step that *broke* the chain reports a clean pass — its
+`$.access_token` matched nothing against a body that has no such field. The step that failed says
+`fail` and nothing else: it never reached the network, so there is no status to show, and the
+reason (`Unresolved variables: {{token}}`) was in the result and not on the screen.
+
+The edge between them was already drawn as broken. But an edge that is broken tells you *that* the
+chain snapped, and both endpoints refuse to say why — which is the whole question a person opens
+this view to answer.
+
+**Now:**
+
+```
+3  POST  Login   {{baseUrl}}/login                    ⚠ not captured   pass · 200
+4  GET   Me      Unresolved variables: {{token}}      fail
+```
+
+The warning chip's tooltip carries the full diagnosis —
+`token ← $.access_token matched nothing — $ has no "access_token"; keys: id, name` — and the
+inspector spells it out beside the capture it belongs to. A step that failed with no response
+shows the reason where its URL would be, since the URL is the one thing you already know.
+
+**Verification.** 115 e2e (3 new), 1021 unit tests, typecheck 8/8. The third e2e is the one that
+keeps this honest: a chain whose capture *does* succeed must show none of it, so the badge cannot
+degenerate into decoration that is always on.

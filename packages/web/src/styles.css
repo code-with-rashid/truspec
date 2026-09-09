@@ -3217,3 +3217,14 @@ select:focus {
   font-size: 11px;
   letter-spacing: 0.04em;
 }
+
+/* The reason a flow step failed, where its URL would be — a step that never reached the network
+   has no status to show, and "fail" alone says nothing. */
+.flow-node-why {
+  color: var(--red);
+  font-size: 11.5px;
+}
+
+.capture-missed {
+  color: var(--amber);
+}

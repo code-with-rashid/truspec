@@ -420,10 +420,29 @@ export function FlowView({ env, running, onRun, getResult, onImported }: FlowVie
                     <span className={`m m-${s.method}`}>{s.method}</span>
                     <span className="flow-node-main">
                       <span className="flow-node-name">{s.name}</span>
-                      <code className="flow-node-url">{s.url}</code>
+                      {/* A step that never reached the network has no status to show, so "fail"
+                          on its own says nothing. The reason is what the reader needs. */}
+                      {res && !res.ok && !res.response && res.error ? (
+                        <span className="flow-node-why">{res.error}</span>
+                      ) : (
+                        <code className="flow-node-url">{s.url}</code>
+                      )}
                     </span>
+                    {/* A step whose capture matched nothing passes, and breaks the edge leaving
+                        it. This is the view of the chain, so the break has to be visible on the
+                        step that caused it, not only on the one that failed later. */}
+                    {(res?.missedCaptures?.length ?? 0) > 0 && (
+                      <span
+                        className="pill s4 mini"
+                        title={res?.missedCaptures
+                          ?.map((m) => `${m.name} ← ${m.source} matched nothing${m.reason ? ` — ${m.reason}` : ""}`)
+                          .join("\n")}
+                      >
+                        ⚠ not captured
+                      </span>
+                    )}
                     {res ? (
-                      <span className={`pill ${res.ok ? "s2" : "s5"} mini`}>
+                      <span className={`pill ${res.ok ? "s2" : "s5"} mini`} title={res.error ?? undefined}>
                         {res.ok ? "pass" : "fail"}
                         {res.response ? ` · ${res.response.status}` : ""}
                       </span>
@@ -629,6 +648,15 @@ function FlowDetail({
                 <span className="kv-v">
                   {captureSourceText(detail.capture?.[name])}
                   {result?.captured && name in result.captured ? ` → ${String(result.captured[name])}` : ""}
+                  {result?.missedCaptures?.some((m) => m.name === name) && (
+                    <span className="capture-missed">
+                      {" "}
+                      — matched nothing
+                      {result.missedCaptures.find((m) => m.name === name)?.reason
+                        ? `: ${result.missedCaptures.find((m) => m.name === name)?.reason}`
+                        : ""}
+                    </span>
+                  )}
                 </span>
               </div>
             ))}
