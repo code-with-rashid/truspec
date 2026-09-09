@@ -103,17 +103,25 @@ pub fn new_collection_flow(app: AppHandle) {
 /// Writes just enough for the directory to parse as a collection — `folder.tspec.yaml` (schema
 /// version + a `name` derived from the directory) and a starter `local` environment. Leaves any
 /// existing files alone (an already-populated folder picked via "New Collection" isn't touched).
+/// The contents of a scaffolded `folder.tspec.yaml` for a collection of this name.
+///
+/// Split out from the filesystem work so the escaping can be tested directly, for names no
+/// platform would let a directory have — which is the whole point of escaping it.
+fn folder_config(name: &str) -> String {
+    // JSON string escaping doubles as valid YAML double-quoted-scalar escaping, so this stays
+    // correct for names with quotes/backslashes without pulling in a YAML-writing crate.
+    let name_yaml = serde_json::to_string(name).unwrap_or_else(|_| "\"collection\"".to_string());
+    format!("tspec: \"0.1\"\nname: {name_yaml}\n")
+}
+
 fn scaffold_collection(dir: &std::path::Path) -> std::io::Result<()> {
     use std::fs;
 
     let name = dir.file_name().and_then(|n| n.to_str()).unwrap_or("collection");
-    // JSON string escaping doubles as valid YAML double-quoted-scalar escaping, so this stays
-    // correct for names with quotes/backslashes without pulling in a YAML-writing crate.
-    let name_yaml = serde_json::to_string(name).unwrap_or_else(|_| "\"collection\"".to_string());
 
     let folder_cfg = dir.join("folder.tspec.yaml");
     if !folder_cfg.exists() {
-        fs::write(&folder_cfg, format!("tspec: \"0.1\"\nname: {name_yaml}\n"))?;
+        fs::write(&folder_cfg, folder_config(name))?;
     }
 
     let env_dir = dir.join("environments");
@@ -254,7 +262,7 @@ pub fn kill_sidecar(app: &AppHandle) {
 
 #[cfg(test)]
 mod tests {
-    use super::scaffold_collection;
+    use super::{folder_config, scaffold_collection};
 
     /// A scratch directory that cleans itself up, so the tests leave nothing behind on failure.
     struct TempDir(std::path::PathBuf);
@@ -296,15 +304,17 @@ mod tests {
     }
 
     #[test]
-    fn quotes_a_directory_name_that_would_otherwise_break_the_yaml() {
-        let dir = TempDir::new("quote");
-        let inner = dir.0.join("we\"ird: name");
-        std::fs::create_dir_all(&inner).expect("inner");
-        scaffold_collection(&inner).expect("scaffold");
+    fn escapes_a_name_that_would_otherwise_break_the_yaml() {
+        // Not written through a real directory: `"` and `:` are illegal in a Windows filename, so
+        // a filesystem-based version of this test cannot run on the platform it most needs to.
+        let yaml = folder_config("we\"ird: name");
+        assert!(yaml.contains("name: \"we\\\"ird: name\""), "{yaml}");
 
-        let cfg = std::fs::read_to_string(inner.join("folder.tspec.yaml")).expect("folder config");
-        // The name is a double-quoted scalar with the quote escaped — not a raw name that would
-        // make the file this app just created fail to parse.
-        assert!(cfg.contains("name: \"we\\\"ird: name\""), "{cfg}");
+        // A backslash is the other character JSON escaping exists for here.
+        let yaml = folder_config("back\\slash");
+        assert!(yaml.contains("name: \"back\\\\slash\""), "{yaml}");
+
+        // And an ordinary name stays readable rather than being escaped into noise.
+        assert!(folder_config("petstore").contains("name: \"petstore\""), "plain name");
     }
 }

@@ -1121,3 +1121,29 @@ name routes to its own handler with the right argv.
 functions — above where this iteration started, having also brought a previously excluded file into
 the count. Typecheck 8/8, 97 e2e, dogfood gates clean, and the built binary re-checked against the
 exact commands CI runs.
+
+### 37 — the CI step added in 36 caught the test added in 35
+
+**Gap.** `build (windows-latest)` went red on iteration 35's commit:
+
+    thread 'sidecar::tests::quotes_a_directory_name_...' panicked:
+    Os { code: 123, kind: InvalidFilename }
+
+My own test, one commit old. It created a directory literally named `we"ird: name` to check that
+the scaffolder escapes a name that would otherwise break the YAML — and `"` and `:` are both
+illegal in a Windows filename. The test could never have passed on the platform it ran on.
+
+Worth noting what happened here: iteration 35 added the `cargo test` CI step *because* the desktop
+crate was built but never tested, and the first thing that step did was fail on a portability
+defect in the test that came with it. That is the step working, on its first run.
+
+**Change.** The escaping never needed a real directory. Split `folder_config(name) -> String` out
+of `scaffold_collection`, and test it as a pure function — which is both portable and a better
+test, since it can now exercise names no filesystem anywhere would accept: a name with a quote and
+a colon, one with a backslash (the other character the JSON-escaping trick exists for), and a plain
+name that must stay readable rather than being escaped into noise. The two filesystem tests, whose
+subject really is the file writing, are unchanged and use platform-legal names.
+
+**Verification.** `cargo test` 3/3 and `cargo check` clean; 824 unit tests including the
+cross-language `SCHEMA_VERSION` guard, which still finds the literal in its new home; typecheck
+8/8.
