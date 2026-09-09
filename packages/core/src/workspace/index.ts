@@ -8,3 +8,4 @@ export * from "./init";
 export * from "./data";
 export * from "./watch";
 export * from "./env-report";
+export { toPosixPath } from "./paths";

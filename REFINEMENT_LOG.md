@@ -1147,3 +1147,42 @@ subject really is the file writing, are unchanged and use platform-legal names.
 **Verification.** `cargo test` 3/3 and `cargo check` clean; 824 unit tests including the
 cross-language `SCHEMA_VERSION` guard, which still finds the literal in its new home; typecheck
 8/8.
+
+### 38 — the same collection, two different answers, depending on the machine
+
+**Gap.** Iteration 37's Windows failure raised the obvious question: what else has never run there?
+`ci.yml` runs 827 tests, a coverage gate, a schema gate and two dogfood gates — all on
+`ubuntu-latest`, only. The CLI ships on npm, and the desktop app ships Windows and macOS
+installers whose entire UI is this web server. Nothing verified either.
+
+I audited before turning anything on, and most of the codebase came back clean: `docs` and the
+Postman exporter deliberately normalise with `.split(sep).join("/")`, the web client has a
+`normPath` and `buildFolderTree` uses it, and the importers build forward-slash collection paths by
+construction. Someone had thought about this.
+
+Two places had not. The web HTTP API returns `relative()` output raw at 11 sites, and the MCP
+server at 13. `path.relative()` answers in the host separator — so the same collection served from
+Windows hands out `posts\get.tspec.yaml` where Linux hands out `posts/get.tspec.yaml`. The web
+client happens to survive it because of `normPath`; **MCP has no such defence**, so an agent on
+Windows gets backslash identifiers from a product whose stated premise is being agent-native, and
+any agent-side handling that splits on `/` quietly gets one path segment.
+
+**Change.** One `toPosixPath` in `@truspec/core/workspace`, applied at both boundaries, and reused
+in the two places that had hand-rolled it. Its `sep === "/"` guard is the point, not an
+optimisation: a blanket `replace(/\\/g, "/")` corrupts a POSIX filename that legitimately
+contains a backslash, and only Windows can guarantee no filename contains a forward slash.
+
+**Change (the part that makes it verified rather than argued).** A `portability` job runs
+typecheck, the full suite and the build on `windows-latest` and `macos-latest`, with
+`fail-fast: false` so one platform's failure cannot hide the other's. Deliberately not the
+byte-comparison gates — a CRLF checkout would fail `git diff --exit-code` for reasons that say
+nothing about the code.
+
+Pre-empting the one failure I could predict: `confine.test.ts` creates a symlink, which Windows
+refuses without Developer Mode or elevation. It now skips on `EPERM`/`EACCES`/`ENOSYS` with a
+warning naming the reason — loudly, because it guards a security property and "it did not run"
+must never read as "it held".
+
+**Verification.** 827 unit tests, 97 e2e, coverage 95.70% lines / 87.75% branches / 96.61%
+functions, typecheck 8/8, dogfood gates clean. The cross-platform result is by definition not
+verifiable here — that is what the new job is for, and I expect to be fixing what it finds.

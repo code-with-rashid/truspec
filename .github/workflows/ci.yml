@@ -49,3 +49,32 @@ jobs:
           node packages/cli/dist/index.js docs examples/blog --title "Blog API (example collection)" -o examples/blog/API.md
           node packages/cli/dist/index.js docs examples/petstore --title "Petstore API (example collection)" -o examples/petstore/API.md
           git diff --exit-code examples
+
+  # The engine, CLI and web server all ship cross-platform — the CLI on npm, the web server inside
+  # the desktop app's Windows and macOS installers — but every gate above runs only on Linux. Path
+  # handling is exactly where that hurts: the workspace confinement guard, the `relative()` output
+  # the HTTP API and MCP hand out as identifiers, and file discovery are all separator-sensitive.
+  # Run the suite where those differ.
+  #
+  # Deliberately not the byte-comparison gates (schema and docs `git diff --exit-code`): a CRLF
+  # checkout would fail them for reasons that say nothing about the code.
+  portability:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build

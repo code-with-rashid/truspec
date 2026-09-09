@@ -1,8 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
-import { basename, join, relative, resolve, sep } from "node:path";
+import { basename, join, relative, resolve } from "node:path";
 import { parse } from "../format";
 import type { TruSpecAuth, TruSpecBody, TruSpecRequest } from "../format/types";
 import { discoverRequests } from "../workspace/discover";
+import { toPosixPath } from "../workspace/paths";
 
 export interface ExportResult {
   collection: Record<string, unknown>;
@@ -165,7 +166,7 @@ export function exportPostman(dir: string, collectionName?: string): ExportResul
   const rootNode: ExportNode = { folders: new Map(), requests: [] };
 
   for (const absPath of discoverRequests(root)) {
-    const relPath = relative(root, absPath).split(sep).join("/");
+    const relPath = toPosixPath(relative(root, absPath));
     const segments = relPath.split("/");
     segments.pop(); // filename, not a folder
     let node = rootNode;

@@ -1,5 +1,6 @@
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
+import { toPosixPath } from "@truspec/core/workspace";
 import { CODEGEN_TARGETS, codegenTargetIds, generateCode } from "@truspec/core/codegen";
 import { parse } from "@truspec/core/format";
 import { exportPostman } from "@truspec/core/exporters";
@@ -91,7 +92,7 @@ function listFolders(dir: string): string[] {
     dir,
     (full, name) => {
       if (name !== "folder.tspec.yaml") return;
-      const rel = relative(dir, dirname(full));
+      const rel = toPosixPath(relative(dir, dirname(full)));
       if (rel) out.push(rel);
     },
     { skip: ["environments"] },
@@ -107,7 +108,7 @@ function listSpecs(dir: string): string[] {
       if (!/\.(ya?ml|json)$/.test(name) || name.endsWith(".tspec.yaml")) return;
       try {
         const text = readFileSync(full, "utf8");
-        if (name.includes("openapi") || /["']?openapi["']?\s*:/.test(text)) out.push(relative(dir, full));
+        if (name.includes("openapi") || /["']?openapi["']?\s*:/.test(text)) out.push(toPosixPath(relative(dir, full)));
       } catch {
         // ignore unreadable files
       }
@@ -124,7 +125,7 @@ function buildState(ctx: ApiContext) {
   const requests: Array<Record<string, unknown>> = [];
   const errors: Array<{ path: string; error: string }> = [];
   for (const file of discoverRequests(ctx.dir)) {
-    const path = relative(ctx.dir, file);
+    const path = toPosixPath(relative(ctx.dir, file));
     try {
       const req = parse.request.parse(readFileSync(file, "utf8"));
       requests.push({
@@ -164,7 +165,7 @@ function buildFlow(ctx: ApiContext) {
   const errors: Array<{ path: string; error: string }> = [];
   const parsed: Array<{ file: string; path: string; req: ReturnType<typeof parse.request.parse> }> = [];
   for (const file of discoverRequests(ctx.dir)) {
-    const path = relative(ctx.dir, file);
+    const path = toPosixPath(relative(ctx.dir, file));
     try {
       parsed.push({ file, path, req: parse.request.parse(readFileSync(file, "utf8")) });
     } catch (e) {
@@ -214,7 +215,7 @@ function writeImportConfined(result: ImportResult, targetDir: string): string[] 
     mkdirSync(dirname(t.abs), { recursive: true });
     writeFileSync(t.abs, t.content);
   }
-  return targets.map((t) => relative(targetDir, t.abs));
+  return targets.map((t) => toPosixPath(relative(targetDir, t.abs)));
 }
 
 /** Confines both sides, refuses to clobber an existing destination, then renames (works across
@@ -226,7 +227,7 @@ function movePath(ctx: ApiContext, fromRel: string, toRel: string): string {
   if (existsSync(dest)) throw new Error(`Already exists: ${toRel}`);
   mkdirSync(dirname(dest), { recursive: true });
   renameSync(src, dest);
-  return relative(ctx.dir, dest);
+  return toPosixPath(relative(ctx.dir, dest));
 }
 
 function removeConfined(ctx: ApiContext, rel: string): void {
@@ -287,7 +288,7 @@ export async function handleApi(
     }
     mkdirSync(dirname(abs), { recursive: true });
     writeFileSync(abs, b.content);
-    return { status: 200, json: { ok: true, path: relative(ctx.dir, abs) } };
+    return { status: 200, json: { ok: true, path: toPosixPath(relative(ctx.dir, abs)) } };
   }
   if (method === "POST" && pathname === "/api/request/object") {
     // Structured counterpart to the raw-YAML POST /api/request above: the client sends the full
@@ -310,7 +311,7 @@ export async function handleApi(
     }
     mkdirSync(dirname(abs), { recursive: true });
     writeFileSync(abs, parse.request.serialize(validation.data));
-    return { status: 200, json: { ok: true, path: relative(ctx.dir, abs) } };
+    return { status: 200, json: { ok: true, path: toPosixPath(relative(ctx.dir, abs)) } };
   }
   if (method === "POST" && pathname === "/api/folder") {
     const b = (body ?? {}) as { path?: string; name?: string };
@@ -328,7 +329,7 @@ export async function handleApi(
       const name = b.name?.trim() || basename(abs);
       writeFileSync(cfgPath, parse.folderConfig.serialize({ tspec: "0.1", name }));
     }
-    return { status: 200, json: { ok: true, path: relative(ctx.dir, abs) } };
+    return { status: 200, json: { ok: true, path: toPosixPath(relative(ctx.dir, abs)) } };
   }
   if (method === "GET" && pathname === "/api/folder") {
     const p = query.get("path");
@@ -352,7 +353,7 @@ export async function handleApi(
     }
     mkdirSync(abs, { recursive: true });
     writeFileSync(join(abs, "folder.tspec.yaml"), parse.folderConfig.serialize(validation.data));
-    return { status: 200, json: { ok: true, path: relative(ctx.dir, abs) } };
+    return { status: 200, json: { ok: true, path: toPosixPath(relative(ctx.dir, abs)) } };
   }
   if (method === "GET" && pathname === "/api/environment") {
     const name = query.get("name");
@@ -448,7 +449,7 @@ export async function handleApi(
     } catch (e) {
       return { status: 200, json: { ok: false, error: (e as Error).message } };
     }
-    return { status: 200, json: { ok: true, path: relative(ctx.dir, dest) } };
+    return { status: 200, json: { ok: true, path: toPosixPath(relative(ctx.dir, dest)) } };
   }
   if (method === "POST" && pathname === "/api/import/postman") {
     const b = (body ?? {}) as { json?: unknown; targetDir?: string };

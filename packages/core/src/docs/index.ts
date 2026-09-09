@@ -6,6 +6,7 @@ import type { TruSpecRequest } from "../format/types";
 import { loadFolderChain } from "../workspace/context";
 import { discoverRequests } from "../workspace/discover";
 import { findWorkspaceRoot } from "../workspace/run";
+import { toPosixPath } from "../workspace/paths";
 
 export interface DocsOptions {
   /** Document title. Defaults to the collection directory's name. */
@@ -41,7 +42,7 @@ export function collectionDocs(dir: string, opts: DocsOptions = {}): DocsResult 
   const errors: Array<{ path: string; error: string }> = [];
   const parsed: Array<{ path: string; req: TruSpecRequest; folder: string }> = [];
   for (const file of files) {
-    const path = relative(dir, file).split(sep).join("/");
+    const path = toPosixPath(relative(dir, file));
     try {
       parsed.push({
         path,

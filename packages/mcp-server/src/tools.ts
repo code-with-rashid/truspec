@@ -20,6 +20,7 @@ import {
   listEnvironments,
   prepareRequest,
   runPath,
+  toPosixPath,
 } from "@truspec/core/workspace";
 
 export interface ToolContext {
@@ -36,7 +37,7 @@ export function listCollections(ctx: ToolContext, dir = ".") {
   // so the failure is diagnosable, and still list the rest.
   const errors: Array<{ path: string; error: string }> = [];
   for (const file of files) {
-    const path = relative(ctx.cwd, file);
+    const path = toPosixPath(relative(ctx.cwd, file));
     try {
       const req = parse.request.parse(readFileSync(file, "utf8"));
       requests.push({
@@ -52,7 +53,7 @@ export function listCollections(ctx: ToolContext, dir = ".") {
     }
   }
   return {
-    dir: relative(ctx.cwd, root) || ".",
+    dir: toPosixPath(relative(ctx.cwd, root)) || ".",
     count: requests.length,
     requests,
     ...(errors.length > 0 ? { errors } : {}),
@@ -79,8 +80,8 @@ export function readRequest(ctx: ToolContext, path: string) {
   if (!existsSync(abs)) return { ok: false as const, error: `Not found: ${path}` };
   const raw = readFileSync(abs, "utf8");
   const result = parse.request.safeParse(raw);
-  if (!result.ok || !result.data) return { ok: false as const, path: relative(ctx.cwd, abs), error: result.error, raw };
-  return { ok: true as const, path: relative(ctx.cwd, abs), request: result.data, raw };
+  if (!result.ok || !result.data) return { ok: false as const, path: toPosixPath(relative(ctx.cwd, abs)), error: result.error, raw };
+  return { ok: true as const, path: toPosixPath(relative(ctx.cwd, abs)), request: result.data, raw };
 }
 
 /**
@@ -104,7 +105,7 @@ export function deleteRequest(ctx: ToolContext, path: string) {
     return { ok: false as const, error: `Refusing to delete a file that is not a .tspec.yaml request: ${path}` };
   }
   rmSync(abs);
-  return { ok: true as const, path: relative(ctx.cwd, abs) };
+  return { ok: true as const, path: toPosixPath(relative(ctx.cwd, abs)) };
 }
 
 /**
@@ -124,7 +125,7 @@ export function createRequest(ctx: ToolContext, path: string, request: unknown) 
   const abs = confinePath(ctx.cwd, path);
   mkdirSync(dirname(abs), { recursive: true });
   writeFileSync(abs, parse.request.serialize(validation.data));
-  return { ok: true as const, path: relative(ctx.cwd, abs) };
+  return { ok: true as const, path: toPosixPath(relative(ctx.cwd, abs)) };
 }
 
 /**
@@ -145,7 +146,7 @@ export function updateRequest(ctx: ToolContext, path: string, patch: Record<stri
   const validation = parse.request.validate(merged);
   if (!validation.ok || !validation.data) return { ok: false as const, error: validation.error };
   writeFileSync(abs, parse.request.serialize(validation.data));
-  return { ok: true as const, path: relative(ctx.cwd, abs) };
+  return { ok: true as const, path: toPosixPath(relative(ctx.cwd, abs)) };
 }
 
 export async function driftTool(ctx: ToolContext, dir: string, specPath: string, live?: string) {
@@ -170,7 +171,7 @@ export function scaffoldFromSpec(ctx: ToolContext, specPath: string, outDir: str
   const written = writeScaffold(result.files, confinePath(ctx.cwd, outDir));
   return {
     created: written.length,
-    files: written.map((p) => relative(ctx.cwd, p)),
+    files: written.map((p) => toPosixPath(relative(ctx.cwd, p))),
     skipped: result.skipped,
   };
 }
@@ -220,7 +221,7 @@ export function importCurlTool(ctx: ToolContext, command: string, outDir = ".", 
   const written = writeImport(result, confinePath(ctx.cwd, outDir));
   return {
     created: written.length,
-    files: written.map((f) => relative(ctx.cwd, f)),
+    files: written.map((f) => toPosixPath(relative(ctx.cwd, f))),
     ...(result.warnings.length > 0 ? { warnings: result.warnings } : {}),
   };
 }
@@ -232,7 +233,7 @@ export function importCurlTool(ctx: ToolContext, command: string, outDir = ".", 
  */
 export function lintTool(ctx: ToolContext, dir = ".", disable?: string[]) {
   const report = lintWorkspace(confinePath(ctx.cwd, dir), disable ? { disable } : {});
-  return { ...report, dir: relative(ctx.cwd, report.dir) || "." };
+  return { ...report, dir: toPosixPath(relative(ctx.cwd, report.dir)) || "." };
 }
 
 /**
@@ -255,7 +256,7 @@ export function importHarTool(
   const written = writeImport(result, confinePath(ctx.cwd, outDir));
   return {
     created: written.length,
-    files: written.map((f) => relative(ctx.cwd, f)),
+    files: written.map((f) => toPosixPath(relative(ctx.cwd, f))),
     ...(result.warnings.length > 0 ? { warnings: result.warnings } : {}),
   };
 }
@@ -281,7 +282,7 @@ export function importInsomniaTool(ctx: ToolContext, path: string, outDir = ".")
   const written = writeImport(result, confinePath(ctx.cwd, outDir));
   return {
     created: written.length,
-    files: written.map((f) => relative(ctx.cwd, f)),
+    files: written.map((f) => toPosixPath(relative(ctx.cwd, f))),
     ...(result.warnings.length > 0 ? { warnings: result.warnings } : {}),
   };
 }
@@ -294,7 +295,7 @@ export function importInsomniaTool(ctx: ToolContext, path: string, outDir = ".")
  */
 export function environmentsTool(ctx: ToolContext, dir = ".", diff?: [string, string]) {
   const report = listEnvironments(confinePath(ctx.cwd, dir));
-  if (!diff) return { ...report, root: relative(ctx.cwd, report.root) || "." };
+  if (!diff) return { ...report, root: toPosixPath(relative(ctx.cwd, report.root)) || "." };
   const [aName, bName] = diff;
   const a = report.environments.find((e) => e.name === aName);
   const b = report.environments.find((e) => e.name === bName);
