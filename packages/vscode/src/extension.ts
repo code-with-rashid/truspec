@@ -56,9 +56,17 @@ async function pickEnv(dir: string): Promise<string | undefined> {
 }
 
 async function pickSpec(): Promise<string | undefined> {
-  const uris = await vscode.workspace.findFiles("**/*openapi*.{yaml,yml,json}", "**/node_modules/**", 50);
+  // `swagger.yaml` is as common a name as `openapi.yaml` — half the specs in the wild predate the
+  // rename — and a spec the extension cannot see is a feature the user concludes does not work.
+  const uris = await vscode.workspace.findFiles(
+    "**/*{openapi,swagger}*.{yaml,yml,json}",
+    "**/node_modules/**",
+    50,
+  );
   if (uris.length === 0) {
-    vscode.window.showWarningMessage("TruSpec: no OpenAPI spec found (looked for *openapi*.{yaml,json}).");
+    vscode.window.showWarningMessage(
+      "TruSpec: no OpenAPI spec found (looked for *openapi*/*swagger*.{yaml,yml,json}).",
+    );
     return undefined;
   }
   if (uris.length === 1) return uris[0]?.fsPath;
@@ -75,12 +83,17 @@ export function activate(context: vscode.ExtensionContext): void {
     if (!file) return;
     const root = findWorkspaceRoot(dirname(file));
     const env = await pickEnv(root);
+    // The folder the open file is in — not the workspace root. `truspec init` puts `environments/`
+    // at the repo root, so the root is usually the whole repository: running it from a lens sitting
+    // on one file would send every request in the project, POSTs and DELETEs included, which is
+    // not what anyone means by clicking the lens on `api/admin/create-user.tspec.yaml`.
+    const target = scope === "file" ? file : dirname(file);
     await vscode.window.withProgress(
       { location: vscode.ProgressLocation.Window, title: "TruSpec: running…" },
       async () => {
         try {
-          const result = await runPath(scope === "file" ? file : root, { env: env || undefined, cwd: root });
-          show(scope === "file" ? "run" : "collection", renderResults(result));
+          const result = await runPath(target, { env: env || undefined, cwd: root });
+          show(scope === "file" ? "run" : "folder", renderResults(result));
         } catch (e) {
           vscode.window.showErrorMessage(`TruSpec: ${(e as Error).message}`);
         }
@@ -122,7 +135,9 @@ export function activate(context: vscode.ExtensionContext): void {
             : [new vscode.CodeLens(top, { title: "▶ Run", command: "truspec.runRequest" })];
           return [
             ...lenses,
-            new vscode.CodeLens(top, { title: "Run collection", command: "truspec.runCollection" }),
+            // "Run folder", because that is what it does. The command id keeps its old name so
+            // anyone's keybinding still works.
+            new vscode.CodeLens(top, { title: "Run folder", command: "truspec.runCollection" }),
             new vscode.CodeLens(top, { title: "Drift", command: "truspec.drift" }),
             new vscode.CodeLens(top, { title: "Coverage", command: "truspec.coverage" }),
           ];

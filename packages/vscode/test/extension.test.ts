@@ -4,6 +4,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const repoRoot = resolve(import.meta.dirname, "..", "..", "..");
 
 // Shared mock state (hoisted so the vi.mock factory and the test see the same object).
+/** Targets passed to `runPath`, so a test can assert *what* a command decided to run. */
+const runTargets = vi.hoisted(() => [] as string[]);
+
 const S = vi.hoisted(() => ({
   commands: new Map<string, (...a: unknown[]) => unknown>(),
   codeLens: null as { provideCodeLenses: (d: { fileName: string }) => unknown[] } | null,
@@ -16,6 +19,8 @@ const S = vi.hoisted(() => ({
   config: undefined as string | undefined,
   specFiles: [] as Array<{ fsPath: string }>,
   quickPick: undefined as unknown,
+  /** Observes the glob `pickSpec` searches with. */
+  findPattern: ((_p: string) => {}) as (p: string) => void,
 }));
 
 vi.mock("vscode", () => ({
@@ -35,7 +40,10 @@ vi.mock("vscode", () => ({
   languages: { registerCodeLensProvider: (_s: unknown, p: { provideCodeLenses: (d: { fileName: string }) => unknown[] }) => { S.codeLens = p; return { dispose() {} }; } },
   workspace: {
     getConfiguration: () => ({ get: () => S.config }),
-    findFiles: async () => S.specFiles,
+    findFiles: async (pattern: string) => {
+      S.findPattern(pattern);
+      return S.specFiles;
+    },
     asRelativePath: (u: unknown) => (typeof u === "string" ? u : (u as { fsPath: string }).fsPath),
   },
   ViewColumn: { Beside: 2 },
@@ -44,6 +52,19 @@ vi.mock("vscode", () => ({
   CodeLens: class { constructor(public range: unknown, public command: unknown) {} },
 }));
 
+// Spy on the one decision these commands make — which path to run — while leaving the real engine
+// in place, so the assertions are about behaviour rather than about a stub.
+vi.mock("@truspec/core/workspace", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@truspec/core/workspace")>();
+  return {
+    ...actual,
+    runPath: (target: string, opts?: unknown) => {
+      runTargets.push(target);
+      return actual.runPath(target, opts as never);
+    },
+  };
+});
+
 import { activate, deactivate } from "../src/extension";
 
 describe("vscode extension", () => {
@@ -51,6 +72,7 @@ describe("vscode extension", () => {
     // NB: don't reset S.panel — the extension's panel singleton persists across calls by design.
     S.commands.clear(); S.codeLens = null; S.warnings.length = 0; S.errors.length = 0;
     S.activeFile = undefined; S.config = undefined; S.specFiles = []; S.quickPick = undefined;
+    runTargets.length = 0;
     activate({ subscriptions: [] } as never);
   });
 
@@ -59,15 +81,15 @@ describe("vscode extension", () => {
     expect(S.codeLens).not.toBeNull();
   });
 
-  it("CodeLens provides Run / Run collection / Drift / Coverage lenses", () => {
+  it("CodeLens provides Run / Run folder / Drift / Coverage lenses", () => {
     const lenses = S.codeLens?.provideCodeLenses({ fileName: "/w/get.tspec.yaml" }) as Array<{ command: { title: string } }>;
-    expect(lenses.map((l) => l.command.title)).toEqual(["▶ Run", "Run collection", "Drift", "Coverage"]);
+    expect(lenses.map((l) => l.command.title)).toEqual(["▶ Run", "Run folder", "Drift", "Coverage"]);
   });
 
   it("CodeLens does not offer '▶ Run' on a folder config, which can never be a request", () => {
     // `**/*.tspec.yaml` matches folder.tspec.yaml, and running it produced an empty panel.
     const lenses = S.codeLens?.provideCodeLenses({ fileName: "/w/folder.tspec.yaml" }) as Array<{ command: { title: string } }>;
-    expect(lenses.map((l) => l.command.title)).toEqual(["Run collection", "Drift", "Coverage"]);
+    expect(lenses.map((l) => l.command.title)).toEqual(["Run folder", "Drift", "Coverage"]);
   });
 
   it("runRequest on a folder config explains itself instead of running nothing", async () => {
@@ -93,10 +115,34 @@ describe("vscode extension", () => {
     expect(S.panel?.webview.html).toMatch(/TruSpec/);
   });
 
-  it("runCollection renders results for the whole folder", async () => {
+  it("runCollection runs the open file's folder, not the whole repository", async () => {
+    // `truspec init` puts environments/ at the repo root, so the workspace root is usually the
+    // whole project: running it from a lens on one file would send every request in the repo,
+    // POSTs and DELETEs included. The lens means "this folder".
     S.activeFile = resolve(repoRoot, "examples", "petstore", "get-pet.tspec.yaml");
     await S.commands.get("truspec.runCollection")!();
-    expect(S.panel?.title).toBe("TruSpec — collection");
+    expect(S.panel?.title).toBe("TruSpec — folder");
+    expect(runTargets.at(-1)).toBe(resolve(repoRoot, "examples", "petstore"));
+  });
+
+  it("runs the folder a nested request lives in, not its ancestors", async () => {
+    S.activeFile = resolve(repoRoot, "examples", "blog", "posts", "create-post.tspec.yaml");
+    await S.commands.get("truspec.runCollection")!();
+    expect(runTargets.at(-1)).toBe(resolve(repoRoot, "examples", "blog", "posts"));
+  });
+
+  it("finds a spec named swagger.yaml as well as openapi.yaml", async () => {
+    // Half the specs in the wild predate the rename, and a spec the extension cannot see is a
+    // feature the user concludes does not work.
+    const pattern = await new Promise<string>((r) => {
+      S.specFiles = [];
+      const original = S.findPattern;
+      S.findPattern = (p: string) => r(p);
+      void S.commands.get("truspec.drift")!();
+      S.findPattern = original;
+    });
+    expect(pattern).toContain("swagger");
+    expect(pattern).toContain("openapi");
   });
 
   it("drift with no spec found warns", async () => {

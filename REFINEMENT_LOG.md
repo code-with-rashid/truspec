@@ -2334,3 +2334,39 @@ explanation rather than an invented one.
 quiet), coverage 96.00% lines / 87.75% branches / 96.47% functions, typecheck 8/8. One existing test
 asserted the old bare `(no match)` message and was updated — deliberately, since that message is
 the thing this iteration changed.
+
+### 67 — "Run collection" meant the whole repository
+
+**What I looked for.** The VS Code extension has never been examined in this campaign. Its
+rendering escapes everything it prints (checked first, since a webview is where an unescaped body
+would land), so I went looking at what its commands actually do.
+
+**`Run collection` runs the workspace root.** The lens sits on the open file, so clicking it on
+`api/admin/create-user.tspec.yaml` reads as "run the requests around this one". It ran
+`findWorkspaceRoot(...)` instead — and `truspec init` puts `environments/` at the *repo* root, so
+for the layout the tool itself scaffolds, the workspace root is the entire project.
+
+That means one click sends every request in the repository. Not a slow no-op: real POSTs and
+DELETEs, against whatever environment is selected, from a lens the user thought was scoped to what
+they were looking at.
+
+It now runs the directory the open file is in. The workspace root is still what environments and
+secrets resolve against — `runPath` walks up for that itself — so nothing about variable resolution
+changes. The lens is renamed **Run folder**, and the command title with it, because that is what it
+does; the command *id* keeps its old name so an existing keybinding still works.
+
+**And a spec the extension could not see.** `pickSpec` searched `**/*openapi*.{yaml,yml,json}`.
+Half the specs in the wild are still called `swagger.yaml` — for those users, Drift and Coverage
+reported "no OpenAPI spec found" against a repository with a spec sitting in it, which is
+indistinguishable from the feature not working. The glob covers both names now, and the warning
+says which names it looked for.
+
+**Testing this needed a small change of approach.** The extension tests run the real engine behind
+a mocked `vscode`, so nothing observed *which path* a command chose — the old test asserted only
+the panel title and would have passed either way. `runPath` is now wrapped by a spy that records
+its target and delegates to the real implementation, so the two new tests assert the decision
+without stubbing the thing being tested.
+
+**Verification.** 995 unit tests (3 new in the extension suite), coverage 96.00% lines / 87.77%
+branches / 96.47% functions, typecheck 8/8, both READMEs and the editors page updated, docs site
+builds.

@@ -101,12 +101,15 @@ no CORS, fully local.
 
 Features:
 
-- **CodeLens** on every request `.tspec.yaml`: ▶ Run · Run collection · Drift · Coverage
+- **CodeLens** on every request `.tspec.yaml`: ▶ Run · Run folder · Drift · Coverage
   (a `folder.tspec.yaml` is configuration, not a request, so it gets the last three only).
-- **Commands** (⇧⌘P): *TruSpec: Run Request / Run Collection / Drift / Coverage*.
+  **Run folder** runs the directory the open file is in — not the whole repository, which is
+  what the workspace root usually is once `truspec init` has put `environments/` there.
+- **Commands** (⇧⌘P): *TruSpec: Run Request / Run Folder / Drift / Coverage*.
 - Results render in a side panel — status, timing, assertions, plus drift and coverage
   views.
 - The `truspec.environment` setting picks the environment (otherwise you're prompted).
+- Drift and coverage find a spec named `*openapi*` or `*swagger*` (`.yaml`, `.yml`, `.json`).
 
 > The extension is **pre-release**; it isn't on the Marketplace yet. To run it from a source
 > checkout: `pnpm --filter truspec-vscode build`, then press **F5** in the repo (the *Run
