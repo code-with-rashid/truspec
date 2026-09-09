@@ -151,6 +151,8 @@ A burst of filesystem events from one editor save is debounced into a single run
 complete), and a run that throws is reported without ending the watch — a broken file is precisely
 when you keep editing. Watch mode exits only on Ctrl-C, returning the last run's exit code.
 
+<a id="transport-flags"></a>
+
 **TLS and proxy are flags, never request fields.** Whether to trust a self-signed certificate or
 route through a corporate proxy is a property of *where you are running*, not of the request — and
 a committed file saying "skip TLS verification" is a liability that outlives the afternoon it was
@@ -164,6 +166,8 @@ truspec run ./api --client-cert ./client.pem --client-key ./client.key
 
 `TRUSPEC_PROXY`, `HTTPS_PROXY`/`HTTP_PROXY` and `NODE_EXTRA_CA_CERTS` are read from the
 environment so CI can configure them once; an explicit flag wins per field.
+The same flags and variables are accepted by [`serve`](#serve), so the web UI reaches the same
+hosts the CLI does.
 `NODE_TLS_REJECT_UNAUTHORIZED` is deliberately **not** honored — turning off verification should
 be visible at the call site, not inherited from a variable someone set months ago for another
 tool. `--insecure` always warns.
@@ -652,6 +656,8 @@ engine (no CORS), and the UI is served from `@truspec/web`. See
 
 ```
 truspec serve [--dir <collection>] [--port <n>]
+             [--insecure] [--proxy <url>] [--ca <file>]
+             [--client-cert <file>] [--client-key <file>] [--client-key-passphrase <s>]
 ```
 
 | Flag | Alias | Description |
@@ -659,8 +665,14 @@ truspec serve [--dir <collection>] [--port <n>]
 | `--dir <collection>` | `-d` | Collection directory to serve. Default `.`. |
 | `--port <n>` | `-p` | Port. Default `4100`. |
 
+It also accepts every [transport flag](#transport-flags) `run` takes, and reads the same
+environment variables — so a host the CLI can reach is reachable from the UI too. Without
+this, a collection that passes in CI against a self-signed staging box would fail in the
+browser client, with nothing on screen to explain the difference.
+
 ```bash
 truspec serve --dir ./api       # opens http://localhost:4100
+truspec serve --dir ./api --ca ./corp-root.pem
 ```
 
 > Requires the web UI to be built. If you installed `truspec` from npm it's bundled; from

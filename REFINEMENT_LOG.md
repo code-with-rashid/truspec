@@ -721,3 +721,47 @@ apart.
 shows status and never a value) and 1 API test. The shared e2e fixture now declares an unresolved
 secret, so the whole browser suite exercises the new state: 89 e2e passing, 734 unit tests,
 coverage 95.39% lines / 87.14% branches / 96.39% functions — all above the gate — typecheck 8/8.
+
+### 26 — a failed request that says what actually went wrong
+
+**Gap.** Point a request at a host that isn't listening and TruSpec said:
+
+```
+error: Request failed: fetch failed
+```
+
+That is the most common failure anyone hits, and the message contains no information. `fetch`
+reports every network failure as those same five characters and buries the real reason — an
+`ECONNREFUSED`, an expired certificate, a DNS miss — in a `cause` nobody was reading. Postman,
+Insomnia and curl all name the cause; we named nothing.
+
+**Change.** `describeTransportError()` walks the cause chain (including `AggregateError.errors`,
+which is what Node throws when a dual-stack host fails on both addresses, and where `cause` alone
+unwraps to nothing) and turns the errno into a sentence with the host in it:
+
+| before | after |
+|---|---|
+| `Request failed: fetch failed` | `Connection refused by 127.0.0.1:4000 — nothing is listening on that port` |
+| `Request failed: fetch failed` | `Host not found: api.staging — check the hostname, or the variable that produced it` |
+| `Request failed: fetch failed` | `TLS certificate for api.staging:8443 is self-signed (use --insecure, or --ca <file> to trust it)` |
+| `Request failed: fetch failed` | `Refusing to connect to 127.0.0.1:1: the HTTP client blocks that port number outright` |
+
+Timeouts are matched by `name` rather than errno, because `AbortSignal.timeout` throws a
+`DOMException` with no `code` at all. An unrecognised cause falls through to the deepest real
+message, which is still strictly better than the wrapper's.
+
+**The second half, which the first half made necessary.** Those TLS messages name `--insecure` and
+`--ca` — flags that only `truspec run` accepted. Following that advice from the web UI would have
+led nowhere, and the underlying inconsistency was worse than the wording: `run` honored
+`HTTPS_PROXY` and `NODE_EXTRA_CA_CERTS`, `serve` silently ignored them, so a collection could pass
+in CI and fail in the browser client against the same host with nothing on screen to explain the
+difference. `truspec serve` now takes the same transport flags and environment variables and hands
+the configured transport down through `startWebServer` → `ApiContext` → `runPath`. `--insecure`
+warns there too, and more sharply: it holds for every request until the server is stopped.
+
+**Verification.** 11 unit tests over the describer (every errno, the timeout `DOMException`, the
+`AggregateError` shape, a cause cycle, the unknown-cause fallback), a web API test proving the
+injected transport is the one that actually sends, another proving a real refused connection is
+reported by name rather than as `fetch failed`, and 3 CLI tests for `serve`'s flags. 750 unit tests,
+89 e2e, coverage 95.46% lines / 87.41% branches / 96.44% functions — up on all three — typecheck
+8/8, own lint/docs/schema gates clean.

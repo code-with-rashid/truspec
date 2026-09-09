@@ -32,7 +32,7 @@ Usage:
   truspec codegen <request> [--lang <target>] [--env <name>] [--list]
   truspec import <postman|bruno|insomnia|curl|har> <path|-> [--out <dir>] [--filter <substr>]
   truspec mock --spec <openapi> [--port <n>] [--delay <ms>]
-  truspec serve [--dir <collection>] [--port <n>]
+  truspec serve [--dir <collection>] [--port <n>] [--insecure] [--proxy <url>]
   truspec --help
   truspec --version
 

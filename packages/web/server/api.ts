@@ -43,6 +43,8 @@ interface MockState {
 
 export interface ApiContext {
   dir: string;
+  /** Transport for outbound requests; set when `serve` was given TLS/proxy settings. */
+  fetch?: typeof globalThis.fetch;
   /** Mutable: set while a mock server started from the UI is running. */
   mock?: MockState;
 }
@@ -585,7 +587,12 @@ export async function handleApi(
     // against the OpenAPI operation, even without an explicit `{ type: schema }` assertion.
     return {
       status: 200,
-      json: await runPath(target, { env: b.env || undefined, cwd: ctx.dir, spec: b.spec || undefined }),
+      json: await runPath(target, {
+        env: b.env || undefined,
+        cwd: ctx.dir,
+        spec: b.spec || undefined,
+        ...(ctx.fetch ? { fetch: ctx.fetch } : {}),
+      }),
     };
   }
   if (method === "GET" && pathname === "/api/environments") {

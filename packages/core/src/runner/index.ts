@@ -7,4 +7,5 @@ export * from "./script";
 export * from "./oauth";
 export * from "./resolve";
 export * from "./transport";
+export * from "./transport-error";
 export * from "./run";

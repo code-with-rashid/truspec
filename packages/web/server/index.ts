@@ -70,6 +70,15 @@ export interface WebServerOptions {
   port?: number;
   host?: string;
   clientDir?: string;
+  /**
+   * Transport used for outbound requests the UI sends.
+   *
+   * Supplied by `truspec serve` when TLS or proxy settings are in play, so that a host the CLI can
+   * reach (a self-signed staging box, anything behind a corporate proxy) is reachable from the UI
+   * too. Without it the same collection passes in CI and fails in the browser client, with nothing
+   * on screen to explain the difference.
+   */
+  fetch?: typeof globalThis.fetch;
 }
 
 export interface WebServerHandle {
@@ -113,7 +122,7 @@ export async function startWebServer(opts: WebServerOptions = {}): Promise<WebSe
   const host = opts.host ?? "127.0.0.1";
   const clientDir =
     opts.clientDir ?? resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "client");
-  const ctx: ApiContext = { dir };
+  const ctx: ApiContext = { dir, ...(opts.fetch ? { fetch: opts.fetch } : {}) };
 
   const server = createServer((req, res) => {
     void (async () => {

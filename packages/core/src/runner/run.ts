@@ -14,6 +14,7 @@ import { type OAuth2Auth, resolveOAuthToken, type TokenCache } from "./oauth";
 import { type ResolvedPart, resolveRequest } from "./resolve";
 import { runPostScript, runPreScript } from "./script";
 import { send } from "./transport";
+import { describeTransportError } from "./transport-error";
 
 export interface RunContext {
   folder?: TruSpecFolderConfig;
@@ -267,7 +268,7 @@ export async function runRequest(req: TruSpecRequest, ctx: RunContext = {}): Pro
       },
     );
   } catch (e) {
-    return { ...head, ok: false, error: `Request failed: ${(e as Error).message}`, assertions: [] };
+    return { ...head, ok: false, error: describeTransportError(e, eff.url), assertions: [] };
   }
   const response = sent.response;
 
@@ -276,7 +277,8 @@ export async function runRequest(req: TruSpecRequest, ctx: RunContext = {}): Pro
   try {
     bodyText = await readResponseText(response, ctx.maxResponseBytes ?? MAX_RESPONSE_BYTES);
   } catch (e) {
-    return { ...head, ok: false, error: `Request failed: ${(e as Error).message}`, assertions: [] };
+    // The response started arriving and then stopped; name the same causes the send path does.
+    return { ...head, ok: false, error: describeTransportError(e, eff.url), assertions: [] };
   }
   const headers: Record<string, string> = {};
   response.headers.forEach((value, key) => {

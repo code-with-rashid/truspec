@@ -458,6 +458,54 @@ describe("web server api — import from the UI", () => {
   });
 });
 
+describe("web server api — configured transport", () => {
+  it("sends outbound requests through the transport `serve` was configured with", async () => {
+    // Proves the plumbing that lets the UI reach a self-signed or proxied host the CLI can reach.
+    // Without it the same collection passes in CI and fails in the browser, unexplained.
+    const dir = mkdtempSync(join(tmpdir(), "truspec-web-transport-"));
+    try {
+      writeFileSync(
+        join(dir, "get.tspec.yaml"),
+        'tspec: "0.1"\nname: Get pet\nmethod: GET\nurl: "https://unreachable.invalid/pets/1"\nassertions: [ { type: status, equals: 418 } ]\n',
+      );
+      const seen: string[] = [];
+      const stub: typeof globalThis.fetch = (input) => {
+        seen.push(String(input));
+        return Promise.resolve(new Response("{}", { status: 418, headers: { "content-type": "application/json" } }));
+      };
+      const r = await handleApi("POST", "/api/run", noQuery, { target: "get.tspec.yaml" }, { dir, fetch: stub });
+      const out = r.json as { results: Array<{ ok: boolean; response?: { status: number } }> };
+      expect(seen).toEqual(["https://unreachable.invalid/pets/1"]);
+      expect(out.results[0].response?.status).toBe(418);
+      expect(out.results[0].ok).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("explains a connection failure instead of reporting `fetch failed`", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "truspec-web-refused-"));
+    try {
+      // Bind an ephemeral port and close it again: now we know a port nothing is listening on.
+      const dead = createServer();
+      await new Promise<void>((r) => dead.listen(0, "127.0.0.1", () => r()));
+      const deadPort = (dead.address() as { port: number }).port;
+      await new Promise((r) => dead.close(() => r(undefined)));
+      writeFileSync(
+        join(dir, "get.tspec.yaml"),
+        `tspec: "0.1"\nname: Get pet\nmethod: GET\nurl: "http://127.0.0.1:${deadPort}/pets/1"\nassertions: [ { type: status, equals: 200 } ]\n`,
+      );
+      const r = await handleApi("POST", "/api/run", noQuery, { target: "get.tspec.yaml" }, { dir });
+      const out = r.json as { results: Array<{ ok: boolean; error?: string }> };
+      expect(out.results[0].ok).toBe(false);
+      expect(out.results[0].error).toMatch(new RegExp(`Connection refused by 127\\.0\\.0\\.1:${deadPort}`));
+      expect(out.results[0].error).not.toMatch(/fetch failed/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("web server api — spec-aware run (contract validation)", () => {
   it("passing spec to /api/run auto-validates a spec-linked request's response", async () => {
     const upstream = createServer((_req, res) => {
