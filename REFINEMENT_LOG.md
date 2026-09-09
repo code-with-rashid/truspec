@@ -355,3 +355,30 @@ across iterations, and the empty/missing dataset refusals. Typecheck 8/8, build 
 Also corrected `CLAUDE.md`/`AGENTS.md`, which still described the pre-iteration-5 auth list and
 omitted `tags`/`options` — agents read that file, so a stale copy is a real defect.
 
+### 13 — HAR import
+
+**Gap.** The remaining big importer. A HAR (browser devtools → "Save all as HAR") is the
+highest-fidelity record of what an app actually did — the fastest route from "reproduce this bug"
+to a committed regression test.
+
+**Change.** `importHar()`, wired to `truspec import har`, `POST /api/import/har` behind a picker
+in the web import dialog, and the `truspec_import_har` MCP tool.
+
+The import is deliberately **opinionated**, because a faithful dump is not a usable collection:
+
+- Browser-noise headers are stripped (`sec-*`, `user-agent`, `:authority`, `content-length`,
+  `host`, `accept-encoding`, …). Several are actively wrong to replay — `content-length` is
+  recomputed by the client and `accept-encoding` would make the recorded body unreadable — and
+  keeping the rest buries the two headers that matter under thirty that don't.
+- `OPTIONS` preflights are skipped (transport, not API surface), with a count reported.
+- Each request asserts **the status that was actually recorded**, capturing observed behavior
+  rather than a generic "didn't 4xx".
+- `--base-url-var` rewrites the recorded origin to `{{baseUrl}}`, which is what makes the result
+  usable against staging rather than only the host it was recorded from.
+- Bearer/basic auth is lifted into `auth`; JSON and urlencoded bodies become typed bodies; a
+  multipart entry imports its fields *with a warning that a HAR does not store file contents*.
+
+**Verification.** 611 tests (was 592) — 17 core (noise stripping, recorded-status assertion, the
+body-type matrix, filtering, origin rewriting, non-HTTP entries, filename de-duplication, non-HAR
+input) and 2 web API. Typecheck 8/8, build 5/5.
+

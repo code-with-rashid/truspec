@@ -203,6 +203,25 @@ export function createServer(ctx: ServerContext = {}): McpServer {
   );
 
   server.registerTool(
+    "truspec_import_har",
+    {
+      title: "Import a HAR export",
+      description:
+        "Convert a HAR (browser devtools 'Save all as HAR') into .tspec.yaml request files. Browser-noise headers are stripped, OPTIONS preflights skipped, and each request asserts the status that was actually recorded.",
+      inputSchema: {
+        path: z.string().describe("Path to the .har file."),
+        out: z.string().default(".").describe("Directory to write the request file(s) into."),
+        filter: z.string().optional().describe("Only import entries whose URL contains this substring."),
+        baseUrlVar: z
+          .string()
+          .optional()
+          .describe("Replace the recorded origin with this variable, e.g. baseUrl."),
+      },
+    },
+    async ({ path, out, filter, baseUrlVar }) => json(tools.importHarTool(c, path, out, filter, baseUrlVar)),
+  );
+
+  server.registerTool(
     "truspec_codegen",
     {
       title: "Generate request code",

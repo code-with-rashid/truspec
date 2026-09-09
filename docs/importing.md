@@ -1,8 +1,8 @@
-# Importing from Postman, Bruno & curl
+# Importing from Postman, Bruno, curl & HAR
 
 `truspec import` converts an existing collection into TruSpec's plain-text format so you
 can migrate without rebuilding by hand. It supports **Postman v2.1** collections,
-**Bruno** directories, and **`curl` command lines**.
+**Bruno** directories, **`curl` command lines**, and **HAR** exports from browser devtools.
 
 ---
 
@@ -20,6 +20,9 @@ truspec import curl "curl 'https://api.example.com/pets' -H 'Accept: application
 
 # curl — piped in
 pbpaste | truspec import curl - --out ./api
+
+# HAR — "Save all as HAR" from the browser's Network panel
+truspec import har ./session.har --out ./api --filter api.example.com --base-url-var baseUrl
 ```
 
 Each source request becomes one `<name>.tspec.yaml` file, preserving the folder structure
@@ -51,16 +54,46 @@ truspec import postman ./postman_collection.json
 ## Options
 
 ```
-truspec import <postman|bruno|curl> <path> [--out <dir>] [--dry-run] [--name <base>]
+truspec import <postman|bruno|curl|har> <path> [--out <dir>] [--dry-run] [--name <base>]
+                                             [--filter <substr>] [--base-url-var <name>]
+                                             [--keep-noise-headers] [--include-options]
 ```
 
 | Argument / flag | Alias | Description |
 |---|---|---|
-| `<postman\|bruno\|curl>` | | **Required.** Source format. |
-| `<path>` | | **Required.** Postman JSON file, Bruno directory, or a curl command (`-` for stdin). |
+| `<postman\|bruno\|curl\|har>` | | **Required.** Source format. |
+| `<path>` | | **Required.** Postman JSON, Bruno directory, a curl command (`-` for stdin), or a `.har`. |
 | `--out <dir>` | `-o` | Destination directory. Omit for a dry-run preview. |
 | `--dry-run` | | Force preview mode even when `--out` is given. |
 | `--name <base>` | | curl only: base filename, instead of a slug of the derived request name. |
+| `--filter <substr>` | | HAR only: import only entries whose URL contains this. |
+| `--base-url-var <name>` | | HAR only: replace the recorded origin with `{{name}}`. |
+| `--keep-noise-headers` | | HAR only: keep `sec-*`, `user-agent`, … (stripped by default). |
+| `--include-options` | | HAR only: keep `OPTIONS` preflights (skipped by default). |
+
+---
+
+## Importing a HAR
+
+A HAR is the browser's own record of what an app actually did — the fastest route from
+"reproduce this bug" to a committed regression test. The import is deliberately opinionated so
+the result reads like a collection someone wrote rather than a packet dump:
+
+- **Browser noise is stripped** — `sec-*`, `user-agent`, `:authority`, `content-length`, `host`,
+  `accept-encoding` and friends. Several are actively wrong to replay (`content-length` is
+  recomputed; `accept-encoding` would make the recorded body unreadable), and keeping the rest
+  would bury the two headers that matter under thirty that don't. `--keep-noise-headers` opts out.
+- **`OPTIONS` preflights are skipped** — they are transport, not API surface.
+- **Each request asserts the status that was actually recorded**, so the import captures observed
+  behavior rather than a generic "didn't 4xx".
+- **`--base-url-var`** rewrites the recorded origin to `{{baseUrl}}`, which is what makes the
+  result usable against staging as well as the host it was recorded from.
+- Bearer/basic `Authorization` becomes structured `auth`; JSON and urlencoded bodies become typed
+  bodies. A multipart entry imports its field names and values, with a warning that **a HAR does
+  not store file contents**.
+
+Because a HAR usually contains real session tokens, treat the output the way you would a pasted
+curl command: move credentials into an [environment secret](./concepts.md) before committing.
 
 ---
 

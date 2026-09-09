@@ -4,13 +4,14 @@ import { parseArgs } from "node:util";
 import {
   importBrunoDir,
   importCurl,
+  importHarFile,
   importPostmanFile,
   type ImportResult,
   writeImport,
 } from "@truspec/core/importers";
 import { type CommandDeps, resolveDeps } from "./deps";
 
-const SOURCES = ["postman", "bruno", "curl"] as const;
+const SOURCES = ["postman", "bruno", "curl", "har"] as const;
 type Source = (typeof SOURCES)[number];
 const USAGE = `Usage: truspec import <${SOURCES.join("|")}> <path> [--out <dir>] [--dry-run]
        truspec import curl -            # read the curl command from stdin
@@ -36,8 +37,20 @@ export async function importCommand(argv: string[], deps: Partial<CommandDeps> =
     out: { type: "string", short: "o" },
     "dry-run": { type: "boolean" },
     name: { type: "string" },
+    filter: { type: "string" },
+    "base-url-var": { type: "string" },
+    "keep-noise-headers": { type: "boolean" },
+    "include-options": { type: "boolean" },
   } as const;
-  let values: { out?: string; "dry-run"?: boolean; name?: string };
+  let values: {
+    out?: string;
+    "dry-run"?: boolean;
+    name?: string;
+    filter?: string;
+    "base-url-var"?: string;
+    "keep-noise-headers"?: boolean;
+    "include-options"?: boolean;
+  };
   let positionals: string[];
   try {
     const parsed = parseArgs({ args: rest, allowPositionals: true, options });
@@ -71,7 +84,22 @@ export async function importCommand(argv: string[], deps: Partial<CommandDeps> =
         d.stderr(`Not found: ${input}\n`);
         return 1;
       }
-      result = source === "postman" ? importPostmanFile(abs) : importBrunoDir(abs);
+      result =
+        source === "postman"
+          ? importPostmanFile(abs)
+          : source === "har"
+            ? importHarFile(abs, {
+                ...(values.filter ? { filter: values.filter } : {}),
+                ...(values["base-url-var"] ? { baseUrlVar: values["base-url-var"] } : {}),
+                ...(values["keep-noise-headers"] ? { keepNoiseHeaders: true } : {}),
+                ...(values["include-options"] ? { includeOptions: true } : {}),
+              })
+            : importBrunoDir(abs);
+      if (source === "har" && result.files.length === 0) {
+        for (const w of result.warnings) d.stderr(`warning: ${w}\n`);
+        d.stderr("No importable entries in that HAR.\n");
+        return 1;
+      }
     }
   } catch (e) {
     d.stderr(`Error: ${(e as Error).message}\n`);

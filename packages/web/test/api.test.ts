@@ -68,6 +68,50 @@ describe("web server api", () => {
     }
   });
 
+  it("imports a HAR export, stripping browser noise and asserting the recorded status", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "truspec-web-har-"));
+    try {
+      const harDoc = {
+        log: {
+          entries: [
+            {
+              request: {
+                method: "GET",
+                url: "https://api.example.com/pets?page=2",
+                headers: [
+                  { name: "accept", value: "application/json" },
+                  { name: "sec-ch-ua", value: '"Chromium"' },
+                ],
+              },
+              response: { status: 201 },
+            },
+          ],
+        },
+      };
+      const r = await handleApi("POST", "/api/import/har", noQuery, { json: harDoc }, { dir });
+      const out = r.json as { ok: boolean; stats: { requests: number }; files: string[] };
+      expect(out.ok).toBe(true);
+      expect(out.stats.requests).toBe(1);
+      const written = readFileSync(join(dir, out.files[0]!), "utf8");
+      expect(written).toContain("equals: 201");
+      expect(written).not.toContain("sec-ch-ua");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("reports a non-HAR document rather than writing an empty import", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "truspec-web-har-bad-"));
+    try {
+      const missing = await handleApi("POST", "/api/import/har", noQuery, {}, { dir });
+      expect(missing.status).toBe(400);
+      const junk = await handleApi("POST", "/api/import/har", noQuery, { json: { nope: 1 } }, { dir });
+      expect((junk.json as { ok: boolean }).ok).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("lists code-generation targets", async () => {
     const r = await handleApi("GET", "/api/codegen/targets", noQuery, undefined, ctx);
     const targets = (r.json as { targets: Array<{ id: string }> }).targets;

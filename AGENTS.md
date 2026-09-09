@@ -19,13 +19,13 @@ packages/
     src/runner/      interpolation, auth, fetch, declarative assertions
     src/workspace/   discovery, folder inheritance, env + secret resolution
     src/spec/        OpenAPI drift + coverage
-    src/importers/   postman v2.1 + bruno -> .tspec.yaml
+    src/importers/   postman v2.1 + bruno + curl + HAR -> .tspec.yaml
     src/codegen/     request -> runnable snippet in 17 clients/languages
     src/lint/        static checks over a collection (secrets, dead assertions, undeclared vars)
     src/mock/        local mock server generated from a spec
     schema/          PUBLISHED JSON Schema (generated; do not hand-edit)
   cli/           truspec — `run` / `drift` / `coverage` / `contract` / `gen` / `codegen` / `lint` / `import` / `mock`
-  mcp-server/    @truspec/mcp-server — 15 tools over the official MCP SDK
+  mcp-server/    @truspec/mcp-server — 16 tools over the official MCP SDK
 examples/        petstore + blog sample collections (+ openapi.yaml) for tests + demos
 ```
 

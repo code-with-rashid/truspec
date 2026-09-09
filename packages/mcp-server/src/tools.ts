@@ -10,7 +10,7 @@ import {
   scaffoldFromSpec as coreScaffold,
   writeScaffold,
 } from "@truspec/core/spec";
-import { importCurl, writeImport } from "@truspec/core/importers";
+import { importCurl, importHarFile, writeImport } from "@truspec/core/importers";
 import { lintWorkspace } from "@truspec/core/lint";
 import { confinePath, discoverRequests, prepareRequest, runPath } from "@truspec/core/workspace";
 
@@ -163,4 +163,29 @@ export function importCurlTool(ctx: ToolContext, command: string, outDir = ".", 
 export function lintTool(ctx: ToolContext, dir = ".", disable?: string[]) {
   const report = lintWorkspace(confinePath(ctx.cwd, dir), disable ? { disable } : {});
   return { ...report, dir: relative(ctx.cwd, report.dir) || "." };
+}
+
+/**
+ * Convert a HAR export into request files. A HAR is the highest-fidelity record of what an app
+ * actually did, which makes it the fastest path from "reproduce this bug" to a committed
+ * regression test — but only if the import strips the browser noise, which it does.
+ */
+export function importHarTool(
+  ctx: ToolContext,
+  path: string,
+  outDir = ".",
+  filter?: string,
+  baseUrlVar?: string,
+) {
+  const result = importHarFile(confinePath(ctx.cwd, path), {
+    ...(filter ? { filter } : {}),
+    ...(baseUrlVar ? { baseUrlVar } : {}),
+  });
+  if (result.files.length === 0) return { created: 0, warnings: result.warnings };
+  const written = writeImport(result, confinePath(ctx.cwd, outDir));
+  return {
+    created: written.length,
+    files: written.map((f) => relative(ctx.cwd, f)),
+    ...(result.warnings.length > 0 ? { warnings: result.warnings } : {}),
+  };
 }

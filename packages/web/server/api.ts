@@ -4,8 +4,10 @@ import { CODEGEN_TARGETS, codegenTargetIds, generateCode } from "@truspec/core/c
 import { parse } from "@truspec/core/format";
 import { exportPostman } from "@truspec/core/exporters";
 import {
+  type HarImportOptions,
   importBrunoFiles,
   importCurl,
+  importHar,
   importPostman,
   type ImportedFile,
   type ImportResult,
@@ -508,6 +510,26 @@ export async function handleApi(
     const result = importCurl(b.text, b.name ? { name: b.name } : {});
     if (result.files.length === 0) {
       return { status: 200, json: { ok: false, error: result.warnings[0] ?? "No curl command found" } };
+    }
+    try {
+      const written = writeImportConfined(result, target);
+      return { status: 200, json: { ok: true, stats: result.stats, warnings: result.warnings, files: written } };
+    } catch (e) {
+      return { status: 200, json: { ok: false, error: (e as Error).message } };
+    }
+  }
+  if (method === "POST" && pathname === "/api/import/har") {
+    const b = (body ?? {}) as { json?: unknown; targetDir?: string; options?: HarImportOptions };
+    if (b.json === undefined) return { status: 400, json: { error: "json required" } };
+    let target: string;
+    try {
+      target = b.targetDir ? confinePath(ctx.dir, b.targetDir) : ctx.dir;
+    } catch (e) {
+      return { status: 200, json: { ok: false, error: (e as Error).message } };
+    }
+    const result = importHar(b.json, b.options ?? {});
+    if (result.files.length === 0) {
+      return { status: 200, json: { ok: false, error: result.warnings[0] ?? "No importable entries" } };
     }
     try {
       const written = writeImportConfined(result, target);

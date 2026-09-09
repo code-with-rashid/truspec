@@ -7,6 +7,7 @@ import {
   getRequest,
   importBruno,
   importCurlText,
+  importHar,
   importPostman,
   type RequestDetail,
   type RunResult,
@@ -135,6 +136,7 @@ export function FlowView({ env, running, onRun, getResult, onImported }: FlowVie
   const [curlText, setCurlText] = useState<string | null>(null);
   const postmanRef = useRef<HTMLInputElement>(null);
   const brunoRef = useRef<HTMLInputElement | null>(null);
+  const harRef = useRef<HTMLInputElement>(null);
 
   const refresh = (): void => {
     getFlow()
@@ -264,6 +266,34 @@ export function FlowView({ env, running, onRun, getResult, onImported }: FlowVie
       sourceName,
       targetDir: slugify(sourceName),
     });
+  }
+
+  /** HAR import: a browser's own record of what an app did, turned into a collection. */
+  async function onHarFile(e: ChangeEvent<HTMLInputElement>): Promise<void> {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setImportMsg(null);
+    setImportBusy(true);
+    try {
+      const parsed: unknown = JSON.parse(await file.text());
+      const r = await importHar(parsed, undefined, { baseUrlVar: "baseUrl" });
+      if (!r.ok) {
+        setImportMsg(`Import failed: ${r.error ?? "unknown error"}`);
+        return;
+      }
+      const n = r.stats?.requests ?? 0;
+      setImportMsg(
+        `Imported ${n} request${n === 1 ? "" : "s"}` +
+          (r.warnings?.length ? ` (${r.warnings.length} warning${r.warnings.length === 1 ? "" : "s"})` : ""),
+      );
+      refresh();
+      onImported();
+    } catch (err) {
+      setImportMsg(`Import failed: ${String(err)}`);
+    } finally {
+      setImportBusy(false);
+    }
   }
 
   async function onBrunoDir(e: ChangeEvent<HTMLInputElement>): Promise<void> {
@@ -495,11 +525,15 @@ export function FlowView({ env, running, onRun, getResult, onImported }: FlowVie
                     <button className="btn" disabled={importBusy} onClick={() => brunoRef.current?.click()}>
                       bruno collection (folder)
                     </button>
+                    <button className="btn" disabled={importBusy} onClick={() => harRef.current?.click()}>
+                      HAR export (.har)
+                    </button>
                     <button className="btn" disabled={importBusy} onClick={() => { setImportMsg(null); setCurlText(""); }}>
                       paste a curl command
                     </button>
                   </div>
                   <input ref={postmanRef} type="file" accept="application/json,.json" className="sr-only" onChange={(e) => void onPostmanFile(e)} />
+                  <input ref={harRef} type="file" accept=".har,application/json" className="sr-only" onChange={(e) => void onHarFile(e)} />
                   <input
                     ref={(el) => {
                       brunoRef.current = el;
