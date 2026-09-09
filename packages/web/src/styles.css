@@ -3152,3 +3152,14 @@ select:focus {
   color: var(--text);
   font-size: 12px;
 }
+
+/* Large-response notice: the body view is bounded to stay responsive, and says so. */
+.body-truncated {
+  padding: 6px 10px;
+  margin-bottom: 6px;
+  border: 1px solid color-mix(in oklab, var(--amber) 40%, var(--line));
+  border-radius: 6px;
+  background: color-mix(in oklab, var(--amber) 8%, transparent);
+  color: var(--text);
+  font-size: 11.5px;
+}

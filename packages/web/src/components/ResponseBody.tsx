@@ -4,6 +4,19 @@ import { JsonBlock, prettyBody } from "../format-utils";
 
 export type BodyMode = "pretty" | "raw";
 
+/**
+ * Above this many characters the body is shown as plain text instead of syntax-highlighted.
+ *
+ * Highlighting emits one `<span>` per token, so it is linear in tokens and brutal in DOM nodes: a
+ * 1.16MB list response measured at 480,002 spans, 7.6s to first paint, and ~750ms per click
+ * afterwards. One unpaginated endpoint was enough to lock the tab. Colour is a nicety; a
+ * responsive page is not.
+ */
+const HIGHLIGHT_LIMIT = 256 * 1024;
+
+/** Above this, only the first slice is put in the DOM — always with a visible notice saying so. */
+const RENDER_LIMIT = 2 * 1024 * 1024;
+
 interface Match {
   /** Dotted path of this match, usable verbatim in an assertion or capture. */
   path: string;
@@ -36,8 +49,15 @@ export function ResponseBody({
   const [captureFor, setCaptureFor] = useState<string | null>(null);
   const [captureName, setCaptureName] = useState("");
 
-  const pretty = useMemo(() => prettyBody(bodyText), [bodyText]);
-  const shown = mode === "pretty" ? pretty : bodyText;
+  // Pretty-printing inflates the text ~1.5x, so skip it for a body already past what we render.
+  const pretty = useMemo(
+    () => (bodyText.length > RENDER_LIMIT ? bodyText : prettyBody(bodyText)),
+    [bodyText],
+  );
+  const full = mode === "pretty" ? pretty : bodyText;
+  const truncated = full.length > RENDER_LIMIT;
+  const shown = truncated ? full.slice(0, RENDER_LIMIT) : full;
+  const highlight = shown.length <= HIGHLIGHT_LIMIT;
   const isPathFilter = filter.trimStart().startsWith("$");
 
   const json = useMemo<unknown>(() => {
@@ -199,11 +219,20 @@ export function ResponseBody({
         </div>
       )}
 
+      {!textMatches && (truncated || !highlight) && (
+        // Never present part of a body as if it were all of it, and say why it looks plainer.
+        <div className="body-truncated" role="status">
+          {truncated
+            ? `Large response: showing the first ${Math.round(RENDER_LIMIT / 1024)}KB of ${Math.round(full.length / 1024)}KB. Save or copy the response for the whole body.`
+            : `Large response: showing all ${Math.round(full.length / 1024)}KB without syntax highlighting, to keep the page responsive.`}
+        </div>
+      )}
+
       <div className={wrap ? "body-wrap" : "body-nowrap"}>
         {textMatches ? (
           // Filtering to matching lines keeps a huge body navigable; the raw text is one click away.
           <pre className="body">{textMatches.hits.join("\n") || "no line matches"}</pre>
-        ) : mode === "pretty" ? (
+        ) : mode === "pretty" && highlight ? (
           <JsonBlock text={shown} />
         ) : (
           <pre className="body">{shown}</pre>

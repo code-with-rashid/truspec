@@ -1552,3 +1552,37 @@ with no script, the rule disable-able like any other, and its presence in `LINT_
 branches / 96.18% functions, typecheck 8/8. The examples still pass `lint --strict` (the new rule
 would have broken that gate had any example carried a script — checked deliberately, since
 `--strict` fails on warnings).
+
+### 48 — one unpaginated endpoint locked the browser tab
+
+**Gap.** The response viewer had no notion of size. `prettyBody` parses and re-stringifies the whole
+body, and `JsonBlock` syntax-highlights it by emitting **one `<span>` per token**. Nothing anywhere
+bounded either.
+
+Measured, in a real browser, on a 1.16MB JSON list — an entirely ordinary response from an endpoint
+that forgot to paginate:
+
+    1.16MB body -> 480,002 DOM spans, 7,627ms to render, 747ms per click afterwards
+
+Seven and a half seconds of frozen tab, and a page that stayed sluggish after. A 6MB body would be
+~2.4 million spans; I did not measure that one because the point was already made.
+
+**Change.** Two bounds, both with the same rule attached: never present part of a body as if it
+were all of it.
+
+- Past **256KB** the body renders as plain text instead of highlighted. Colour is a nicety; a
+  responsive page is not. The whole body is still shown, still filterable, still copyable.
+- Past **2MB** only the first slice goes into the DOM, and a `role="status"` notice states both
+  numbers — "showing the first 2048KB of 3536KB" — and points at save/copy for the rest.
+  Pretty-printing is also skipped there, since it inflates the text ~1.5x before anything is drawn.
+
+**Result on the same measurement:** 1,185ms and **0 spans**, from 7,627ms and 480,002 — about 6.4x
+faster to render, with the DOM explosion gone rather than reduced.
+
+**Verification.** 4 e2e tests, all written against a real browser and a real server rather than a
+mock: the render-time and interactivity bound (with the span count asserted, since that is the
+mechanism), the notice on a large-but-whole body, the truncation notice with both figures on a
+~3.5MB body, and — the one that bounds the change — that an ordinary response is still highlighted
+and carries no notice at all. That last test matters most: a performance fix that quietly degrades
+the common case is not a fix. 894 unit tests, **101 e2e**, coverage 95.71% lines / 87.44% branches
+/ 96.18% functions, typecheck 8/8, dogfood gates clean.
