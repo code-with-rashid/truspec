@@ -7,16 +7,6 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildFetch } from "../src/transport";
 
-/** Whether `openssl` is on PATH. A missing shell tool is not a defect in the transport. */
-function haveOpenssl(): boolean {
-  try {
-    execFileSync("openssl", ["version"], { stdio: "ignore" });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 /** A self-signed certificate valid for 127.0.0.1, written into `dir`. */
 function selfSigned(dir: string, prefix: string): { cert: string; key: string } {
   const key = join(dir, `${prefix}.key.pem`);
@@ -35,13 +25,33 @@ function selfSigned(dir: string, prefix: string): { cert: string; key: string } 
 }
 
 /**
+ * Whether a usable `openssl` can actually produce the fixture.
+ *
+ * Checked by generating one rather than by running `openssl version`: the certificate needs
+ * `-addext`, which older builds lack, and a platform where any part of this misbehaves should
+ * *skip* — a missing or quirky shell tool is not a defect in the transport.
+ */
+function canMakeCerts(): boolean {
+  let probe: string | undefined;
+  try {
+    probe = mkdtempSync(join(tmpdir(), "truspec-tls-probe-"));
+    selfSigned(probe, "probe");
+    return true;
+  } catch {
+    return false;
+  } finally {
+    if (probe) rmSync(probe, { recursive: true, force: true });
+  }
+}
+
+/**
  * `--insecure`, `--ca` and the client-certificate flags decide whether a connection is verified.
  * They were tested only for "reading the file does not throw" — nothing asserted that `--ca`
  * actually trusts the CA, and nothing would have caught it silently doing what `--insecure` does.
  * These run against a real HTTPS server with a real self-signed certificate, and include the
  * negative control that makes the positive result mean something.
  */
-describe.skipIf(!haveOpenssl())("transport TLS flags, against a real HTTPS server", () => {
+describe.skipIf(!canMakeCerts())("transport TLS flags, against a real HTTPS server", () => {
   let dir: string;
   let server: Server;
   let url: string;

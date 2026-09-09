@@ -3224,6 +3224,20 @@ making it do exactly that: only the control turns red.
 `openssl` generates the fixture at test time rather than committing a private key to the repo, and
 the suite skips where `openssl` is absent — the same judgement as iteration 82's curl test.
 
+**A break I caught by reading my own diff against the matrix, not by waiting for CI.** The
+portability job runs `pnpm test` on **windows-latest**, and two of these skip guards were wrong
+there:
+
+- Iteration 82's curl test gated on `curl --version`. Windows ships `curl.exe`, so the guard would
+  pass — and then `/bin/sh -c` does not exist, so the test would *fail* rather than skip. It now
+  gates on a POSIX shell as well, which is the actual premise: the snippet is a shell command.
+- This iteration's cert fixture gated on `openssl version`. A build without `-addext` would pass
+  that and fail at generation. It now gates by **generating a certificate**, so any platform where
+  any part of it misbehaves skips instead of going red.
+
+A skip guard that tests something adjacent to the real requirement is the same mistake as a mock
+standing in for the thing under test.
+
 **And the cleared probe still left a gate**, since it costs nothing: three assertions that every
 documented flag is real, that every real flag is documented, and that the option sets were actually
 parsed (so neither check can pass vacuously). A misspelled flag in the docs and an undocumented new

@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -110,11 +110,15 @@ assertions:
    * not, since a missing shell tool is not a defect in the generator.
    */
   it("emits a curl command that actually runs", async () => {
-    const haveCurl = await run("curl", ["--version"]).then(
-      () => true,
-      () => false,
-    );
-    if (!haveCurl) return;
+    // The snippet is a shell command, so the premise is a POSIX shell *and* curl. Windows ships
+    // `curl.exe` but no `/bin/sh`, so checking only for curl would fail there rather than skip.
+    const runnable =
+      existsSync("/bin/sh") &&
+      (await run("curl", ["--version"]).then(
+        () => true,
+        () => false,
+      ));
+    if (!runnable) return;
 
     const rec = await recorder();
     try {
