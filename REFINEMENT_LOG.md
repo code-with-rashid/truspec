@@ -382,3 +382,33 @@ The import is deliberately **opinionated**, because a faithful dump is not a usa
 body-type matrix, filtering, origin rewriting, non-HTTP entries, filename de-duplication, non-HAR
 input) and 2 web API. Typecheck 8/8, build 5/5.
 
+### 14 — Responsive layout: three real defects found by looking at the app
+
+Ran the UI in a real browser at 1440px and 900px and read the screenshots. Three defects, all
+visible without any interaction:
+
+1. **The sidebar clipped its own "export" button at the default width.** `.collection-actions`
+   was a non-wrapping flex row of four buttons inside a 270px sidebar; the fourth simply ran off
+   the edge. Now wraps.
+2. **The spec rail was cut off mid-word at 900px.** The workspace grid's floor
+   (270 + 500 + 340) exceeds a 900px window, so `.workspace` scrolled sideways and the rail was
+   clipped with no affordance to reach the rest of it. (An existing test asserted the *document*
+   didn't scroll, which was true — the overflow was one level down.) The rail is supplementary —
+   the `spec` view shows the same thing — so it is the panel that now gives way, computed from the
+   live viewport width because the grid columns are an inline style a media query can't reach.
+3. **The URL field was squeezed to a ~40px stub at 900px** while `code`/`edit`/`send` kept their
+   full width. `.req-top` now wraps and the URL bar has a `flex: 1 1 320px; min-width: 260px`
+   floor, so the buttons move to their own line instead.
+
+Added a **manual rail toggle** (persisted) alongside the auto-hide, so the panel can be reclaimed
+at any width — panel collapsing is table stakes in Postman and Bruno.
+
+Two pre-existing e2e tests needed updating rather than the code: the code-snippet test still
+expected the *unresolved* `{{baseUrl}}` from the old client-side curl builder (the engine now
+correctly substitutes it), and the import test's `input[type=file]` selector became ambiguous once
+HAR import added a second picker — both hidden inputs now carry `aria-label`s, which also makes
+them announceable.
+
+**Verification.** 4 new e2e tests pinning each defect; full e2e suite 71/71, unit 611, typecheck
+8/8, build 5/5.
+

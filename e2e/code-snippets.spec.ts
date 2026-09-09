@@ -12,7 +12,10 @@ test.describe("code snippets (real browser)", () => {
 
     await page.click(".curl-btn");
     await expect(page.locator(".code-out")).toContainText("curl -X GET");
-    await expect(page.locator(".code-out")).toContainText("{{baseUrl}}/pets/1");
+    // Generation goes through the real engine, so the active environment's baseUrl is substituted
+    // — the whole reason this replaced the old client-side builder, which could not resolve it.
+    await expect(page.locator(".code-out")).toContainText("/pets/1");
+    await expect(page.locator(".code-out")).not.toContainText("{{baseUrl}}");
 
     await page.click(".code-modal .btn.ghost.small");
     const clipboard = await page.evaluate(() => navigator.clipboard.readText());

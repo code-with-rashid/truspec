@@ -532,8 +532,8 @@ export function FlowView({ env, running, onRun, getResult, onImported }: FlowVie
                       paste a curl command
                     </button>
                   </div>
-                  <input ref={postmanRef} type="file" accept="application/json,.json" className="sr-only" onChange={(e) => void onPostmanFile(e)} />
-                  <input ref={harRef} type="file" accept=".har,application/json" className="sr-only" onChange={(e) => void onHarFile(e)} />
+                  <input ref={postmanRef} aria-label="postman collection file" type="file" accept="application/json,.json" className="sr-only" onChange={(e) => void onPostmanFile(e)} />
+                  <input ref={harRef} aria-label="HAR export file" type="file" accept=".har,application/json" className="sr-only" onChange={(e) => void onHarFile(e)} />
                   <input
                     ref={(el) => {
                       brunoRef.current = el;

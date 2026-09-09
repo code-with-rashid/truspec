@@ -133,6 +133,20 @@ const MIN_SIDEBAR = 200;
 const MAX_SIDEBAR = 480;
 const MIN_RAIL = 260;
 const MAX_RAIL = 560;
+/** Below this the request pane stops being usable, so a panel has to give way. */
+const MIN_MAIN = 500;
+const RAIL_KEY = "truspec.railHidden";
+
+/** Current viewport width, so layout decisions can be made in JS (the grid is an inline style). */
+function useViewportWidth(): number {
+  const [width, setWidth] = useState(() => window.innerWidth);
+  useEffect(() => {
+    const onResize = (): void => setWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  return width;
+}
 
 /** Drag-to-resize for a grid column's pixel width, persisted across sessions. */
 function usePanelWidth(storageKey: string, initial: number, min: number, max: number, invert: boolean) {
@@ -172,6 +186,10 @@ function usePanelWidth(storageKey: string, initial: number, min: number, max: nu
 }
 
 export function App() {
+  const viewportWidth = useViewportWidth();
+  const [railHidden, setRailHidden] = useState<boolean>(
+    () => window.localStorage.getItem(RAIL_KEY) === "1",
+  );
   const [state, setState] = useState<WorkspaceState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tabs, setTabs] = useState<OpenTab[]>([]);
@@ -1114,7 +1132,11 @@ export function App() {
     [openTab],
   );
 
-  const showRail = view === "workspace" && !editing;
+  // The rail is supplementary — its contents are also the `spec` view — so it is the panel that
+  // gives way when the window cannot hold three columns. Without this the workspace grid simply
+  // overflowed and the rail was clipped mid-word with no affordance to reach the rest of it.
+  const railFits = viewportWidth >= sidebarW + railW + MIN_MAIN + 40;
+  const showRail = view === "workspace" && !editing && !railHidden && railFits;
 
   return (
     <div className="app">
@@ -1184,6 +1206,32 @@ export function App() {
 
         <button className="btn run" disabled={running} onClick={() => doRun(undefined)}>
           {running ? "running…" : "▶ run all"}
+        </button>
+        <button
+          className="btn ghost"
+          onClick={() => {
+            setRailHidden((v) => {
+              const next = !v;
+              try {
+                window.localStorage.setItem(RAIL_KEY, next ? "1" : "0");
+              } catch {
+                // private mode / storage disabled — the toggle still works for this session.
+              }
+              return next;
+            });
+          }}
+          disabled={!railFits}
+          title={
+            railFits
+              ? railHidden
+                ? "show the spec panel"
+                : "hide the spec panel"
+              : "the window is too narrow for the spec panel — use the spec tab"
+          }
+          aria-label={railHidden ? "show spec panel" : "hide spec panel"}
+          aria-pressed={!railHidden}
+        >
+          {railHidden || !railFits ? "▤" : "▥"}
         </button>
         <button className="btn ghost" onClick={() => setTheme(theme === "dark" ? "light" : "dark")} title="toggle theme" aria-label="toggle theme">
           {theme === "dark" ? "☾" : "☀"}

@@ -506,7 +506,10 @@ select:focus {
 .collection-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  /* Wrap: four buttons do not fit the sidebar's default 270px, and a non-wrapping row silently
+     clipped "export" off the right edge at the default width. */
+  flex-wrap: wrap;
+  gap: 6px 8px;
   padding: 0 14px 9px;
   border-bottom: 1px solid var(--line);
 }
@@ -972,6 +975,7 @@ select:focus {
 .req-top {
   display: flex;
   align-items: stretch;
+  flex-wrap: wrap;
   gap: 10px;
 }
 .url-bar {
@@ -981,8 +985,10 @@ select:focus {
   border: 1px solid var(--line-2);
   border-radius: 8px;
   overflow: hidden;
-  flex: 1;
-  min-width: 0;
+  /* The URL is the most important field in the app; below this width it stops being readable, so
+     the action buttons wrap to their own line rather than squeezing it into a stub. */
+  flex: 1 1 320px;
+  min-width: 260px;
 }
 .url-bar .m {
   padding: 0 13px;
