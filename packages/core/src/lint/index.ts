@@ -47,6 +47,9 @@ export const LINT_RULES: Array<{ id: string; severity: Severity; description: st
   { id: "undeclared-var", severity: "warning", description: "A {{var}} is neither declared in an environment nor captured by an earlier request." },
   { id: "absolute-url", severity: "warning", description: "An absolute URL under a folder that declares a baseUrl, so switching environments has no effect." },
   { id: "insecure-url", severity: "warning", description: "A plaintext http:// URL to a host that is not the local machine." },
+  { id: "body-on-bodiless-method", severity: "error", description: "A GET or HEAD request carries a body, which the HTTP client refuses to send at all." },
+  { id: "content-type-conflict", severity: "warning", description: "An explicit Content-Type contradicts the body's declared type, so the bytes are sent under the wrong label." },
+  { id: "capture-never-used", severity: "warning", description: "A captured variable is referenced by no later request." },
 ];
 
 /**
@@ -110,6 +113,20 @@ export function lintWorkspace(dir: string, opts: LintOptions = {}): LintReport {
         add(path, "error", "bad-jsonpath", `assertion on "${a.path}": ${(e as Error).message}`);
       }
     }
+    // `fetch` refuses a GET/HEAD body outright, so this request can never be sent — an error, not
+    // a style note. Caught here it costs a lint run; caught at run time it costs a red pipeline.
+    if ((req.method === "GET" || req.method === "HEAD") && req.body && req.body.type !== "none") {
+      add(
+        path,
+        "error",
+        "body-on-bodiless-method",
+        `${req.method} with a ${req.body.type} body — the HTTP client refuses to send it ("Request with GET/HEAD method cannot have body").`,
+      );
+    }
+    const conflict = contentTypeConflict(req);
+    if (conflict) {
+      add(path, "warning", "content-type-conflict", conflict);
+    }
     if (isInsecureUrl(req.url)) {
       add(path, "warning", "insecure-url", `${req.url} is plaintext http:// to a remote host.`);
     }
@@ -141,18 +158,41 @@ export function lintWorkspace(dir: string, opts: LintOptions = {}): LintReport {
   const ordered = [...parsed].sort(
     (a, b) => (a.req.order ?? 0) - (b.req.order ?? 0) || a.path.localeCompare(b.path),
   );
+  // Where each name is captured, so an undeclared-var warning can distinguish "nothing captures
+  // this" from "something does, but it runs later" — two different bugs with two different fixes.
+  const capturedIn = new Map<string, string>();
+  for (const { path, req } of ordered) {
+    for (const name of Object.keys(req.capture ?? {})) if (!capturedIn.has(name)) capturedIn.set(name, path);
+  }
+  const usedNames = new Set<string>();
   const available = new Set(declared);
   for (const { path, req } of ordered) {
     // A pre-request script computes variables *this* request then interpolates, so its names are
     // available before the check, not after it.
     for (const name of scriptSetNames(req)) available.add(name);
     for (const name of referencedVars(req)) {
+      usedNames.add(name);
       if (!available.has(name)) {
-        add(path, "warning", "undeclared-var", `{{${name}}} is not declared in any environment, .env, or captured by an earlier request.`);
+        const later = capturedIn.get(name);
+        add(
+          path,
+          "warning",
+          "undeclared-var",
+          later
+            ? `{{${name}}} is captured by ${later}, but that request runs later — raise this request's \`order\`, or lower that one's.`
+            : `{{${name}}} is not declared in any environment, .env, or captured by an earlier request.`,
+        );
       }
     }
     // Captures are only available to *later* requests, so they are added after the check.
     for (const name of Object.keys(req.capture ?? {})) available.add(name);
+  }
+  // A capture nobody reads is usually a rename that only got applied on one side.
+  for (const { path, req } of ordered) {
+    for (const name of Object.keys(req.capture ?? {})) {
+      if (usedNames.has(name)) continue;
+      add(path, "warning", "capture-never-used", `capture.${name} is referenced by no later request.`);
+    }
   }
 
   const errors = findings.filter((f) => f.severity === "error").length;
@@ -164,6 +204,32 @@ export function lintWorkspace(dir: string, opts: LintOptions = {}): LintReport {
     warnings: findings.length - errors,
     ok: errors === 0,
   };
+}
+
+/**
+ * The content types a typed body can legitimately be sent as.
+ *
+ * An explicit header *wins* over the body's default (see `resolveRequest`), which is a feature —
+ * `application/vnd.api+json` for a JSON body is exactly right. It stops being a feature when the
+ * header names a different format entirely: the request then sends JSON bytes labelled as XML,
+ * and the server's 400 says nothing about why.
+ */
+const BODY_CONTENT_TYPES: Record<string, RegExp> = {
+  json: /json/i,
+  graphql: /json|graphql/i,
+  form: /x-www-form-urlencoded/i,
+  multipart: /multipart\/form-data/i,
+};
+
+function contentTypeConflict(req: TruSpecRequest): string | undefined {
+  const body = req.body;
+  if (!body || body.type === "none" || body.type === "text") return undefined;
+  const header = Object.entries(req.headers ?? {}).find(([k]) => k.toLowerCase() === "content-type");
+  if (!header) return undefined;
+  const expected = BODY_CONTENT_TYPES[body.type];
+  const declaredType = String(header[1]);
+  if (!expected || expected.test(declaredType)) return undefined;
+  return `Content-Type: ${declaredType} contradicts \`body.type: ${body.type}\` — the header wins, so the body is sent under the wrong label.`;
 }
 
 /** `tr.set("name", …)` calls in a pre-request script — the names it makes available. */

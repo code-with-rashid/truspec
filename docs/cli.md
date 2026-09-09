@@ -526,6 +526,9 @@ truspec lint [<dir>] [--strict] [--json] [--disable <rule>] [--output <file>] [-
 | `undeclared-var` | warning | A `{{var}}` no environment declares, no `.env` provides, and no *earlier* request captures. |
 | `absolute-url` | warning | An absolute URL under a folder that sets `baseUrl` — switching environments would not move it. |
 | `insecure-url` | warning | Plaintext `http://` to a host that is not the local machine. |
+| `body-on-bodiless-method` | error | A `GET` or `HEAD` request carries a body. The HTTP client refuses to send it, so the request can never run. |
+| `content-type-conflict` | warning | An explicit `Content-Type` names a different format than `body.type`. The header wins, so the body is sent under the wrong label. (A *narrower* type of the same format — `application/vnd.api+json` for a JSON body — is fine and is not flagged.) |
+| `capture-never-used` | warning | A captured variable is referenced by no later request — usually a rename applied on only one side. |
 
 **Exit code:** `1` if any error was found (or with `--strict`, any warning); otherwise `0`.
 

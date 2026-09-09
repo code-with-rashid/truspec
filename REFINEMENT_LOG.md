@@ -844,3 +844,37 @@ patch" note.
 that a path escaping the workspace is refused for both read and delete, and that the format
 reference's properties match the validator's. 783 unit tests, coverage 95.55% lines / 87.62%
 branches / 96.55% functions — up on all three — typecheck 8/8, own lint/docs/schema gates clean.
+
+### 29 — three lint rules, found by asking what a collection can be statically wrong about
+
+**Gap.** The linter had 8 rules. I wrote four deliberately-broken requests and ran them; it caught
+one of the four. The three it missed:
+
+- **A `GET` with a body.** `fetch` refuses this outright — *"Request with GET/HEAD method cannot
+  have body"* — every single time, so the request can never run under any circumstances. That is
+  not a style note; it is a file that is statically, unconditionally broken, and the linter said
+  nothing about it.
+- **A `Content-Type` header that contradicts the body.** `headers: { Content-Type: application/xml }`
+  with `body: { type: json }` sends JSON bytes labelled as XML — the explicit header wins in the
+  resolver, by design. The server answers 400 and says nothing about why.
+- **A capture nobody reads.** `capture: { authToken: … }` in one request and `{{token}}` in the
+  next is one rename applied on one side. The linter reported the second half (`undeclared-var`)
+  and never the first, so the message pointed at the wrong file.
+
+**Change.** Three rules — `body-on-bodiless-method` (**error**, since the request cannot be sent),
+`content-type-conflict` and `capture-never-used` (warnings). The Content-Type rule matches by
+*format family*, not by string equality: `application/vnd.api+json` and
+`application/json; charset=utf-8` for a JSON body are exactly what the override exists for and are
+not flagged; `application/xml` is.
+
+**And one message that was actively misleading.** `undeclared-var` said `{{token}}` was *"not
+captured by an earlier request"* even when a request captured it and simply ran **later** — sending
+the reader to look for a capture that was right there in the next file. It now names that file and
+the fix: `{{token}} is captured by 01-login.tspec.yaml, but that request runs later — raise this
+request's order, or lower that one's.` Same warning, opposite amount of help.
+
+**Verification.** 12 tests, including that a narrower content type of the same family is *not*
+flagged (the false positive that would make the rule worth disabling), that `body: { type: none }`
+on a GET is fine, and that each rule is in the `--list-rules` registry and respects `--disable`.
+795 unit tests, coverage 95.57% lines / 87.65% branches / 96.55% functions, typecheck 8/8, and the
+project's own examples still pass `truspec lint --strict` against the larger rule set.
