@@ -154,3 +154,41 @@ describe("script-runs-unsandboxed", () => {
     expect(LINT_RULES.some((r) => r.id === "script-runs-unsandboxed")).toBe(true);
   });
 });
+
+describe("inline-secret in environment files", () => {
+  // Built at run time: a credential-shaped literal must never be a committed string.
+  const fixture = (prefix: string, rest: string): string => prefix + rest;
+  const writeEnv = (name: string, body: string): void =>
+    writeFileSync(join(dir, "environments", name), body);
+
+  it("flags a credential inlined as an environment variable", () => {
+    // CLAUDE.md's hard rule names environment files alongside requests, but the linter only ever
+    // read requests — and an env file is exactly where someone puts a value a {{var}} needs.
+    writeEnv(
+      "leaky.env.yaml",
+      `tspec: "0.1"\nname: leaky\nvariables:\n  baseUrl: "https://api.test"\n  apiToken: "${fixture("sk", "_live_abcdefghijklmnopqrstuvwx")}"\n  awsKey: "${fixture("AKIA", "IOSFODNN7EXAMPLE")}"\n`,
+    );
+    const found = lintWorkspace(dir).findings.filter((f) => f.rule === "inline-secret");
+    expect(found).toHaveLength(2);
+    expect(found.every((f) => f.severity === "error")).toBe(true);
+    expect(found.every((f) => f.path === "environments/leaky.env.yaml")).toBe(true);
+    expect(found.map((f) => f.message).join(" ")).toContain("variables.apiToken");
+    expect(found.map((f) => f.message).join(" ")).toContain("variables.awsKey");
+    expect(found[0]?.message).toContain("secrets:");
+  });
+
+  it("says nothing about a well-formed environment", () => {
+    // The default `local.env.yaml` from beforeEach plus a properly declared secret name.
+    writeEnv("ok.env.yaml", 'tspec: "0.1"\nname: ok\nvariables: { baseUrl: "https://api.test" }\nsecrets: [ token ]\n');
+    expect(lintWorkspace(dir).findings.some((f) => f.rule === "inline-secret")).toBe(false);
+  });
+
+  it("reports an environment file that does not parse, rather than skipping it", () => {
+    writeEnv("broken.env.yaml", 'tspec: "0.1"\nname: broken\nvariables: { a: 1 }\nnope: true\n');
+    const parseErrors = lintWorkspace(dir).findings.filter(
+      (f) => f.rule === "parse" && f.path === "environments/broken.env.yaml",
+    );
+    expect(parseErrors).toHaveLength(1);
+    expect(parseErrors[0]?.severity).toBe("error");
+  });
+});

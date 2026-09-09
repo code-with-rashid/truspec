@@ -206,3 +206,36 @@ body:
     expect(referencedVars(req).sort()).toEqual(["b", "baseUrl", "h", "id", "qv"]);
   });
 });
+
+describe("inline-secret finds a credential inside a larger value", () => {
+  it("catches the shape a real key actually gets committed in", () => {
+    // `Authorization: "Bearer <key>"` is the likeliest place of all, and anchoring the patterns to
+    // the whole value made exactly that case invisible.
+    expect(looksLikeSecret(`Bearer ${fixture("sk", "_live_abcdefghijklmnopqrstuvwx")}`)).toContain("Stripe");
+    expect(looksLikeSecret(`token=${fixture("ghp", "_abcdefghijklmnopqrstuvwxyz0123")}&x=1`)).toContain("GitHub");
+    expect(looksLikeSecret(`Bearer ${fixture("ey", "JhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abcdefghijklmnop")}`)).toContain("JWT");
+  });
+
+  it("still refuses to cry wolf on ordinary long strings", () => {
+    // A linter that fires on anything long gets muted, and then it catches nothing.
+    for (const v of [
+      "https://api.example.com/v1/organisations/12345/members?include=roles",
+      "550e8400-e29b-41d4-a716-446655440000",
+      "the quick brown fox jumps over the lazy dog again and again",
+      "application/vnd.example.v3+json; charset=utf-8",
+      "2026-09-09T13:00:00.000Z/2026-09-10T13:00:00.000Z",
+    ]) {
+      expect(looksLikeSecret(v), v).toBeUndefined();
+    }
+  });
+
+  it("does not fire on a match embedded in a longer opaque token", () => {
+    // The lookbehind: `xxAKIAIOSFODNN7EXAMPLE` is not an AWS key id, it is a different string.
+    expect(looksLikeSecret(`zz${fixture("AKIA", "IOSFODNN7EXAMPLE")}`)).toBeUndefined();
+    expect(looksLikeSecret(`abc${fixture("sk", "_live_abcdefghijklmnopqrstuvwx")}`)).toBeUndefined();
+  });
+
+  it("still treats a template as a template, not a literal", () => {
+    expect(looksLikeSecret("Bearer {{token}}")).toBeUndefined();
+  });
+});

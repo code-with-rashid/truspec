@@ -40,13 +40,13 @@ export function referencedVars(req: TruSpecRequest): string[] {
  * catches nothing. These patterns are ones that essentially only occur in genuine secrets.
  */
 const SECRET_PATTERNS: Array<[RegExp, string]> = [
-  [/^ey[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]+$/, "a JWT"],
-  [/^(sk|rk|pk)_(live|test)_[A-Za-z0-9]{16,}$/, "a Stripe-style key"],
-  [/^gh[pousr]_[A-Za-z0-9]{20,}$/, "a GitHub token"],
-  [/^xox[baprs]-[A-Za-z0-9-]{10,}$/, "a Slack token"],
-  [/^AKIA[0-9A-Z]{16}$/, "an AWS access key id"],
-  [/^AIza[0-9A-Za-z_-]{35}$/, "a Google API key"],
-  [/^-{5}BEGIN [A-Z ]*PRIVATE KEY-{5}/, "a private key"],
+  [/(?<![A-Za-z0-9_-])ey[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]+/, "a JWT"],
+  [/(?<![A-Za-z0-9_-])(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9]{16,}/, "a Stripe-style key"],
+  [/(?<![A-Za-z0-9_-])gh[pousr]_[A-Za-z0-9]{20,}/, "a GitHub token"],
+  [/(?<![A-Za-z0-9_-])xox[baprs]-[A-Za-z0-9-]{10,}/, "a Slack token"],
+  [/(?<![A-Za-z0-9_-])AKIA[0-9A-Z]{16}(?![0-9A-Z])/, "an AWS access key id"],
+  [/(?<![A-Za-z0-9_-])AIza[0-9A-Za-z_-]{35}(?![0-9A-Za-z_-])/, "a Google API key"],
+  [/-{5}BEGIN [A-Z ]*PRIVATE KEY-{5}/, "a private key"],
 ];
 
 /** Identify a literal that looks like a credential; returns what it looks like, or undefined. */
@@ -54,6 +54,10 @@ export function looksLikeSecret(value: string): string | undefined {
   const v = value.trim();
   if (v.length < 16) return undefined;
   if (v.includes("{{")) return undefined; // a template, not a literal
+  // Searched *within* the value, not matched against the whole of it. `Authorization: "Bearer
+  // sk_live_…"` is the likeliest place a real key gets committed, and anchoring the patterns made
+  // exactly that case invisible. The prefixes are distinctive enough that a substring search keeps
+  // the rule as narrow as it was — the lookbehind stops a match inside a longer opaque token.
   for (const [re, what] of SECRET_PATTERNS) if (re.test(v)) return what;
   return undefined;
 }

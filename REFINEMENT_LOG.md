@@ -1624,3 +1624,42 @@ case, `includeAssets` restoring everything, the avatar case stated rather than h
 counted separately from preflights. 900 unit tests, 101 e2e, coverage 95.72% lines / 87.45%
 branches / 96.19% functions, typecheck 8/8, dogfood gates clean. (The doc note first landed inside
 a fenced code block — caught by checking the fences balance, and moved out.)
+
+### 50 — the hard rule the linter only half enforced
+
+**Gap.** CLAUDE.md states it as a hard rule: *"Never inline secrets into request or environment
+files."* Probing `env` first cleared the obvious worry — `truspec env <name>` prints
+`resolved from the environment`, never a value, in both human and `--json` output, and `env --diff`
+compares names. Nothing leaks there.
+
+The linter is where the rule broke down, in two independent ways.
+
+**It never read environment files at all.** `lintWorkspace` walks `discoverRequests(dir)`. An
+`environments/leaky.env.yaml` carrying an inlined Stripe key *and* an AWS access key id linted
+completely clean. An environment file is precisely where someone puts the value a `{{var}}` needs —
+the rule names them for a reason, and the tool enforced it only for requests.
+
+**Its patterns were anchored to the whole value.** `^(sk|rk|pk)_(live|test)_…$` matches a bare key
+and nothing else, so `Authorization: "Bearer sk_live_…"` — the single likeliest shape for a real key
+to get committed in — did not match. Verified directly before changing anything: anchored says
+`false` for the `Bearer` form, unanchored says `true`.
+
+**Change.** The patterns now search *within* a value, and `environments/*.env.yaml` are scanned,
+with a message pointing at the actual fix (`declare it under secrets:` — a name, no value). Both
+gaps on the same fixture now report: `headers.Authorization looks like a Stripe-style key`, and two
+findings in the env file.
+
+**Keeping it narrow, which is the whole risk here.** The rule's own comment says a linter that
+cries wolf gets muted, and then it catches nothing — so un-anchoring had to not cost precision. A
+`(?<![A-Za-z0-9_-])` lookbehind keeps a match from firing inside a longer opaque token, and the
+prefixes were already distinctive. Tested against URLs, UUIDs, prose, content-type headers and
+ISO-8601 ranges, none of which fire; `password: "hunter2-not-really-but-still"` is still correctly
+ignored, because it matches no high-confidence pattern and guessing would be worse than silence.
+
+**Verification.** 8 tests: the three embedded-credential shapes, five ordinary long strings that
+must stay silent, the lookbehind guard, templates still treated as templates, env-file detection
+with both keys and the right path, a clean environment staying clean, and an unparseable env file
+reported rather than skipped. 907 unit tests, 101 e2e, coverage 95.72% lines / 87.45% branches /
+96.19% functions, typecheck 8/8. The examples still pass `lint --strict`, which matters more than
+usual here: a new *error*-severity path over files never linted before would have broken that gate
+outright if it were over-eager.

@@ -214,6 +214,33 @@ export function lintWorkspace(dir: string, opts: LintOptions = {}): LintReport {
     );
   }
 
+  // Environment files, which CLAUDE.md's hard rule names alongside requests: "Never inline secrets
+  // into request or environment files." The linter enforced it for requests only, so an
+  // `environments/*.env.yaml` carrying a committed AWS or Stripe key passed clean — and an env
+  // file is exactly where someone reaches for when a `{{var}}` needs a value.
+  const envDir = join(dir, "environments");
+  if (existsSync(envDir)) {
+    for (const entry of readdirSync(envDir).sort()) {
+      if (!entry.endsWith(".env.yaml")) continue;
+      const rel = toPosixPath(join("environments", entry));
+      const parsed = parse.environment.safeParse(readFileSync(join(envDir, entry), "utf8"));
+      if (!parsed.ok || !parsed.data) {
+        add(rel, "error", "parse", parsed.error ?? "does not parse as an environment");
+        continue;
+      }
+      for (const [name, value] of Object.entries(parsed.data.variables ?? {})) {
+        const what = typeof value === "string" ? looksLikeSecret(value) : undefined;
+        if (!what) continue;
+        add(
+          rel,
+          "error",
+          "inline-secret",
+          `variables.${name} looks like ${what}. Declare it under \`secrets:\` (a name, no value) and supply it from the environment or a .env file.`,
+        );
+      }
+    }
+  }
+
   const errors = findings.filter((f) => f.severity === "error").length;
   return {
     dir,
