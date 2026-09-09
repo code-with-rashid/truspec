@@ -20,8 +20,11 @@ Point your collection's `baseUrl` at it and run:
 truspec run ./api --env local      # with environments/local.env.yaml → baseUrl: http://localhost:4000
 ```
 
-The server generates a response for each operation in the spec from its schema/examples,
-and returns `404` for any route the spec doesn't define.
+The server generates a response for each operation in the spec from its schema/examples.
+A path the spec doesn't define returns `404`. A path it does define, asked with a method it
+doesn't, returns `405` with an `Allow` header — so a wrong method reads as a wrong method, not
+as a wrong URL. `HEAD` is served from the matching `GET` operation (same status and headers, no
+body), which specs rarely declare but clients routinely ask for.
 
 ---
 

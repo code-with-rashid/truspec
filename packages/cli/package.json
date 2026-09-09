@@ -12,18 +12,34 @@
     "directory": "packages/cli"
   },
   "bugs": "https://github.com/code-with-rashid/truspec/issues",
-  "keywords": ["api", "api-client", "openapi", "http", "testing", "cli", "postman", "bruno", "mock", "drift"],
-  "publishConfig": { "access": "public" },
+  "keywords": [
+    "api",
+    "api-client",
+    "openapi",
+    "http",
+    "testing",
+    "cli",
+    "postman",
+    "bruno",
+    "mock",
+    "drift"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "bin": {
     "truspec": "./dist/index.js"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@truspec/core": "workspace:*",
-    "@truspec/web": "workspace:*"
+    "@truspec/web": "workspace:*",
+    "undici": "^8.10.2"
   }
 }

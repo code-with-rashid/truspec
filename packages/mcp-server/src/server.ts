@@ -61,6 +61,54 @@ export function createServer(ctx: ServerContext = {}): McpServer {
   );
 
   server.registerTool(
+    "truspec_read_request",
+    {
+      title: "Read request",
+      description:
+        "Read one .tspec.yaml request: the parsed object and the raw YAML. Read before patching — `truspec_update_request` merges one level deep, so patching a nested field like `headers` replaces it wholesale.",
+      inputSchema: { path: z.string().describe("Path to a .tspec.yaml file.") },
+    },
+    async ({ path }) => json(tools.readRequest(c, path)),
+  );
+
+  server.registerTool(
+    "truspec_validate_request",
+    {
+      title: "Validate request",
+      description:
+        "Check a request object against the schema without writing it. Errors name the key a typo was probably meant to be.",
+      inputSchema: { request: z.record(z.string(), z.unknown()).describe("A TruSpec request object.") },
+    },
+    async ({ request }) => json(tools.validateRequest(request)),
+  );
+
+  server.registerTool(
+    "truspec_delete_request",
+    {
+      title: "Delete request",
+      description: "Delete a .tspec.yaml request file. Refuses any path that is not a request file.",
+      inputSchema: { path: z.string().describe("Path to a .tspec.yaml file.") },
+    },
+    async ({ path }) => json(tools.deleteRequest(c, path)),
+  );
+
+  server.registerTool(
+    "truspec_format_reference",
+    {
+      title: "Format reference",
+      description:
+        "The JSON Schema for a TruSpec file kind (request, folder or environment), generated from the schema that validates. Use it to author a valid file without guessing at the format.",
+      inputSchema: {
+        kind: z
+          .enum(["request", "folder", "environment"])
+          .default("request")
+          .describe("Which file kind to describe."),
+      },
+    },
+    async ({ kind }) => json(tools.formatReference(kind)),
+  );
+
+  server.registerTool(
     "truspec_create_request",
     {
       title: "Create request",
@@ -78,7 +126,8 @@ export function createServer(ctx: ServerContext = {}): McpServer {
     "truspec_update_request",
     {
       title: "Update request",
-      description: "Merge a partial patch into an existing request file; validated before writing.",
+      description:
+        "Merge a partial patch into an existing request file, one level deep — a patched object field replaces the whole field, so read the request first. `null` removes a key. Validated before writing.",
       inputSchema: {
         path: z.string(),
         patch: z.record(z.string(), z.unknown()).describe("Fields to merge into the request."),
@@ -171,6 +220,128 @@ export function createServer(ctx: ServerContext = {}): McpServer {
       mock = undefined;
       return json({ stopped: true, url });
     },
+  );
+
+  server.registerTool(
+    "truspec_environments",
+    {
+      title: "List or diff environments",
+      description:
+        "Describe the workspace's environments — variables, declared secrets, and whether each secret resolves — or diff two of them. Secret VALUES are never returned.",
+      inputSchema: {
+        dir: z.string().default(".").describe("Collection directory."),
+        diff: z
+          .array(z.string())
+          .length(2)
+          .optional()
+          .describe("Two environment names to compare instead of listing."),
+      },
+    },
+    async ({ dir, diff }) => json(tools.environmentsTool(c, dir, diff as [string, string] | undefined)),
+  );
+
+  server.registerTool(
+    "truspec_docs",
+    {
+      title: "Document a collection",
+      description:
+        "Render a collection as Markdown: endpoints, parameters, headers, bodies, assertions, captures, and an example snippet per request. Deterministic — no timestamps — so it can be committed and re-generated without churning the diff.",
+      inputSchema: {
+        dir: z.string().default(".").describe("Collection directory."),
+        lang: z.string().default("curl").describe("Snippet language, or \"none\" to omit examples."),
+        title: z.string().optional().describe("Document title."),
+      },
+    },
+    async ({ dir, lang, title }) => json(tools.docsTool(c, dir, lang, title)),
+  );
+
+  server.registerTool(
+    "truspec_lint",
+    {
+      title: "Lint a collection",
+      description:
+        "Static checks over a collection without sending any request: schema errors, committed credentials, unparseable JSONPath, requests with no assertions, duplicate names, undeclared {{vars}}, and insecure URLs. Each finding carries a stable rule id.",
+      inputSchema: {
+        dir: z.string().default(".").describe("Directory to lint, relative to the workspace."),
+        disable: z.array(z.string()).optional().describe("Rule ids to skip."),
+      },
+    },
+    async ({ dir, disable }) => json(tools.lintTool(c, dir, disable)),
+  );
+
+  server.registerTool(
+    "truspec_import_curl",
+    {
+      title: "Import a curl command",
+      description:
+        "Convert one or more pasted `curl` command lines into .tspec.yaml request files (headers, body, and bearer/basic auth are lifted into structured fields).",
+      inputSchema: {
+        command: z.string().describe("The curl command line(s)."),
+        out: z.string().default(".").describe("Directory to write the request file(s) into."),
+        name: z.string().optional().describe("Base filename; defaults to a slug of the derived request name."),
+      },
+    },
+    async ({ command, out, name }) => json(tools.importCurlTool(c, command, out, name)),
+  );
+
+  server.registerTool(
+    "truspec_import_insomnia",
+    {
+      title: "Import an Insomnia export",
+      description:
+        "Convert an Insomnia v4/v5 export into .tspec.yaml request files, reassembling its flat parentId list back into folders.",
+      inputSchema: {
+        path: z.string().describe("Path to the exported JSON."),
+        out: z.string().default(".").describe("Directory to write the request file(s) into."),
+      },
+    },
+    async ({ path, out }) => json(tools.importInsomniaTool(c, path, out)),
+  );
+
+  server.registerTool(
+    "truspec_import_har",
+    {
+      title: "Import a HAR export",
+      description:
+        "Convert a HAR (browser devtools 'Save all as HAR') into .tspec.yaml request files. Browser-noise headers are stripped, OPTIONS preflights skipped, and each request asserts the status that was actually recorded.",
+      inputSchema: {
+        path: z.string().describe("Path to the .har file."),
+        out: z.string().default(".").describe("Directory to write the request file(s) into."),
+        filter: z.string().optional().describe("Only import entries whose URL contains this substring."),
+        baseUrlVar: z
+          .string()
+          .optional()
+          .describe("Replace the recorded origin with this variable, e.g. baseUrl."),
+      },
+    },
+    async ({ path, out, filter, baseUrlVar }) => json(tools.importHarTool(c, path, out, filter, baseUrlVar)),
+  );
+
+  server.registerTool(
+    "truspec_codegen",
+    {
+      title: "Generate request code",
+      description:
+        "Render a .tspec.yaml request as a runnable snippet in another client or language (curl, Python, Go, Java, …). Folder base URL, inherited headers and auth are applied exactly as the runner applies them.",
+      inputSchema: {
+        path: z.string().describe("Path to a .tspec.yaml file."),
+        lang: z
+          .string()
+          .default("curl")
+          .describe("Target id — call truspec_codegen_targets for the list."),
+        env: z.string().optional().describe("Environment name, to substitute its variables."),
+      },
+    },
+    async ({ path, lang, env }) => json(tools.codegenTool(c, path, lang, env)),
+  );
+
+  server.registerTool(
+    "truspec_codegen_targets",
+    {
+      title: "List code targets",
+      description: "List the languages and clients truspec_codegen can render a request into.",
+    },
+    async () => json(tools.codegenTargetsTool()),
   );
 
   return server;

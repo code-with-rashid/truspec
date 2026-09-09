@@ -6,6 +6,9 @@ import {
   getFlow,
   getRequest,
   importBruno,
+  importCurlText,
+  importHar,
+  importInsomnia,
   importPostman,
   type RequestDetail,
   type RunResult,
@@ -130,8 +133,12 @@ export function FlowView({ env, running, onRun, getResult, onImported }: FlowVie
   const [importBusy, setImportBusy] = useState(false);
   const [importMsg, setImportMsg] = useState<string | null>(null);
   const [pendingImport, setPendingImport] = useState<PendingImport | null>(null);
+  /** Non-null while the "paste a curl command" pane is open (its textarea's contents). */
+  const [curlText, setCurlText] = useState<string | null>(null);
   const postmanRef = useRef<HTMLInputElement>(null);
   const brunoRef = useRef<HTMLInputElement | null>(null);
+  const harRef = useRef<HTMLInputElement>(null);
+  const insomniaRef = useRef<HTMLInputElement>(null);
 
   const refresh = (): void => {
     getFlow()
@@ -212,6 +219,34 @@ export function FlowView({ env, running, onRun, getResult, onImported }: FlowVie
     setImportMsg(null);
   }
 
+  /**
+   * "Copy as cURL" in browser devtools is how most real requests get into an API client. Postman,
+   * Insomnia and Bruno all accept a pasted command; this is the same door into TruSpec, and the
+   * parse happens server-side through the shared importer so the CLI and MCP agree with the UI.
+   */
+  async function confirmCurlImport(): Promise<void> {
+    const text = (curlText ?? "").trim();
+    if (!text) return;
+    setImportBusy(true);
+    setImportMsg(null);
+    try {
+      const r = await importCurlText(text);
+      if (!r.ok) {
+        setImportMsg(`Import failed: ${r.error ?? "unknown error"}`);
+        return;
+      }
+      const n = r.stats?.requests ?? 0;
+      setImportMsg(`Imported ${n} request${n === 1 ? "" : "s"}` + (r.warnings?.length ? ` (${r.warnings.length} warning${r.warnings.length === 1 ? "" : "s"})` : ""));
+      setCurlText(null);
+      refresh();
+      onImported();
+    } catch (e) {
+      setImportMsg(`Import failed: ${String(e)}`);
+    } finally {
+      setImportBusy(false);
+    }
+  }
+
   async function onPostmanFile(e: ChangeEvent<HTMLInputElement>): Promise<void> {
     const file = e.target.files?.[0];
     e.target.value = "";
@@ -233,6 +268,61 @@ export function FlowView({ env, running, onRun, getResult, onImported }: FlowVie
       sourceName,
       targetDir: slugify(sourceName),
     });
+  }
+
+  /** Insomnia export: a flat resource list that has to be reassembled into folders server-side. */
+  async function onInsomniaFile(e: ChangeEvent<HTMLInputElement>): Promise<void> {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setImportMsg(null);
+    setImportBusy(true);
+    try {
+      const r = await importInsomnia(JSON.parse(await file.text()));
+      if (!r.ok) {
+        setImportMsg(`Import failed: ${r.error ?? "unknown error"}`);
+        return;
+      }
+      const n = r.stats?.requests ?? 0;
+      setImportMsg(
+        `Imported ${n} request${n === 1 ? "" : "s"}` +
+          (r.warnings?.length ? ` (${r.warnings.length} warning${r.warnings.length === 1 ? "" : "s"})` : ""),
+      );
+      refresh();
+      onImported();
+    } catch (err) {
+      setImportMsg(`Import failed: ${String(err)}`);
+    } finally {
+      setImportBusy(false);
+    }
+  }
+
+  /** HAR import: a browser's own record of what an app did, turned into a collection. */
+  async function onHarFile(e: ChangeEvent<HTMLInputElement>): Promise<void> {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setImportMsg(null);
+    setImportBusy(true);
+    try {
+      const parsed: unknown = JSON.parse(await file.text());
+      const r = await importHar(parsed, undefined, { baseUrlVar: "baseUrl" });
+      if (!r.ok) {
+        setImportMsg(`Import failed: ${r.error ?? "unknown error"}`);
+        return;
+      }
+      const n = r.stats?.requests ?? 0;
+      setImportMsg(
+        `Imported ${n} request${n === 1 ? "" : "s"}` +
+          (r.warnings?.length ? ` (${r.warnings.length} warning${r.warnings.length === 1 ? "" : "s"})` : ""),
+      );
+      refresh();
+      onImported();
+    } catch (err) {
+      setImportMsg(`Import failed: ${String(err)}`);
+    } finally {
+      setImportBusy(false);
+    }
   }
 
   async function onBrunoDir(e: ChangeEvent<HTMLInputElement>): Promise<void> {
@@ -363,6 +453,7 @@ export function FlowView({ env, running, onRun, getResult, onImported }: FlowVie
             if (importBusy) return;
             setImportOpen(false);
             setPendingImport(null);
+            setCurlText(null);
             setImportMsg(null);
           }}
         >
@@ -375,6 +466,7 @@ export function FlowView({ env, running, onRun, getResult, onImported }: FlowVie
                 onClick={() => {
                   setImportOpen(false);
                   setPendingImport(null);
+                  setCurlText(null);
                   setImportMsg(null);
                 }}
               >
@@ -422,6 +514,36 @@ export function FlowView({ env, running, onRun, getResult, onImported }: FlowVie
                     </button>
                   </div>
                 </>
+              ) : curlText !== null ? (
+                <>
+                  <p className="muted">
+                    Paste a <code>curl</code> command — “Copy as cURL” in browser devtools, or anything from a
+                    README. Headers, body and bearer/basic auth become structured fields.
+                  </p>
+                  <textarea
+                    autoFocus
+                    className="curl-paste"
+                    aria-label="curl command"
+                    spellCheck={false}
+                    rows={8}
+                    placeholder="curl 'https://api.example.com/pets' -H 'Accept: application/json'"
+                    value={curlText}
+                    onChange={(e) => setCurlText(e.target.value)}
+                  />
+                  <div className="modal-actions">
+                    <button className="btn ghost" disabled={importBusy} onClick={() => setCurlText(null)}>
+                      back
+                    </button>
+                    <button
+                      className="btn run"
+                      disabled={importBusy || !curlText.trim()}
+                      onClick={() => void confirmCurlImport()}
+                    >
+                      {importBusy ? "importing…" : "import curl"}
+                    </button>
+                  </div>
+                  {importMsg && <div className={importMsg.startsWith("Import failed") ? "editor-err" : "muted"}>{importMsg}</div>}
+                </>
               ) : (
                 <>
                   <p className="muted">Converts an existing collection into `.tspec.yaml` files and adds it to this workspace.</p>
@@ -432,8 +554,19 @@ export function FlowView({ env, running, onRun, getResult, onImported }: FlowVie
                     <button className="btn" disabled={importBusy} onClick={() => brunoRef.current?.click()}>
                       bruno collection (folder)
                     </button>
+                    <button className="btn" disabled={importBusy} onClick={() => insomniaRef.current?.click()}>
+                      insomnia export (.json)
+                    </button>
+                    <button className="btn" disabled={importBusy} onClick={() => harRef.current?.click()}>
+                      HAR export (.har)
+                    </button>
+                    <button className="btn" disabled={importBusy} onClick={() => { setImportMsg(null); setCurlText(""); }}>
+                      paste a curl command
+                    </button>
                   </div>
-                  <input ref={postmanRef} type="file" accept="application/json,.json" className="sr-only" onChange={(e) => void onPostmanFile(e)} />
+                  <input ref={postmanRef} aria-label="postman collection file" type="file" accept="application/json,.json" className="sr-only" onChange={(e) => void onPostmanFile(e)} />
+                  <input ref={insomniaRef} aria-label="insomnia export file" type="file" accept="application/json,.json" className="sr-only" onChange={(e) => void onInsomniaFile(e)} />
+                  <input ref={harRef} aria-label="HAR export file" type="file" accept=".har,application/json" className="sr-only" onChange={(e) => void onHarFile(e)} />
                   <input
                     ref={(el) => {
                       brunoRef.current = el;
@@ -444,6 +577,7 @@ export function FlowView({ env, running, onRun, getResult, onImported }: FlowVie
                     }}
                     type="file"
                     multiple
+                    aria-label="bruno collection folder"
                     className="sr-only"
                     onChange={(e) => void onBrunoDir(e)}
                   />

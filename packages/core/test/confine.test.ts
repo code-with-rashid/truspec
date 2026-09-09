@@ -27,12 +27,24 @@ describe("confinePath", () => {
     }
   });
 
-  it("rejects symlink escapes (a string-based guard would not)", () => {
+  it("rejects symlink escapes (a string-based guard would not)", (ctx) => {
     const dir = mkdtempSync(join(tmpdir(), "truspec-cf-"));
     const outside = mkdtempSync(join(tmpdir(), "truspec-out-"));
     try {
       writeFileSync(join(outside, "secret.txt"), "secret");
-      symlinkSync(outside, join(dir, "link")); // dir/link -> outside
+      try {
+        symlinkSync(outside, join(dir, "link")); // dir/link -> outside
+      } catch (e) {
+        // Windows refuses symlink creation without Developer Mode or elevation. Skip loudly
+        // rather than passing: this is a security guard, and "it did not run" must not read as
+        // "it held". The guard itself is `realpathSync`-based and platform-independent.
+        const code = (e as NodeJS.ErrnoException).code;
+        if (code === "EPERM" || code === "EACCES" || code === "ENOSYS") {
+          console.warn(`confinePath symlink test skipped: this OS refused to create a symlink (${code})`);
+          ctx.skip();
+        }
+        throw e;
+      }
       expect(() => confinePath(dir, "link/secret.txt")).toThrow(/escapes/);
       expect(() => confinePath(dir, "link")).toThrow(/escapes/);
     } finally {

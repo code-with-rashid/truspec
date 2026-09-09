@@ -34,6 +34,10 @@ describe("MCP server (in-memory client ↔ server)", () => {
         "truspec_coverage",
         "truspec_contract",
         "truspec_scaffold_from_spec",
+        "truspec_read_request",
+        "truspec_validate_request",
+        "truspec_delete_request",
+        "truspec_format_reference",
       ]),
     );
     await client.close();

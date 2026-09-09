@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { closeHttpServer } from "../http/close";
 import { createMockResponder } from "./engine";
 
 export interface MockServerHandle {
@@ -96,6 +97,6 @@ export async function startMockServer(
     port,
     url: `http://${host}:${port}`,
     routes: responder.routes.length,
-    close: () => new Promise<void>((resolve, reject) => server.close((e) => (e ? reject(e) : resolve()))),
+    close: () => closeHttpServer(server),
   };
 }

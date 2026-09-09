@@ -46,43 +46,95 @@ export function deepEqual(a: unknown, b: unknown): boolean {
   return false;
 }
 
-const all = (checks: boolean[]): boolean => checks.length > 0 && checks.every(Boolean);
+const all = (checks: Check[]): boolean => checks.length > 0 && checks.every((c) => c.ok);
+
+/** One condition inside an assertion, kept with its description so a failure can name itself. */
+interface Check {
+  ok: boolean;
+  /** Human phrasing of the condition, e.g. `== 200` or `has length 3`. */
+  desc: string;
+}
+
+/**
+ * Render a value for a failure message: short, unambiguous, and never a wall of text.
+ * A CI log has to say *what it actually got*, not just that something did not match.
+ */
+function show(value: unknown, max = 120): string {
+  if (value === undefined) return "(absent)";
+  const text = typeof value === "string" ? JSON.stringify(value) : JSON.stringify(value) ?? String(value);
+  return text.length > max ? `${text.slice(0, max)}…` : text;
+}
+
+/** JSON type name, distinguishing null and array from "object". */
+function jsonTypeOf(value: unknown): string {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "array";
+  return typeof value;
+}
+
+/** Length of a string or array; `undefined` for anything else (so the check can fail honestly). */
+function lengthOf(value: unknown): number | undefined {
+  if (typeof value === "string" || Array.isArray(value)) return value.length;
+  return undefined;
+}
+
+/** Emptiness across the three shapes it means something for. */
+function isEmpty(value: unknown): boolean {
+  if (typeof value === "string" || Array.isArray(value)) return value.length === 0;
+  if (value && typeof value === "object") return Object.keys(value).length === 0;
+  return false;
+}
+
+/** Compose the summary line an assertion result carries. */
+function summarize(subject: string, checks: Check[], ok: boolean): string {
+  const conditions = checks.map((c) => c.desc).join(" & ") || "(no condition)";
+  if (ok) return `${subject} satisfies ${conditions}`;
+  const failed = checks.filter((c) => !c.ok).map((c) => c.desc);
+  return `${subject} fails ${failed.length > 0 ? failed.join(" & ") : conditions}`;
+}
+
+/** Numeric comparators shared by the jsonpath assertion, as [field, symbol, predicate]. */
+const NUMERIC_OPS: Array<["gt" | "gte" | "lt" | "lte", string, (v: number, b: number) => boolean]> = [
+  ["gt", ">", (v, b) => v > b],
+  ["gte", ">=", (v, b) => v >= b],
+  ["lt", "<", (v, b) => v < b],
+  ["lte", "<=", (v, b) => v <= b],
+];
 
 export function evaluateAssertion(a: ResponseAssertion, res: ResponseView): AssertionResult {
   switch (a.type) {
     case "status": {
-      const checks: boolean[] = [];
-      const desc: string[] = [];
-      if (a.equals !== undefined) {
-        checks.push(res.status === a.equals);
-        desc.push(`== ${a.equals}`);
-      }
+      const checks: Check[] = [];
+      if (a.equals !== undefined) checks.push({ ok: res.status === a.equals, desc: `== ${a.equals}` });
       if (a.in !== undefined) {
-        checks.push(a.in.includes(res.status));
-        desc.push(`in [${a.in.join(", ")}]`);
+        checks.push({ ok: a.in.includes(res.status), desc: `in [${a.in.join(", ")}]` });
       }
-      if (a.lt !== undefined) {
-        checks.push(res.status < a.lt);
-        desc.push(`< ${a.lt}`);
-      }
-      if (a.gte !== undefined) {
-        checks.push(res.status >= a.gte);
-        desc.push(`>= ${a.gte}`);
-      }
+      if (a.lt !== undefined) checks.push({ ok: res.status < a.lt, desc: `< ${a.lt}` });
+      if (a.gte !== undefined) checks.push({ ok: res.status >= a.gte, desc: `>= ${a.gte}` });
       const ok = all(checks);
-      return {
-        type: "status",
-        ok,
-        message: `status ${res.status} ${ok ? "satisfies" : "fails"} ${desc.join(" & ") || "(no condition)"}`,
-      };
+      return { type: "status", ok, message: summarize(`status ${res.status}`, checks, ok) };
     }
     case "header": {
       const val = res.headers[a.name.toLowerCase()];
-      const checks: boolean[] = [];
-      if (a.exists !== undefined) checks.push((val !== undefined) === a.exists);
-      if (a.equals !== undefined) checks.push(val === a.equals);
-      if (a.matches !== undefined) checks.push(val !== undefined && new RegExp(a.matches).test(val));
-      return { type: "header", ok: all(checks), message: `header "${a.name}": ${val ?? "(absent)"}` };
+      const checks: Check[] = [];
+      if (a.exists !== undefined) {
+        checks.push({ ok: (val !== undefined) === a.exists, desc: a.exists ? "exists" : "is absent" });
+      }
+      if (a.equals !== undefined) checks.push({ ok: val === a.equals, desc: `== ${show(a.equals)}` });
+      if (a.notEquals !== undefined) {
+        checks.push({ ok: val !== a.notEquals, desc: `!= ${show(a.notEquals)}` });
+      }
+      if (a.contains !== undefined) {
+        checks.push({ ok: val !== undefined && val.includes(a.contains), desc: `contains ${show(a.contains)}` });
+      }
+      if (a.matches !== undefined) {
+        checks.push({
+          ok: val !== undefined && new RegExp(a.matches).test(val),
+          desc: `matches /${a.matches}/`,
+        });
+      }
+      const ok = all(checks);
+      return { type: "header", ok, message: summarize(`header "${a.name}" ${show(val)}`, checks, ok) };
     }
     case "jsonpath": {
       let matches: unknown[];
@@ -91,20 +143,97 @@ export function evaluateAssertion(a: ResponseAssertion, res: ResponseView): Asse
       } catch (e) {
         return { type: "jsonpath", ok: false, message: `jsonpath error: ${(e as Error).message}` };
       }
-      const checks: boolean[] = [];
-      if (a.exists !== undefined) checks.push((matches.length > 0) === a.exists);
-      if (a.equals !== undefined) checks.push(matches.some((m) => deepEqual(m, a.equals)));
+      const checks: Check[] = [];
+      const some = (pred: (m: unknown) => boolean): boolean => matches.some(pred);
+      if (a.exists !== undefined) {
+        checks.push({ ok: (matches.length > 0) === a.exists, desc: a.exists ? "exists" : "is absent" });
+      }
+      if (a.equals !== undefined) {
+        checks.push({ ok: some((m) => deepEqual(m, a.equals)), desc: `== ${show(a.equals)}` });
+      }
+      if (a.notEquals !== undefined) {
+        checks.push({ ok: !some((m) => deepEqual(m, a.notEquals)), desc: `!= ${show(a.notEquals)}` });
+      }
       if (a.matches !== undefined) {
         const re = new RegExp(a.matches);
-        checks.push(matches.some((m) => re.test(String(m))));
+        checks.push({ ok: some((m) => re.test(String(m))), desc: `matches /${a.matches}/` });
       }
-      return { type: "jsonpath", ok: all(checks), message: `jsonpath ${a.path} matched ${matches.length} value(s)` };
+      if (a.oneOf !== undefined) {
+        checks.push({
+          ok: some((m) => a.oneOf?.some((c) => deepEqual(m, c)) ?? false),
+          desc: `one of ${show(a.oneOf)}`,
+        });
+      }
+      if (a.contains !== undefined) {
+        checks.push({
+          ok: some((m) =>
+            Array.isArray(m)
+              ? m.some((el) => deepEqual(el, a.contains))
+              : typeof m === "string" && typeof a.contains === "string" && m.includes(a.contains),
+          ),
+          desc: `contains ${show(a.contains)}`,
+        });
+      }
+      for (const [key, op, test] of NUMERIC_OPS) {
+        const bound = a[key];
+        if (bound === undefined) continue;
+        checks.push({
+          ok: some((m) => typeof m === "number" && test(m, bound)),
+          desc: `${op} ${bound}`,
+        });
+      }
+      if (a.valueType !== undefined) {
+        checks.push({ ok: some((m) => jsonTypeOf(m) === a.valueType), desc: `is a ${a.valueType}` });
+      }
+      if (a.length !== undefined) {
+        checks.push({ ok: some((m) => lengthOf(m) === a.length), desc: `has length ${a.length}` });
+      }
+      if (a.minLength !== undefined) {
+        const min = a.minLength;
+        checks.push({ ok: some((m) => (lengthOf(m) ?? -1) >= min), desc: `has length >= ${min}` });
+      }
+      if (a.maxLength !== undefined) {
+        const max = a.maxLength;
+        checks.push({
+          ok: some((m) => {
+            const len = lengthOf(m);
+            return len !== undefined && len <= max;
+          }),
+          desc: `has length <= ${max}`,
+        });
+      }
+      if (a.empty !== undefined) {
+        checks.push({ ok: some((m) => isEmpty(m) === a.empty), desc: a.empty ? "is empty" : "is not empty" });
+      }
+      const ok = all(checks);
+      // Naming the value that was actually there is the difference between a log a human can act
+      // on and one that only says something went wrong.
+      const actual =
+        matches.length === 0 ? "(no match)" : matches.length === 1 ? show(matches[0]) : show(matches);
+      return { type: "jsonpath", ok, message: summarize(`jsonpath ${a.path} → ${actual}`, checks, ok) };
     }
     case "body": {
-      const checks: boolean[] = [];
-      if (a.contains !== undefined) checks.push(res.bodyText.includes(a.contains));
-      if (a.matches !== undefined) checks.push(new RegExp(a.matches).test(res.bodyText));
-      return { type: "body", ok: all(checks), message: all(checks) ? "body matched" : "body did not match" };
+      const checks: Check[] = [];
+      if (a.equals !== undefined) {
+        checks.push({ ok: res.bodyText === a.equals, desc: `== ${show(a.equals)}` });
+      }
+      if (a.contains !== undefined) {
+        checks.push({ ok: res.bodyText.includes(a.contains), desc: `contains ${show(a.contains)}` });
+      }
+      if (a.notContains !== undefined) {
+        checks.push({
+          ok: !res.bodyText.includes(a.notContains),
+          desc: `does not contain ${show(a.notContains)}`,
+        });
+      }
+      if (a.matches !== undefined) {
+        checks.push({ ok: new RegExp(a.matches).test(res.bodyText), desc: `matches /${a.matches}/` });
+      }
+      if (a.empty !== undefined) {
+        checks.push({ ok: (res.bodyText.length === 0) === a.empty, desc: a.empty ? "is empty" : "is not empty" });
+      }
+      const ok = all(checks);
+      return { type: "body", ok, message: summarize(`body (${res.bodyText.length} bytes)`, checks, ok) };
     }
     case "duration": {
       const ok = res.durationMs < a.ltMs;

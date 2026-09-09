@@ -34,6 +34,24 @@ const KeyValue = z.record(z.string(), Primitive);
 // mis-reports as stale. (Required-field typos were already caught; this closes the optional-key gap,
 // honoring CLAUDE.md's "unknown keys are rejected" hard rule at every level.)
 
+/**
+ * One `multipart/form-data` part: a plain value, an explicit text part with its own media type,
+ * or a file read from disk at send time (path relative to the request file, confined to the
+ * workspace).
+ */
+export const MultipartField = z.union([
+  Primitive,
+  z
+    .object({
+      file: Template,
+      /** Filename sent in the part's Content-Disposition. Defaults to the file's basename. */
+      filename: z.string().optional(),
+      contentType: z.string().optional(),
+    })
+    .strict(),
+  z.object({ text: Template, contentType: z.string().optional(), filename: z.string().optional() }).strict(),
+]);
+
 /** Request body. Omit entirely for no body. */
 export const Body = z.discriminatedUnion("type", [
   z.object({ type: z.literal("none") }).strict(),
@@ -45,6 +63,16 @@ export const Body = z.discriminatedUnion("type", [
       type: z.literal("graphql"),
       query: z.string(),
       variables: z.record(z.string(), z.unknown()).optional(),
+    })
+    .strict(),
+  /**
+   * `multipart/form-data`. A field is either a plain value or a file part; the boundary is
+   * generated at send time, so a `Content-Type` header must NOT be set by hand.
+   */
+  z
+    .object({
+      type: z.literal("multipart"),
+      fields: z.record(z.string(), MultipartField),
     })
     .strict(),
 ]);
@@ -60,6 +88,36 @@ export const Auth = z.discriminatedUnion("type", [
       name: z.string(),
       value: Template,
       in: z.enum(["header", "query"]).default("header"),
+    })
+    .strict(),
+  /**
+   * OAuth2 — the runner fetches a token from `tokenUrl` before sending the request and caches it
+   * for the rest of the run. Only the grants a machine can complete unattended are supported:
+   * an interactive authorization-code flow needs a browser, which a CI gate does not have (capture
+   * the resulting refresh token once and use `grant: refresh_token` instead).
+   */
+  z
+    .object({
+      type: z.literal("oauth2"),
+      grant: z.enum(["client_credentials", "password", "refresh_token"]).default("client_credentials"),
+      tokenUrl: Template,
+      clientId: Template.optional(),
+      clientSecret: Template.optional(),
+      /** `password` grant only. */
+      username: Template.optional(),
+      /** `password` grant only. */
+      password: Template.optional(),
+      /** `refresh_token` grant only. */
+      refreshToken: Template.optional(),
+      scope: Template.optional(),
+      /** Extra token-endpoint parameter some providers require (Auth0, Okta). */
+      audience: Template.optional(),
+      /** Where the client credentials go: the request body (default) or an HTTP Basic header. */
+      clientAuth: z.enum(["body", "basic"]).default("body"),
+      /** Any further parameters to post to the token endpoint verbatim. */
+      extra: z.record(z.string(), Template).optional(),
+      /** Authorization header scheme for the acquired token. */
+      scheme: z.string().default("Bearer"),
     })
     .strict(),
 ]);
@@ -83,6 +141,8 @@ export const Assertion = z.discriminatedUnion("type", [
       type: z.literal("header"),
       name: z.string(),
       equals: z.string().optional(),
+      notEquals: z.string().optional(),
+      contains: z.string().optional(),
       matches: z.string().optional(),
       exists: z.boolean().optional(),
     })
@@ -92,15 +152,39 @@ export const Assertion = z.discriminatedUnion("type", [
       type: z.literal("jsonpath"),
       path: z.string(),
       equals: z.unknown().optional(),
+      notEquals: z.unknown().optional(),
       exists: z.boolean().optional(),
       matches: z.string().optional(),
+      /** Substring of a string value, or membership in an array value. */
+      contains: z.unknown().optional(),
+      /** Value must equal one of these. */
+      oneOf: z.array(z.unknown()).optional(),
+      /** Numeric comparisons against the matched value. */
+      gt: z.number().optional(),
+      gte: z.number().optional(),
+      lt: z.number().optional(),
+      lte: z.number().optional(),
+      /**
+       * JSON type of the matched value. Named `valueType` rather than `type` because `type` is
+       * already the assertion's own discriminator.
+       */
+      valueType: z.enum(["string", "number", "boolean", "object", "array", "null"]).optional(),
+      /** Exact length of a string or array value. */
+      length: z.number().int().nonnegative().optional(),
+      minLength: z.number().int().nonnegative().optional(),
+      maxLength: z.number().int().nonnegative().optional(),
+      /** `true` asserts an empty string/array/object; `false` asserts a non-empty one. */
+      empty: z.boolean().optional(),
     })
     .strict(),
   z
     .object({
       type: z.literal("body"),
+      equals: z.string().optional(),
       contains: z.string().optional(),
+      notContains: z.string().optional(),
       matches: z.string().optional(),
+      empty: z.boolean().optional(),
     })
     .strict(),
   z.object({ type: z.literal("duration"), ltMs: z.number().positive() }).strict(),
@@ -116,6 +200,28 @@ export const Assertion = z.discriminatedUnion("type", [
     })
     .strict(),
 ]);
+
+/**
+ * Per-request transport options. All optional; every default matches what the runner did before
+ * these existed, so adding the block never changes an existing request's behavior.
+ */
+export const RequestOptions = z
+  .object({
+    /** Overrides the run-wide timeout for this request. `0` disables it. */
+    timeoutMs: z.number().int().nonnegative().optional(),
+    /** Re-send on a transport error, 429, or 5xx. Assertion failures are never retried. */
+    retries: z.number().int().min(0).max(10).optional(),
+    /** Base pause before a retry; doubles each attempt (capped). Default 200ms. */
+    retryDelayMs: z.number().int().nonnegative().optional(),
+    /**
+     * Follow 3xx responses. Off by default: TruSpec observes the ACTUAL response a URL returns,
+     * so a redirect stays assertable and `contract` can validate a 3xx operation the spec declares.
+     */
+    followRedirects: z.boolean().optional(),
+    /** Redirect hops allowed when `followRedirects` is on. Default 5. */
+    maxRedirects: z.number().int().min(1).max(20).optional(),
+  })
+  .strict();
 
 /** Links a request back to its OpenAPI operation — consumed by drift & coverage. */
 const SpecLink = z
@@ -150,6 +256,14 @@ export const RequestSchema = z
     capture: z.record(z.string(), CaptureSource).optional(),
     /** Run order within a collection (lower first; default 0, then by path). */
     order: z.number().optional(),
+    /**
+     * Free-form labels for selecting a subset of a collection at run time
+     * (`truspec run --tag smoke`). Kept as plain strings so a tag can also be a team
+     * convention (`owner:payments`) without the format needing to know about it.
+     */
+    tags: z.array(z.string().min(1)).optional(),
+    /** Transport options (timeout, retries, redirects) for this request. */
+    options: RequestOptions.optional(),
     /** Pre-request + post-response scripts run in a Node vm context (see CLAUDE.md; not a security sandbox). */
     script: z.object({ pre: z.string().optional(), post: z.string().optional() }).strict().optional(),
     docs: z.string().optional(),

@@ -56,14 +56,30 @@ export function VarAwareInput({
     }
   }, [value]);
 
-  // Close (rather than try to track) on scroll of any ancestor — the request builder's top pane
-  // scrolls internally (round 1), and re-measuring on every scroll tick isn't worth the churn for
-  // a menu that's only open for the few keystrokes it takes to pick a suggestion.
+  // Follow the input rather than dismissing. This used to close the menu on any scroll event
+  // captured at the document root, on the theory that re-measuring wasn't worth the churn — but
+  // that makes a menu the user is mid-selection in vanish on one trackpad notch, recoverable only
+  // by retyping `{{`, and any reflow that scrolls an ancestor does the same thing invisibly. The
+  // churn argument cuts the other way too: the menu is open for only a few keystrokes, so the
+  // measuring it costs is bounded. Resize gets the same treatment; it was not handled at all, and
+  // left the menu stranded away from its input.
   useEffect(() => {
     if (!open) return;
-    const onScroll = (): void => setOpen(false);
-    document.addEventListener("scroll", onScroll, true);
-    return () => document.removeEventListener("scroll", onScroll, true);
+    const reposition = (): void => {
+      const r = ref.current?.getBoundingClientRect();
+      // Scrolled out of view: a menu floating over unrelated content is worse than no menu.
+      if (!r || r.bottom < 0 || r.top > window.innerHeight) {
+        setOpen(false);
+        return;
+      }
+      setMenuRect({ top: r.bottom + 4, left: r.left, width: r.width });
+    };
+    document.addEventListener("scroll", reposition, true);
+    window.addEventListener("resize", reposition);
+    return () => {
+      document.removeEventListener("scroll", reposition, true);
+      window.removeEventListener("resize", reposition);
+    };
   }, [open]);
 
   const recheck = (text: string, caret: number): void => {

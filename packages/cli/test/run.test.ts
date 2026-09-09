@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -31,6 +31,48 @@ const okFetch = (body: unknown, status = 200): typeof fetch =>
       status,
       headers: { "content-type": "application/json" },
     })) as typeof fetch;
+
+describe("truspec run — a file that does not parse", () => {
+  const workspace = (): string => {
+    const dir = mkdtempSync(join(tmpdir(), "truspec-cli-parse-"));
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, "good.tspec.yaml"),
+      'tspec: "0.1"\nname: Good\nmethod: GET\nurl: "http://x/good"\nassertions: [ { type: status, equals: 200 } ]\n',
+    );
+    writeFileSync(join(dir, "broken.tspec.yaml"), 'tspec: "0.1"\nname: Broken\nmethod: GET\nurl: "http://x"\nheadrs: { a: b }\n');
+    return dir;
+  };
+
+  it("exits 1, names the file, suggests the key, and still reports the request that passed", async () => {
+    const dir = workspace();
+    const cap = capture();
+    try {
+      const code = await runCommand([dir], { cwd: repoRoot, stdout: cap.stdout, stderr: cap.stderr, fetch: okFetch({}) });
+      expect(code).toBe(1);
+      expect(cap.out).toContain("PASS  Good");        // the rest of the run was not lost
+      expect(cap.out).toContain("broken.tspec.yaml"); // pre-fix: the message named no file at all
+      expect(cap.out).toContain("did you mean 'headers'?");
+      expect(cap.out).toContain("1 unparseable");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not claim `no requests found` when the requests are there but unreadable", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "truspec-cli-allbad-"));
+    writeFileSync(join(dir, "broken.tspec.yaml"), 'tspec: "0.1"\nname: Broken\nheadrs: { a: b }\n');
+    const cap = capture();
+    try {
+      const code = await runCommand([dir], { cwd: repoRoot, stdout: cap.stdout, stderr: cap.stderr, fetch: okFetch({}) });
+      expect(code).toBe(1);
+      expect(cap.err).not.toContain("no .tspec.yaml requests found");
+      expect(cap.out).toContain("could not parse");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
 
 describe("truspec run", () => {
   it("runs the petstore example and passes (exit 0)", async () => {
@@ -142,5 +184,138 @@ describe("truspec run", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it("--var overrides an environment variable", async () => {
+    const cap = capture();
+    let seen = "";
+    const code = await runCommand(
+      ["examples/petstore", "--env", "local", "--var", "petId=99"],
+      {
+        cwd: repoRoot,
+        fetch: (async (url: string) => {
+          seen = url;
+          return new Response(JSON.stringify({ id: 99 }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        }) as unknown as typeof fetch,
+        now: (() => {
+          let t = 0;
+          return () => (t += 5);
+        })(),
+        processEnv: { token: "secret" },
+        stdout: cap.stdout,
+        stderr: cap.stderr,
+      },
+    );
+    expect(code).toBe(0);
+    expect(seen).toContain("/pets/99");
+  });
+
+  it("rejects a malformed --var with exit 2", async () => {
+    const cap = capture();
+    const code = await runCommand(["examples/petstore", "--var", "nope"], {
+      cwd: repoRoot,
+      stdout: cap.stdout,
+      stderr: cap.stderr,
+    });
+    expect(code).toBe(2);
+    expect(cap.err).toMatch(/Invalid --var "nope"/);
+  });
+
+  it("fails with a filter-specific message when --grep matches nothing", async () => {
+    const cap = capture();
+    const code = await runCommand(["examples/petstore", "--env", "local", "--grep", "zzz"], {
+      cwd: repoRoot,
+      fetch: okFetch({ id: 1 }),
+      processEnv: { token: "secret" },
+      stdout: cap.stdout,
+      stderr: cap.stderr,
+    });
+    expect(code).toBe(1);
+    expect(cap.err).toMatch(/--grep\/--tag matched none of the 1 request/);
+  });
+
+  it("--grep selects a matching request and reports the deselected count", async () => {
+    const cap = capture();
+    let t = 0;
+    const code = await runCommand(["examples/petstore", "--env", "local", "--grep", "pet"], {
+      cwd: repoRoot,
+      fetch: okFetch({ id: 1 }),
+      now: () => (t += 5),
+      processEnv: { token: "secret" },
+      stdout: cap.stdout,
+      stderr: cap.stderr,
+    });
+    expect(code).toBe(0);
+    expect(cap.out).toMatch(/1 passed, 0 failed/);
+  });
+
+  it("--reporter html writes a standalone report", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "truspec-html-"));
+    try {
+      const cap = capture();
+      const file = join(dir, "report.html");
+      let t = 0;
+      const code = await runCommand(
+        ["examples/petstore", "--env", "local", "--reporter", "html", "-o", file],
+        {
+          cwd: repoRoot,
+          fetch: okFetch({ id: 1 }),
+          now: () => (t += 5),
+          processEnv: { token: "secret" },
+          stdout: cap.stdout,
+          stderr: cap.stderr,
+        },
+      );
+      expect(code).toBe(0);
+      const html = readFileSync(file, "utf8");
+      expect(html.startsWith("<!doctype html>")).toBe(true);
+      expect(html).toContain("Get pet by id");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects an unknown --reporter instead of silently falling back to human output", async () => {
+    const cap = capture();
+    const code = await runCommand(["examples/petstore", "--reporter", "xml"], {
+      cwd: repoRoot,
+      fetch: okFetch({ id: 1 }),
+      processEnv: { token: "secret" },
+      stdout: cap.stdout,
+      stderr: cap.stderr,
+    });
+    expect(code).toBe(2);
+    expect(cap.err).toMatch(/Unknown --reporter "xml"/);
+    expect(cap.err).toMatch(/human, json, junit, html/);
+  });
+
+  it("warns loudly when TLS verification is disabled", async () => {
+    const cap = capture();
+    let t = 0;
+    await runCommand(["examples/petstore", "--env", "local", "--insecure"], {
+      cwd: repoRoot,
+      fetch: okFetch({ id: 1 }),
+      now: () => (t += 5),
+      processEnv: { token: "secret" },
+      stdout: cap.stdout,
+      stderr: cap.stderr,
+    });
+    // A run that silently accepted any certificate would be a gate that proves nothing.
+    expect(cap.err).toMatch(/--insecure disables TLS certificate verification/);
+  });
+
+  it("reports an unreadable certificate path instead of failing at connect time", async () => {
+    const cap = capture();
+    const code = await runCommand(["examples/petstore", "--ca", "nope.pem"], {
+      cwd: repoRoot,
+      processEnv: {},
+      stdout: cap.stdout,
+      stderr: cap.stderr,
+    });
+    expect(code).toBe(1);
+    expect(cap.err).toMatch(/could not configure transport/);
   });
 });

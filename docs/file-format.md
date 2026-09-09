@@ -45,7 +45,7 @@ headers:
 query:
   expand: owner
 body:
-  type: json                       # none | json | text | form | graphql
+  type: json                       # none | json | text | form | multipart | graphql
   content: { name: "Rex" }
 auth:                              # optional; can inherit from folder.tspec.yaml
   type: bearer                     # none | bearer | basic | apikey
@@ -58,6 +58,9 @@ assertions:                        # declarative + machine-checkable
 capture:                           # save response values into vars for later requests
   ownerId: "$.owner.id"
 order: 1                           # run order within a collection (lower first; default 0)
+tags: [smoke, auth]                # labels for `truspec run --tag smoke`
+options:                           # transport: timeout, retries, redirects
+  retries: 2
 script:                            # advanced — see ./scripting.md
   pre: "tr.set('ts', new Date().toISOString())"
   post: "tr.expect(tr.response.status === 200, 'ok')"
@@ -82,9 +85,62 @@ spec:                              # links request → OpenAPI operation (drift/
 | `assertions` | [Assertion](#assertions)[] | no | `[]` | Declarative checks. |
 | `capture` | map | no | — | [Save response values](#chaining-with-capture) into variables. |
 | `order` | number | no | `0` | Lower runs first; ties broken by file path. |
+| `tags` | string[] | no | — | Labels for [selective runs](./cli.md#run) (`--tag`). Free-form. |
+| `options` | [Options](#request-options) | no | — | Timeout, retries, redirect policy. |
 | `script` | `{ pre?, post? }` | no | — | [Scripting](./scripting.md). |
 | `docs` | string | no | — | Free-form documentation. |
 | `spec` | `{ operation?, operationId? }` | no | — | [Links to an OpenAPI operation](#spec-link). |
+
+### Tags
+
+`tags` label a request so a run can select a subset of the collection without reorganizing
+folders:
+
+```yaml
+tags: [smoke, auth, "owner:payments"]
+```
+
+```bash
+truspec run ./api --tag smoke            # the fast gate on every push
+truspec run ./api --tag smoke --tag auth # either tag
+truspec run ./api --tag smoke --bail     # …and stop at the first failure
+```
+
+Tags are plain strings, so a team convention like `owner:payments` or `slow` works without the
+format needing to know about it. They are orthogonal to `order`: selection decides *what* runs,
+`order` decides *in what sequence*.
+
+---
+
+## Request options
+
+Per-request transport behavior. Every field is optional, and every default matches what the runner
+did before the block existed — adding `options` never changes an existing request.
+
+```yaml
+options:
+  timeoutMs: 5000          # overrides the run-wide --timeout for this request; 0 disables it
+  retries: 2               # re-send on a transport error, 429, or 5xx (never on a 4xx or a
+                           # failed assertion — those are answers, not faults)
+  retryDelayMs: 200        # base backoff; doubles each attempt, capped at 5s
+  followRedirects: true    # off by default
+  maxRedirects: 5
+```
+
+**Redirects are not followed by default.** TruSpec reports the *actual* response a URL returns, so
+a `301` stays assertable and [`contract`](./cli.md#contract) can validate a redirect operation the
+spec declares. Turn `followRedirects` on for a request where the hop is incidental.
+
+When following, TruSpec does it itself rather than delegating to the platform, so that:
+
+- each hop is reported back on the result (`redirects: [...]`),
+- `303` — and `301`/`302` on a non-`GET` — become a bodiless `GET`, matching what every real
+  client does, with the body's `Content-Type`/`Content-Length` dropped with it,
+- `307`/`308` preserve the method and body, and
+- **`Authorization` and `Cookie` are dropped the moment the origin changes**, so a redirect can't
+  walk your credentials to a host you never named.
+
+A result reports `retries` and `redirects` only when they actually happened.
 
 ---
 
@@ -129,6 +185,33 @@ body:
 
 A map of string values, serialized as `application/x-www-form-urlencoded`.
 
+### `multipart`
+
+```yaml
+body:
+  type: multipart
+  fields:
+    title: "Rex"                                        # plain value
+    tags: "{{tagList}}"                                 # templated
+    photo: { file: "./rex.jpg", contentType: image/jpeg }
+    meta:  { text: '{"a":1}', contentType: application/json, filename: meta.json }
+```
+
+Sent as `multipart/form-data`. **Do not set a `Content-Type` header** — the boundary is generated
+when the body is assembled, and a hand-written header would not match the payload.
+
+A `file` part is read at send time. Its path resolves **relative to the request file** and is
+confined to the workspace, so a collection — which may have been imported, generated, or written
+by an agent — cannot read `../../.ssh/id_rsa` and POST it. `filename` and `contentType` override
+what would otherwise be inferred from the file.
+
+A `text` part with a `contentType` travels as its own typed part (useful for the JSON-metadata +
+binary pattern); a bare string is sent as a plain field.
+
+File parts need filesystem access, so they work under `truspec run`, `truspec serve`, and the MCP
+server. In an embedded/browser runner without a file reader, the request fails with a clear
+message rather than silently sending nothing.
+
 ### `graphql`
 
 ```yaml
@@ -155,6 +238,7 @@ referenced by name (`{{token}}`), never inlined.
 | `bearer` | `token` | `Authorization: Bearer <token>` |
 | `basic` | `username`, `password` | `Authorization: Basic <base64(user:pass)>` |
 | `apikey` | `name`, `value`, `in` | API key in a header (default) or query param. |
+| `oauth2` | see [below](#oauth2) | Fetches a token at run time and sends it as `Authorization`. |
 
 ```yaml
 auth:
@@ -172,6 +256,47 @@ auth:
 
 For `apikey` with `in: query`, the key is appended to the URL's query string — and its
 value is [masked](#environment-files) in reported output when declared as a secret.
+
+### `oauth2`
+
+The runner fetches an access token from `tokenUrl` **before** sending the request, then sends it
+as `Authorization: Bearer <token>`. The token is cached for the rest of the run, so a folder-level
+`oauth2` block shared by twenty requests hits the token endpoint once — not twenty times.
+
+```yaml
+# folder.tspec.yaml — every request under this folder inherits it
+auth:
+  type: oauth2
+  grant: client_credentials      # client_credentials (default) | password | refresh_token
+  tokenUrl: "{{authUrl}}/oauth/token"
+  clientId: "{{clientId}}"
+  clientSecret: "{{clientSecret}}"   # an environment SECRET — never inline it
+  scope: "read:pets write:pets"
+```
+
+| Field | Required for | Notes |
+|---|---|---|
+| `tokenUrl` | all | The token endpoint. Templated. |
+| `grant` | — | `client_credentials` (default), `password`, `refresh_token`. |
+| `clientId` / `clientSecret` | `client_credentials` | Also sent for the other grants when set. |
+| `username` / `password` | `password` | |
+| `refreshToken` | `refresh_token` | |
+| `scope` | — | Space-separated scopes. |
+| `audience` | — | Extra token parameter some providers require (Auth0, Okta). |
+| `clientAuth` | — | `body` (default) or `basic` — where the client id/secret go. |
+| `extra` | — | Any further token-endpoint parameters, sent verbatim. |
+| `scheme` | — | Authorization scheme for the acquired token. Default `Bearer`. |
+
+**Only unattended grants are supported.** An interactive authorization-code flow needs a browser,
+which a CI gate does not have; capture the resulting refresh token once and use
+`grant: refresh_token`. This is a deliberate limit, not an omission.
+
+A token failure fails the request with the provider's own reason (`invalid_client`,
+`unsupported_grant_type`, …) and the API is never called — so a CI log says *why* the gate failed.
+
+Because the token only exists at run time, [`truspec codegen`](./cli.md#codegen) renders an
+`oauth2` request with an `Authorization: Bearer {{accessToken}}` placeholder rather than inventing
+a credential.
 
 ---
 
@@ -204,12 +329,21 @@ must hold.
 ### `header`
 
 ```yaml
-- { type: header, name: Content-Type, matches: "application/json" }
+- { type: header, name: Content-Type, contains: "application/json" }
 - { type: header, name: X-Request-Id, exists: true }
 - { type: header, name: Cache-Control, equals: "no-store" }
+- { type: header, name: Server, notEquals: "nginx" }
+- { type: header, name: Content-Type, matches: "^application/(json|problem\\+json)" }
 ```
 
-`matches` is a JavaScript regular expression (as a string).
+| Condition | Meaning |
+|---|---|
+| `exists` | `true` — the header is present; `false` — it is absent. |
+| `equals` / `notEquals` | Exact string comparison. |
+| `contains` | Substring. |
+| `matches` | JavaScript regular expression (as a string). |
+
+Header names are matched case-insensitively.
 
 ### `jsonpath`
 
@@ -217,12 +351,33 @@ must hold.
 - { type: jsonpath, path: "$.id", exists: true }
 - { type: jsonpath, path: "$.status", equals: "active" }
 - { type: jsonpath, path: "$.items[0].sku", matches: "^SKU-" }
+- { type: jsonpath, path: "$.total", valueType: number, gte: 0 }
+- { type: jsonpath, path: "$.items", minLength: 1 }
+- { type: jsonpath, path: "$.tags", contains: "featured" }
+- { type: jsonpath, path: "$.state", oneOf: ["queued", "running"] }
+- { type: jsonpath, path: "$.errors", empty: true }
 ```
 
-- `exists` checks whether the path selects any value.
-- `equals` uses **structural equality**, so it works for objects and arrays too.
-- `matches` tests the stringified value against a regex.
-- The body must parse as JSON; if it doesn't, `jsonpath` assertions don't match.
+| Condition | Meaning |
+|---|---|
+| `exists` | Whether the path selects any value. |
+| `equals` / `notEquals` | **Structural** equality, so objects and arrays work too. |
+| `oneOf` | The value equals one of the listed values. |
+| `contains` | Substring of a string value, or membership in an array value. |
+| `matches` | Regex against the stringified value. |
+| `gt` / `gte` / `lt` / `lte` | Numeric comparison. A non-number **fails** rather than being coerced. |
+| `valueType` | `string`, `number`, `boolean`, `object`, `array`, or `null` (arrays and null are *not* `object`). |
+| `length` / `minLength` / `maxLength` | Length of a string or array. Anything else fails. |
+| `empty` | `true` for an empty string, array or object; `false` for a non-empty one. |
+
+Conditions on one assertion combine as an **AND**. The body must parse as JSON; if it doesn't,
+`jsonpath` assertions don't match.
+
+A failure names the value that was actually there and only the conditions that failed:
+
+```
+✗ jsonpath $.total → "12.50" fails is a number & >= 0
+```
 
 See [JSONPath support](#jsonpath-support) for the supported subset.
 
@@ -230,10 +385,14 @@ See [JSONPath support](#jsonpath-support) for the supported subset.
 
 ```yaml
 - { type: body, contains: "ok" }
+- { type: body, notContains: "stack trace" }
+- { type: body, equals: "pong" }
+- { type: body, empty: false }
 - { type: body, matches: "\"status\"\\s*:\\s*\"active\"" }
 ```
 
-Runs against the raw response text — useful for non-JSON responses.
+Runs against the raw response text — useful for non-JSON responses. `notContains` is the one to
+reach for in a security or privacy check ("no internal hostname in the error body").
 
 ### `duration`
 

@@ -26,7 +26,7 @@ export const test = base.extend<{ app: App }>({
 
     const dir = mkdtempSync(join(tmpdir(), "tspec-e2e-"));
     mkdirSync(join(dir, "environments"), { recursive: true });
-    writeFileSync(join(dir, "environments", "local.env.yaml"), `tspec: "0.1"\nname: local\nvariables: { baseUrl: "http://127.0.0.1:${mockPort}" }\n`);
+    writeFileSync(join(dir, "environments", "local.env.yaml"), `tspec: "0.1"\nname: local\nvariables: { baseUrl: "http://127.0.0.1:${mockPort}" }\nsecrets: [tspecE2eToken]\n`);
     writeFileSync(join(dir, "get.tspec.yaml"), 'tspec: "0.1"\nname: Get pet\nmethod: GET\nurl: "{{baseUrl}}/pets/1"\nspec: { operation: "GET /pets/{id}" }\nassertions: [ { type: status, equals: 200 } ]\n');
     // XSS probe: a request name that WOULD execute if the UI didn't escape it.
     writeFileSync(join(dir, "evil.tspec.yaml"), 'tspec: "0.1"\nname: "<img src=x onerror=\\"window.__xss=true\\">"\nmethod: GET\nurl: "{{baseUrl}}/x"\nassertions: []\n');
@@ -37,6 +37,10 @@ export const test = base.extend<{ app: App }>({
     // mixed `C:\...\dist/client` (backslash root + forward-slash tail, as `${ROOT}/...` produces on
     // Windows) never matches, 403ing every asset request.
     const web = await startWebServer({ dir, port: 0, clientDir: join(ROOT, "packages", "web", "dist", "client") });
+    // Destructure fixtures as `{ app, page }`, not `{ page, app }`: Playwright tears down in reverse
+    // order of setup, so listing `page` first closes this server while the browser still holds
+    // sockets on it. The server survives that now (see `closeHttpServer`), but the browser-first
+    // order is still the one that shuts everything down cleanly.
     await use({ url: web.url, dir });
     await web.close();
     await new Promise((r) => mock.close(() => r(undefined)));

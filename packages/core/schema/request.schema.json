@@ -134,6 +134,70 @@
                 "query"
               ],
               "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "multipart"
+                },
+                "fields": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "type": [
+                          "string",
+                          "number",
+                          "boolean"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "file": {
+                            "type": "string"
+                          },
+                          "filename": {
+                            "type": "string"
+                          },
+                          "contentType": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "file"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "text": {
+                            "type": "string"
+                          },
+                          "contentType": {
+                            "type": "string"
+                          },
+                          "filename": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "text"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "type",
+                "fields"
+              ],
+              "additionalProperties": false
             }
           ]
         },
@@ -218,6 +282,71 @@
                 "value"
               ],
               "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "oauth2"
+                },
+                "grant": {
+                  "type": "string",
+                  "enum": [
+                    "client_credentials",
+                    "password",
+                    "refresh_token"
+                  ],
+                  "default": "client_credentials"
+                },
+                "tokenUrl": {
+                  "type": "string"
+                },
+                "clientId": {
+                  "type": "string"
+                },
+                "clientSecret": {
+                  "type": "string"
+                },
+                "username": {
+                  "type": "string"
+                },
+                "password": {
+                  "type": "string"
+                },
+                "refreshToken": {
+                  "type": "string"
+                },
+                "scope": {
+                  "type": "string"
+                },
+                "audience": {
+                  "type": "string"
+                },
+                "clientAuth": {
+                  "type": "string",
+                  "enum": [
+                    "body",
+                    "basic"
+                  ],
+                  "default": "body"
+                },
+                "extra": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "scheme": {
+                  "type": "string",
+                  "default": "Bearer"
+                }
+              },
+              "required": [
+                "type",
+                "tokenUrl"
+              ],
+              "additionalProperties": false
             }
           ]
         },
@@ -266,6 +395,12 @@
                   "equals": {
                     "type": "string"
                   },
+                  "notEquals": {
+                    "type": "string"
+                  },
+                  "contains": {
+                    "type": "string"
+                  },
                   "matches": {
                     "type": "string"
                   },
@@ -290,11 +425,55 @@
                     "type": "string"
                   },
                   "equals": {},
+                  "notEquals": {},
                   "exists": {
                     "type": "boolean"
                   },
                   "matches": {
                     "type": "string"
+                  },
+                  "contains": {},
+                  "oneOf": {
+                    "type": "array",
+                    "items": {}
+                  },
+                  "gt": {
+                    "type": "number"
+                  },
+                  "gte": {
+                    "type": "number"
+                  },
+                  "lt": {
+                    "type": "number"
+                  },
+                  "lte": {
+                    "type": "number"
+                  },
+                  "valueType": {
+                    "type": "string",
+                    "enum": [
+                      "string",
+                      "number",
+                      "boolean",
+                      "object",
+                      "array",
+                      "null"
+                    ]
+                  },
+                  "length": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "minLength": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "maxLength": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "empty": {
+                    "type": "boolean"
                   }
                 },
                 "required": [
@@ -310,11 +489,20 @@
                     "type": "string",
                     "const": "body"
                   },
+                  "equals": {
+                    "type": "string"
+                  },
                   "contains": {
+                    "type": "string"
+                  },
+                  "notContains": {
                     "type": "string"
                   },
                   "matches": {
                     "type": "string"
+                  },
+                  "empty": {
+                    "type": "boolean"
                   }
                 },
                 "required": [
@@ -415,6 +603,40 @@
         },
         "order": {
           "type": "number"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "timeoutMs": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "retries": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 10
+            },
+            "retryDelayMs": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "followRedirects": {
+              "type": "boolean"
+            },
+            "maxRedirects": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20
+            }
+          },
+          "additionalProperties": false
         },
         "script": {
           "type": "object",

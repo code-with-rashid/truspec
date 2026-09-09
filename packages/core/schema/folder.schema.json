@@ -105,6 +105,71 @@
                 "value"
               ],
               "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "oauth2"
+                },
+                "grant": {
+                  "type": "string",
+                  "enum": [
+                    "client_credentials",
+                    "password",
+                    "refresh_token"
+                  ],
+                  "default": "client_credentials"
+                },
+                "tokenUrl": {
+                  "type": "string"
+                },
+                "clientId": {
+                  "type": "string"
+                },
+                "clientSecret": {
+                  "type": "string"
+                },
+                "username": {
+                  "type": "string"
+                },
+                "password": {
+                  "type": "string"
+                },
+                "refreshToken": {
+                  "type": "string"
+                },
+                "scope": {
+                  "type": "string"
+                },
+                "audience": {
+                  "type": "string"
+                },
+                "clientAuth": {
+                  "type": "string",
+                  "enum": [
+                    "body",
+                    "basic"
+                  ],
+                  "default": "body"
+                },
+                "extra": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "scheme": {
+                  "type": "string",
+                  "default": "Bearer"
+                }
+              },
+              "required": [
+                "type",
+                "tokenUrl"
+              ],
+              "additionalProperties": false
             }
           ]
         }

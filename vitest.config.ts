@@ -12,7 +12,12 @@ export default defineConfig({
       { find: "@truspec/core/spec", replacement: core("spec/index.ts") },
       { find: "@truspec/core/importers", replacement: core("importers/index.ts") },
       { find: "@truspec/core/exporters", replacement: core("exporters/index.ts") },
+      { find: "@truspec/core/codegen", replacement: core("codegen/index.ts") },
+      { find: "@truspec/core/lint", replacement: core("lint/index.ts") },
+      { find: "@truspec/core/jsonpath", replacement: core("jsonpath/index.ts") },
+      { find: "@truspec/core/docs", replacement: core("docs/index.ts") },
       { find: "@truspec/core/mock", replacement: core("mock/index.ts") },
+      { find: "@truspec/core/http", replacement: core("http/index.ts") },
       { find: "@truspec/core/runner", replacement: core("runner/index.ts") },
       { find: "@truspec/core/format", replacement: core("format/index.ts") },
       { find: "@truspec/core", replacement: core("index.ts") },
@@ -26,10 +31,14 @@ export default defineConfig({
       // index.ts = re-export barrels; format/types.ts = pure `z.infer` type aliases (no runtime code,
       // validated by typecheck). Neither has anything executable to cover.
       exclude: ["**/index.ts", "packages/core/src/format/types.ts"],
-      reporter: ["text-summary"],
-      // CI gate: `pnpm test:coverage` fails if coverage regresses below these. Current: lines 95.18%,
-      // branches 86.52%, functions 98.27% (see qa/COVERAGE.json).
-      thresholds: { lines: 90, branches: 85, functions: 90, statements: 90 },
+      reporter: ["text-summary", "json-summary"],
+      // CI gate: `pnpm test:coverage` fails if coverage regresses below these.
+      //
+      // Raised from 90/85/90/90. Those were far enough below the real numbers that ~3,000 lines of
+      // new code could land and drag functions from 98% to 89.9% before anything complained — the
+      // gate only caught it after the fact. Set just under the current figures (lines 95.43%,
+      // branches 87.78%, functions 97.01%) so a real regression trips on the commit that causes it.
+      thresholds: { lines: 95, branches: 87, functions: 96, statements: 95 },
     },
   },
 });

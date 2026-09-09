@@ -48,7 +48,25 @@ export function renderResults(result: WorkspaceRunResult): string {
       return `<div class="row ${r.ok ? "ok" : "bad"}"><span class="tick">${r.ok ? "✓" : "✗"}</span><span class="name">${esc(r.name)}</span>${meta}${fails}</div>`;
     })
     .join("");
-  return page("run", `${rows || '<div class="sum">no requests.</div>'}<div class="sum">${result.passed} passed · ${result.failed} failed</div>`);
+  // A file that does not parse never becomes a result row, so without this the panel reports
+  // "no requests · 0 passed · 0 failed" and throws the reason away — which is exactly what running
+  // a `folder.tspec.yaml` produces.
+  const parseErrors = result.parseErrors ?? [];
+  const broken = parseErrors.length
+    ? `<div class="lbl">could not read · ${parseErrors.length}</div>` +
+      parseErrors
+        .map((p) => `<div class="row bad"><span class="tick">✗</span><span class="name">${esc(p.file)}</span><span class="fail">${esc(p.error)}</span></div>`)
+        .join("")
+    : "";
+  // Likewise: a run whose secrets never resolved fails on auth with nothing on screen to say why.
+  const secrets = result.missingSecrets.length
+    ? `<div class="lbl">unresolved secrets · ${result.missingSecrets.length}</div>` +
+      `<div class="op amber">${result.missingSecrets.map((n) => esc(n)).join(" · ")} — set in the environment or a .env at the workspace root</div>`
+    : "";
+  const counts = [`${result.passed} passed`, `${result.failed} failed`];
+  if (parseErrors.length > 0) counts.push(`${parseErrors.length} unreadable`);
+  const empty = rows === "" && broken === "" ? '<div class="sum">no requests.</div>' : "";
+  return page("run", `${secrets}${rows}${broken}${empty}<div class="sum">${counts.join(" · ")}</div>`);
 }
 
 export function renderDrift(report: DriftReport, spec: string): string {

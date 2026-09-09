@@ -20,36 +20,45 @@ export function TabStrip({
 }) {
   if (tabs.length === 0) return null;
   return (
-    <div className="tab-strip">
+    // The row used to be a `role="button"` div wrapping the close button: a `nested-interactive`
+    // violation (a screen reader cannot reach the inner control), and keyboard-inert besides —
+    // `tabIndex={0}` with no key handler looks focusable but does nothing on Enter. Selection and
+    // close are now two sibling buttons, operable for free, in a container with no interactive
+    // role. Deliberately NOT a `role="tablist"`: that requires every child to be a `role="tab"`
+    // (the close buttons are not) and implies tabpanels this UI does not have. These are open
+    // documents, so `aria-current` is the honest way to mark the active one.
+    <nav className="tab-strip" aria-label="open requests">
       {tabs.map((t) => (
         <div
           key={t.path}
           className={`tab-strip-item ${t.path === activePath ? "active" : ""}`}
-          onClick={() => onSelect(t.path)}
           onContextMenu={(e) => {
             e.preventDefault();
             onContextMenu(e.clientX, e.clientY, t.path);
           }}
-          role="button"
-          tabIndex={0}
-          title={t.path}
         >
-          <span className={`m m-${t.method}`}>{t.method}</span>
-          <span className="tab-strip-name">{t.name}</span>
-          {t.dirty && <span className="tab-strip-dot" title="unsaved changes" />}
           <button
+            type="button"
+            aria-current={t.path === activePath ? "page" : undefined}
+            className="tab-strip-main"
+            title={t.path}
+            onClick={() => onSelect(t.path)}
+          >
+            <span className={`m m-${t.method}`}>{t.method}</span>
+            <span className="tab-strip-name">{t.name}</span>
+            {t.dirty && <span className="tab-strip-dot" title="unsaved changes" />}
+          </button>
+          <button
+            type="button"
             className="tab-strip-close"
             title="close"
             aria-label={`close ${t.name}`}
-            onClick={(e) => {
-              e.stopPropagation();
-              onClose(t.path);
-            }}
+            onClick={onClose.bind(null, t.path)}
           >
             ✕
           </button>
         </div>
       ))}
-    </div>
+    </nav>
   );
 }

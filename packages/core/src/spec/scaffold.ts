@@ -24,6 +24,12 @@ export interface ScaffoldFile {
 export interface ScaffoldResult {
   files: ScaffoldFile[];
   skipped: string[];
+  /**
+   * Every `{{name}}` the scaffold introduces from a path parameter, with a usable sample value.
+   * A scaffolded collection is not runnable until these are declared somewhere, so callers can
+   * seed an environment with them instead of leaving the first run to fail on unresolved vars.
+   */
+  pathVariables: Record<string, string>;
 }
 
 /** Generate a request stub (status-200 assertion + spec link) for each spec operation. */
@@ -37,6 +43,7 @@ export function scaffoldFromSpec(specText: string, opts: { baseUrlVar?: string }
   // uniqueness counter the second file would overwrite the first on disk — silently dropping
   // operations from a per-operation scaffold. Mirror the Postman importer: suffix `-2`, `-3`, …
   const used = new Map<string, number>();
+  const pathVariables: Record<string, string> = {};
   for (const op of summary.operations) {
     if (!VALID_METHODS.has(op.method)) {
       skipped.push(op.key);
@@ -52,9 +59,15 @@ export function scaffoldFromSpec(specText: string, opts: { baseUrlVar?: string }
       name: label,
       method: op.method as TruSpecMethod,
       url: `{{${baseUrlVar}}}${op.path.replace(/\{([^}]+)\}/g, "{{$1}}")}`,
-      assertions: [{ type: "status", equals: 200 }],
+      // Assert what the spec itself documents, not a blanket 200.
+      assertions: [{ type: "status", equals: op.successStatus ?? 200 }],
       spec: { operation: op.key, operationId: op.operationId || undefined },
     };
+    for (const name of op.path.matchAll(/\{([^}]+)\}/g)) {
+      const varName = name[1] as string;
+      const declared = op.parameters.find((p) => p.in === "path" && p.name === varName);
+      pathVariables[varName] ??= declared?.sample ?? "example";
+    }
     const base = slug(label);
     const n = (used.get(base) ?? 0) + 1;
     used.set(base, n);
@@ -63,7 +76,7 @@ export function scaffoldFromSpec(specText: string, opts: { baseUrlVar?: string }
       content: parse.request.serialize(request),
     });
   }
-  return { files, skipped };
+  return { files, skipped, pathVariables };
 }
 
 /** Write a scaffold result to disk under `outDir`; returns the paths written. */

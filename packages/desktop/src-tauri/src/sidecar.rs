@@ -2,7 +2,7 @@ use std::sync::Mutex;
 
 use serde::Deserialize;
 use tauri::{path::BaseDirectory, AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
-use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 use tauri_plugin_shell::{
     process::{CommandChild, CommandEvent},
     ShellExt,
@@ -15,6 +15,26 @@ use crate::config;
 #[derive(Default)]
 pub struct SidecarState {
     child: Option<CommandChild>,
+    /// Bumped whenever a sidecar is deliberately replaced or killed, so the reader task belonging
+    /// to an older process can tell "I was retired" from "I died on my own" and stay quiet.
+    generation: u64,
+}
+
+/// Report a startup failure the user can actually see.
+///
+/// Every one of these paths used to be an `.expect()`. A panic here takes the whole app down with
+/// nothing on screen: the sidecar is spawned from `setup` and from a menu action, so the only
+/// symptom a user gets is a window that never appears, or one that never navigates anywhere. A
+/// missing execute bit or a quarantined bundled `node` — the likeliest causes in the wild — are
+/// exactly the cases that deserve a sentence of explanation instead.
+fn report_failure(app: &AppHandle, detail: &str) {
+    log::error!("sidecar: {detail}");
+    // Non-blocking: `blocking_show` on the main thread deadlocks the event loop it is waiting on.
+    app.dialog()
+        .message(detail)
+        .title("TruSpec could not start")
+        .kind(MessageDialogKind::Error)
+        .show(|_| {});
 }
 
 #[derive(Deserialize)]
@@ -83,17 +103,25 @@ pub fn new_collection_flow(app: AppHandle) {
 /// Writes just enough for the directory to parse as a collection — `folder.tspec.yaml` (schema
 /// version + a `name` derived from the directory) and a starter `local` environment. Leaves any
 /// existing files alone (an already-populated folder picked via "New Collection" isn't touched).
+/// The contents of a scaffolded `folder.tspec.yaml` for a collection of this name.
+///
+/// Split out from the filesystem work so the escaping can be tested directly, for names no
+/// platform would let a directory have — which is the whole point of escaping it.
+fn folder_config(name: &str) -> String {
+    // JSON string escaping doubles as valid YAML double-quoted-scalar escaping, so this stays
+    // correct for names with quotes/backslashes without pulling in a YAML-writing crate.
+    let name_yaml = serde_json::to_string(name).unwrap_or_else(|_| "\"collection\"".to_string());
+    format!("tspec: \"0.1\"\nname: {name_yaml}\n")
+}
+
 fn scaffold_collection(dir: &std::path::Path) -> std::io::Result<()> {
     use std::fs;
 
     let name = dir.file_name().and_then(|n| n.to_str()).unwrap_or("collection");
-    // JSON string escaping doubles as valid YAML double-quoted-scalar escaping, so this stays
-    // correct for names with quotes/backslashes without pulling in a YAML-writing crate.
-    let name_yaml = serde_json::to_string(name).unwrap_or_else(|_| "\"collection\"".to_string());
 
     let folder_cfg = dir.join("folder.tspec.yaml");
     if !folder_cfg.exists() {
-        fs::write(&folder_cfg, format!("tspec: \"0.1\"\nname: {name_yaml}\n"))?;
+        fs::write(&folder_cfg, folder_config(name))?;
     }
 
     let env_dir = dir.join("environments");
@@ -111,14 +139,16 @@ fn scaffold_collection(dir: &std::path::Path) -> std::io::Result<()> {
 fn start(app: AppHandle, dir: String) {
     kill_sidecar(&app);
 
-    let script = app
-        .path()
-        .resolve("server/cli-entry.cjs", BaseDirectory::Resource)
-        .expect("bundled sidecar script missing from app resources");
-    let client_dir = app
-        .path()
-        .resolve("client", BaseDirectory::Resource)
-        .expect("bundled client assets missing from app resources");
+    const REINSTALL: &str = "Reinstalling TruSpec should restore it.";
+
+    let Ok(script) = app.path().resolve("server/cli-entry.cjs", BaseDirectory::Resource) else {
+        report_failure(&app, &format!("The bundled server files are missing from this installation. {REINSTALL}"));
+        return;
+    };
+    let Ok(client_dir) = app.path().resolve("client", BaseDirectory::Resource) else {
+        report_failure(&app, &format!("The bundled app interface is missing from this installation. {REINSTALL}"));
+        return;
+    };
     log::info!("sidecar: starting with dir={dir} script={script:?} client_dir={client_dir:?}");
 
     let args: Vec<String> = vec![
@@ -131,16 +161,32 @@ fn start(app: AppHandle, dir: String) {
         "0".to_string(),
     ];
 
-    let (mut rx, child) = app
-        .shell()
-        .sidecar("node")
-        .expect("node sidecar binary not declared in bundle.externalBin")
-        .args(args)
-        .spawn()
-        .expect("failed to spawn the desktop sidecar");
+    let command = match app.shell().sidecar("node") {
+        Ok(c) => c,
+        Err(e) => {
+            report_failure(&app, &format!("The bundled Node runtime is missing from this installation. {REINSTALL} ({e})"));
+            return;
+        }
+    };
+    let (mut rx, child) = match command.args(args).spawn() {
+        Ok(v) => v,
+        Err(e) => {
+            report_failure(
+                &app,
+                &format!("Could not start the TruSpec server process: {e}\n\nThis usually means the bundled Node runtime was blocked or lost its permission to run."),
+            );
+            return;
+        }
+    };
     log::info!("sidecar: spawned pid={}", child.pid());
 
-    app.state::<Mutex<SidecarState>>().lock().unwrap().child = Some(child);
+    let generation = {
+        let handle = app.state::<Mutex<SidecarState>>();
+        let mut state = handle.lock().unwrap();
+        state.generation += 1;
+        state.child = Some(child);
+        state.generation
+    };
 
     let app_handle = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -161,6 +207,18 @@ fn start(app: AppHandle, dir: String) {
                 }
                 CommandEvent::Terminated(payload) => {
                     log::info!("sidecar terminated: {payload:?}");
+                    // Only speak up if this is still the live sidecar. Switching collections and
+                    // quitting both kill it on purpose, and neither is worth a dialog.
+                    let handle = app_handle.state::<Mutex<SidecarState>>();
+                    let current = handle.lock().unwrap().generation;
+                    if current == generation {
+                        report_failure(
+                            &app_handle,
+                            &format!(
+                                "The TruSpec server stopped unexpectedly ({payload:?}). Try opening the collection again."
+                            ),
+                        );
+                    }
                 }
                 _ => {}
             }
@@ -193,7 +251,70 @@ fn navigate_to(app: &AppHandle, url: &str) {
 /// Kill the running sidecar, if any — called on window close AND as a `RunEvent::Exit` backstop
 /// (window-close events aren't guaranteed to fire on every force-quit path).
 pub fn kill_sidecar(app: &AppHandle) {
-    if let Some(child) = app.state::<Mutex<SidecarState>>().lock().unwrap().child.take() {
+    let handle = app.state::<Mutex<SidecarState>>();
+    let mut state = handle.lock().unwrap();
+    // Retire the current generation first, so the reader task treats this exit as expected.
+    state.generation += 1;
+    if let Some(child) = state.child.take() {
         let _ = child.kill();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{folder_config, scaffold_collection};
+
+    /// A scratch directory that cleans itself up, so the tests leave nothing behind on failure.
+    struct TempDir(std::path::PathBuf);
+    impl TempDir {
+        fn new(tag: &str) -> Self {
+            let mut p = std::env::temp_dir();
+            p.push(format!("tspec-scaffold-{tag}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&p);
+            std::fs::create_dir_all(&p).expect("temp dir");
+            Self(p)
+        }
+    }
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn writes_a_folder_config_and_a_starter_environment() {
+        let dir = TempDir::new("fresh");
+        scaffold_collection(&dir.0).expect("scaffold");
+
+        let cfg = std::fs::read_to_string(dir.0.join("folder.tspec.yaml")).expect("folder config");
+        assert!(cfg.contains("tspec: \"0.1\""), "{cfg}");
+        let env = std::fs::read_to_string(dir.0.join("environments/local.env.yaml")).expect("env");
+        assert!(env.contains("name: local"), "{env}");
+    }
+
+    #[test]
+    fn leaves_existing_files_alone() {
+        let dir = TempDir::new("existing");
+        std::fs::write(dir.0.join("folder.tspec.yaml"), "keep me").expect("seed");
+        scaffold_collection(&dir.0).expect("scaffold");
+        assert_eq!(
+            std::fs::read_to_string(dir.0.join("folder.tspec.yaml")).expect("read"),
+            "keep me",
+        );
+    }
+
+    #[test]
+    fn escapes_a_name_that_would_otherwise_break_the_yaml() {
+        // Not written through a real directory: `"` and `:` are illegal in a Windows filename, so
+        // a filesystem-based version of this test cannot run on the platform it most needs to.
+        let yaml = folder_config("we\"ird: name");
+        assert!(yaml.contains("name: \"we\\\"ird: name\""), "{yaml}");
+
+        // A backslash is the other character JSON escaping exists for here.
+        let yaml = folder_config("back\\slash");
+        assert!(yaml.contains("name: \"back\\\\slash\""), "{yaml}");
+
+        // And an ordinary name stays readable rather than being escaped into noise.
+        assert!(folder_config("petstore").contains("name: \"petstore\""), "plain name");
     }
 }

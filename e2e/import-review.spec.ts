@@ -28,7 +28,7 @@ test.describe("import review step (real browser)", () => {
     await page.locator(".nav-btn", { hasText: "flow" }).click();
     await page.locator(".btn.ghost.small", { hasText: "import collection" }).click();
 
-    const fileInput = page.locator('input[type="file"]:not([webkitdirectory])');
+    const fileInput = page.locator('input[aria-label="postman collection file"]');
     await fileInput.setInputFiles(file);
 
     // review step: nothing written yet, count shown, target editable

@@ -1,5 +1,5 @@
-import { Fragment, useState } from "react";
-import { getEnvironment, saveEnvironment } from "../api";
+import { Fragment, useEffect, useState } from "react";
+import { type EnvListReport, getEnvironment, getEnvironments, saveEnvironment } from "../api";
 import { ConfirmModal } from "./ConfirmModal";
 import { EditableKV, objectToRows, rowsToObject, type KVRow } from "./EditableKV";
 
@@ -29,6 +29,21 @@ export function EnvironmentModal({
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteErr, setDeleteErr] = useState<string | null>(null);
+  /**
+   * Whether each declared secret actually resolves, and from where. Names alone were never enough:
+   * you could add a secret, save, run, and learn only from a status-bar message after the failure
+   * that nothing supplies it. The report carries status only — never a value.
+   */
+  const [report, setReport] = useState<EnvListReport | null>(null);
+  const loadReport = (): void => {
+    void getEnvironments()
+      .then(setReport)
+      .catch(() => setReport(null));
+  };
+  useEffect(loadReport, []);
+
+  const statusOf = (envName: string | null, secret: string) =>
+    report?.environments.find((e) => e.name === envName)?.secrets.find((s) => s.name === secret);
 
   const openCreate = (): void => {
     setMode("create");
@@ -74,6 +89,7 @@ export function EnvironmentModal({
         return;
       }
       onChanged();
+      loadReport();
       setMode("list");
     } catch (e) {
       setErr(String(e));
@@ -125,6 +141,18 @@ export function EnvironmentModal({
                 {environments.map((name) => (
                   <div className="env-list-row" key={name}>
                     <span className="env-list-name">{name}</span>
+                    {(() => {
+                      const env = report?.environments.find((e) => e.name === name);
+                      if (!env || env.unresolved.length === 0) return null;
+                      return (
+                        <span
+                          className="badge-stale"
+                          title={`no value for: ${env.unresolved.join(", ")}`}
+                        >
+                          ⚠ {env.unresolved.length} unset
+                        </span>
+                      );
+                    })()}
                     <button className="row-action-btn" title="edit" aria-label={`edit environment "${name}"`} onClick={() => void openEdit(name)}>
                       ✎
                     </button>
@@ -175,9 +203,18 @@ export function EnvironmentModal({
                   names only — values come from the OS environment or a .env file, never stored here.
                 </p>
                 <div className="env-secrets">
-                  {secrets.map((s) => (
-                    <span className="captured-chip" key={s}>
+                  {secrets.map((s) => {
+                    const status = statusOf(activeName, s);
+                    return (
+                    <span className={`captured-chip ${status && !status.resolved ? "unset" : ""}`} key={s}>
                       <span className="k">{s}</span>
+                      <span className="secret-status" title={
+                        status?.resolved
+                          ? `resolved from ${status.source === "env" ? "the OS environment" : "the project .env"}`
+                          : "no value — export it, or add it to the project .env"
+                      }>
+                        {status === undefined ? "" : status.resolved ? "✓ set" : "not set"}
+                      </span>
                       <button
                         className="row-action-btn danger"
                         title="remove"
@@ -187,7 +224,8 @@ export function EnvironmentModal({
                         ✕
                       </button>
                     </span>
-                  ))}
+                    );
+                  })}
                 </div>
                 <div className="editable-kv-row" style={{ marginTop: 6 }}>
                   <input

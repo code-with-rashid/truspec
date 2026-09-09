@@ -19,17 +19,21 @@ packages/
     src/runner/      interpolation, auth, fetch, declarative assertions
     src/workspace/   discovery, folder inheritance, env + secret resolution
     src/spec/        OpenAPI drift + coverage
-    src/importers/   postman v2.1 + bruno -> .tspec.yaml
+    src/importers/   postman v2.1 + bruno + insomnia + curl + HAR -> .tspec.yaml
+    src/codegen/     request -> runnable snippet in 17 clients/languages
+    src/lint/        static checks over a collection (secrets, dead assertions, undeclared vars)
+    src/docs/        collection -> deterministic Markdown documentation
     src/mock/        local mock server generated from a spec
+    src/http/        shared HTTP-server lifecycle (a shutdown that always terminates)
     schema/          PUBLISHED JSON Schema (generated; do not hand-edit)
-  cli/           truspec — `run` / `drift` / `coverage` / `contract` / `gen` / `import` / `mock`
-  mcp-server/    @truspec/mcp-server — 10 tools over the official MCP SDK
+  cli/           truspec — `run` / `drift` / `coverage` / `contract` / `gen` / `codegen` / `lint` / `docs` / `env` / `import` / `mock`
+  mcp-server/    @truspec/mcp-server — 23 tools over the official MCP SDK
 examples/        petstore + blog sample collections (+ openapi.yaml) for tests + demos
 ```
 
 Core modules are imported via subpaths: `@truspec/core/format`, `/runner`, `/workspace`,
-`/spec`, `/importers`, `/mock`. The filesystem/server modules (`workspace`, `spec`,
-`importers`, `mock`) are kept out of the browser-safe main entry on purpose.
+`/spec`, `/importers`, `/exporters`, `/codegen`, `/lint`, `/docs`, `/mock`, `/http`. The filesystem/server modules (`workspace`, `spec`,
+`importers`, `mock`, `http`) are kept out of the browser-safe main entry on purpose.
 
 ## File format (v0, schema version `0.1`)
 
@@ -54,10 +58,10 @@ headers:
 query:
   expand: owner
 body:
-  type: json                       # none | json | text | form | graphql
+  type: json                       # none | json | text | form | multipart | graphql
   content: { name: "Rex" }
 auth:                              # optional; can inherit from folder.tspec.yaml
-  type: bearer                     # none | bearer | basic | apikey
+  type: bearer                     # none | bearer | basic | apikey | oauth2
   token: "{{token}}"
 assertions:                        # declarative + machine-checkable (power CI + coverage)
   - { type: status, equals: 200 }
@@ -67,6 +71,8 @@ assertions:                        # declarative + machine-checkable (power CI +
 capture:                           # save response values into vars for later requests
   token: "$.access_token"          # jsonpath shorthand; or { header: "X-Id" } / { status: true }
 order: 1                           # run order within a collection (lower first; default 0)
+tags: [smoke]                      # labels for `truspec run --tag smoke`
+options:                           # transport: timeoutMs / retries / followRedirects / maxRedirects
 docs: "Fetch a single pet by its id."
 spec:                              # links request → OpenAPI operation (drift/coverage)
   operation: "GET /pets/{id}"
@@ -76,9 +82,10 @@ spec:                              # links request → OpenAPI operation (drift/
 ### Assertion types
 
 - `status` — `equals` | `in: [..]` | `lt` | `gte`
-- `header` — `name` + (`equals` | `matches` regex | `exists`)
-- `jsonpath` — `path` + (`equals` | `exists` | `matches` regex)
-- `body` — `contains` | `matches` regex
+- `header` — `name` + (`exists` | `equals` | `notEquals` | `contains` | `matches` regex)
+- `jsonpath` — `path` + any of `exists` `equals` `notEquals` `oneOf` `contains` `matches`
+  `gt` `gte` `lt` `lte` `valueType` `length` `minLength` `maxLength` `empty` (AND-ed)
+- `body` — `contains` | `notContains` | `equals` | `matches` regex | `empty`
 - `duration` — `ltMs`
 - `schema` — validate the response body against the linked operation's OpenAPI **response**
   schema. Optional `status` / `contentType` / `required`. Needs a spec supplied to the run

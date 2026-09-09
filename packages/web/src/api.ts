@@ -11,6 +11,8 @@ export interface RequestSummary {
 export interface WorkspaceState {
   dir: string;
   requests: RequestSummary[];
+  /** Files under the collection that did not parse. They appear in no other list. */
+  errors: Array<{ path: string; error: string }>;
   /** Relative paths of folders that have a `folder.tspec.yaml`, including empty ones (no requests yet). */
   folders: string[];
   environments: string[];
@@ -71,15 +73,48 @@ export type RequestBody =
   | { type: "json"; content: unknown }
   | { type: "text"; content: string }
   | { type: "form"; content: Record<string, string> }
-  | { type: "graphql"; query: string; variables?: Record<string, unknown> };
+  | { type: "graphql"; query: string; variables?: Record<string, unknown> }
+  | { type: "multipart"; fields: Record<string, MultipartField> };
+
+/** One `multipart/form-data` part: a plain value, a file read at send time, or typed text. */
+export type MultipartField =
+  | string
+  | number
+  | boolean
+  | { file: string; filename?: string; contentType?: string }
+  | { text: string; filename?: string; contentType?: string };
 
 export type RequestAuth =
   | { type: "none" }
   | { type: "bearer"; token: string }
   | { type: "basic"; username: string; password: string }
-  | { type: "apikey"; name: string; value: string; in: "header" | "query" };
+  | { type: "apikey"; name: string; value: string; in: "header" | "query" }
+  | {
+      type: "oauth2";
+      grant: "client_credentials" | "password" | "refresh_token";
+      tokenUrl: string;
+      clientId?: string;
+      clientSecret?: string;
+      username?: string;
+      password?: string;
+      refreshToken?: string;
+      scope?: string;
+      audience?: string;
+      clientAuth: "body" | "basic";
+      extra?: Record<string, string>;
+      scheme: string;
+    };
 
 export type CaptureSource = string | { jsonpath: string } | { header: string } | { status: true };
+
+/** Per-request transport settings; mirrors `RequestOptions` in the core schema. */
+export interface RequestOptions {
+  timeoutMs?: number;
+  retries?: number;
+  retryDelayMs?: number;
+  followRedirects?: boolean;
+  maxRedirects?: number;
+}
 
 export interface RequestDetail {
   name: string;
@@ -92,6 +127,10 @@ export interface RequestDetail {
   auth?: RequestAuth;
   capture?: Record<string, CaptureSource>;
   order?: number;
+  /** Labels for `truspec run --tag`. */
+  tags?: string[];
+  /** Per-request transport options. */
+  options?: RequestOptions;
   script?: { pre?: string; post?: string };
   docs?: string;
   spec?: { operation?: string; operationId?: string };
@@ -202,6 +241,42 @@ export interface ImportApiResult {
   files?: string[];
 }
 
+export interface EnvSecretStatus {
+  name: string;
+  resolved: boolean;
+  source?: "env" | "dotenv";
+}
+
+export interface EnvironmentReport {
+  name: string;
+  path: string;
+  variables: Record<string, string>;
+  secrets: EnvSecretStatus[];
+  unresolved: string[];
+}
+
+export interface EnvListReport {
+  root: string;
+  environments: EnvironmentReport[];
+  errors: Array<{ path: string; error: string }>;
+}
+
+export interface CodegenTargetInfo {
+  id: string;
+  label: string;
+  group: string;
+  syntax: string;
+}
+
+export interface CodegenResult {
+  ok: boolean;
+  error?: string;
+  lang?: string;
+  label?: string;
+  syntax?: string;
+  code?: string;
+}
+
 /** Success is the raw Postman collection (no `ok` field); failure is `{ok:false,error}`. */
 export type ExportPostmanResult = Record<string, unknown>;
 
@@ -213,10 +288,17 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const getState = () => api<WorkspaceState>("/api/state");
 export const getFlow = () => api<FlowState>("/api/flow");
+export const getEnvironments = () => api<EnvListReport>("/api/environments");
 export const importPostman = (json: unknown, targetDir?: string) =>
   api<ImportApiResult>("/api/import/postman", { method: "POST", body: JSON.stringify({ json, targetDir }) });
 export const importBruno = (files: Array<{ path: string; content: string }>, targetDir?: string) =>
   api<ImportApiResult>("/api/import/bruno", { method: "POST", body: JSON.stringify({ files, targetDir }) });
+export const importInsomnia = (json: unknown, targetDir?: string) =>
+  api<ImportApiResult>("/api/import/insomnia", { method: "POST", body: JSON.stringify({ json, targetDir }) });
+export const importHar = (json: unknown, targetDir?: string, options?: Record<string, unknown>) =>
+  api<ImportApiResult>("/api/import/har", { method: "POST", body: JSON.stringify({ json, targetDir, options }) });
+export const importCurlText = (text: string, targetDir?: string, name?: string) =>
+  api<ImportApiResult>("/api/import/curl", { method: "POST", body: JSON.stringify({ text, targetDir, name }) });
 export const getRequest = (path: string) =>
   api<RequestDetail>(`/api/request?path=${encodeURIComponent(path)}`);
 export const run = (target: string | undefined, env: string | undefined, spec?: string) =>
@@ -250,6 +332,14 @@ export const saveFolderConfig = (path: string, config: Record<string, unknown>) 
   api<SaveResult>("/api/folder/object", { method: "POST", body: JSON.stringify({ path, config }) });
 export const exportPostman = (path?: string) =>
   api<ExportPostmanResult>("/api/export/postman", { method: "POST", body: JSON.stringify({ path }) });
+
+export const codegenTargets = () => api<{ targets: CodegenTargetInfo[] }>("/api/codegen/targets");
+export const codegen = (
+  request: Record<string, unknown>,
+  lang: string,
+  path?: string,
+  env?: string,
+) => api<CodegenResult>("/api/codegen", { method: "POST", body: JSON.stringify({ request, lang, path, env }) });
 
 export const mockStatus = () => api<MockStatus>("/api/mock/status");
 export const mockStart = (spec: string, port?: number, delayMs?: number) =>

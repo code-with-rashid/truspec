@@ -1,8 +1,16 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  codegenTargetsTool,
+  codegenTool,
+  docsTool,
+  environmentsTool,
+  importCurlTool,
+  importHarTool,
+  importInsomniaTool,
+  lintTool,
   contractTool,
   coverageTool,
   createRequest,
@@ -112,6 +120,59 @@ describe("mcp tools", () => {
     }
   });
 
+  it("imports a curl command into request files", () => {
+    const dir = mkdtempSync(join(tmpdir(), "truspec-mcp-curl-"));
+    try {
+      const r = importCurlTool({ cwd: dir }, `curl -X POST https://api.example.com/pets -d '{"name":"Rex"}'`) as {
+        created: number;
+        files: string[];
+      };
+      expect(r.created).toBe(1);
+      expect(readFileSync(join(dir, r.files[0]!), "utf8")).toContain("Rex");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("reports a curl import that produced nothing rather than writing files", () => {
+    const dir = mkdtempSync(join(tmpdir(), "truspec-mcp-curl-bad-"));
+    try {
+      const r = importCurlTool({ cwd: dir }, "nothing here") as { created: number; warnings: string[] };
+      expect(r.created).toBe(0);
+      expect(r.warnings.join(" ")).toMatch(/No curl command/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("generates a code snippet with folder + environment context applied", () => {
+    const r = codegenTool({ cwd: repoRoot }, "examples/petstore/get-pet.tspec.yaml", "python-requests", "local") as {
+      lang: string;
+      code: string;
+      unresolvedSecrets?: string[];
+    };
+    expect(r.lang).toBe("python-requests");
+    expect(r.code).toContain("import requests");
+    expect(r.code).toContain("http://localhost:4000/pets/1");
+    // `token` is a declared secret with no value in this process — reported, not silently dropped.
+    expect(r.unresolvedSecrets).toContain("token");
+  });
+
+  it("returns the target list instead of throwing on an unknown lang", () => {
+    const r = codegenTool({ cwd: repoRoot }, "examples/petstore/get-pet.tspec.yaml", "cobol") as {
+      error: string;
+      targets: Array<{ id: string }>;
+    };
+    expect(r.error).toMatch(/Unknown lang/);
+    expect(r.targets.map((t) => t.id)).toContain("curl");
+  });
+
+  it("lists every codegen target", () => {
+    const r = codegenTargetsTool();
+    expect(r.count).toBe(r.targets.length);
+    expect(r.count).toBeGreaterThanOrEqual(17);
+  });
+
   it("runs a request with an injected fetch", async () => {
     const fetchMock = (async () =>
       new Response(JSON.stringify({ id: 1 }), {
@@ -123,5 +184,110 @@ describe("mcp tools", () => {
       "examples/petstore/get-pet.tspec.yaml",
     );
     expect(result.results.length).toBe(1);
+  });
+
+  it("describes environments without ever returning a secret's value", () => {
+    const r = environmentsTool({ cwd: resolve(repoRoot, "examples/petstore") }) as {
+      environments: Array<{ name: string; secrets: Array<{ name: string; resolved: boolean }> }>;
+    };
+    expect(r.environments.map((e) => e.name)).toEqual(["local"]);
+    expect(r.environments[0]!.secrets[0]!.name).toBe("token");
+    expect(JSON.stringify(r)).not.toMatch(/"value"/);
+  });
+
+  it("diffs two environments and names the ones it knows when asked for a missing one", () => {
+    const dir = mkdtempSync(join(tmpdir(), "truspec-mcp-env-"));
+    try {
+      mkdirSync(join(dir, "environments"), { recursive: true });
+      writeFileSync(join(dir, "environments", "a.env.yaml"), 'tspec: "0.1"\nname: a\nvariables: { x: "1", only: "a" }\n');
+      writeFileSync(join(dir, "environments", "b.env.yaml"), 'tspec: "0.1"\nname: b\nvariables: { x: "2" }\n');
+      const d = environmentsTool({ cwd: dir }, ".", ["a", "b"]) as { onlyInA: string[]; changed: unknown[] };
+      expect(d.onlyInA).toEqual(["only"]);
+      expect(d.changed).toEqual([{ name: "x", a: "1", b: "2" }]);
+
+      const missing = environmentsTool({ cwd: dir }, ".", ["a", "nope"]) as { error: string; known: string[] };
+      expect(missing.error).toMatch(/Environment not found: nope/);
+      expect(missing.known).toEqual(["a", "b"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("renders documentation for a collection", () => {
+    const r = docsTool({ cwd: repoRoot }, "examples/blog", "curl", "Blog") as {
+      count: number;
+      markdown: string;
+    };
+    expect(r.count).toBe(3);
+    expect(r.markdown.startsWith("# Blog")).toBe(true);
+  });
+
+  it("lints a collection and reports findings with stable rule ids", () => {
+    const r = lintTool({ cwd: repoRoot }, "examples") as { ok: boolean; findings: unknown[] };
+    expect(r.ok).toBe(true);
+    expect(r.findings).toEqual([]);
+  });
+
+  it("honors a disabled rule", () => {
+    const dir = mkdtempSync(join(tmpdir(), "truspec-mcp-lint-"));
+    try {
+      writeFileSync(join(dir, "x.tspec.yaml"), 'tspec: "0.1"\nname: X\nurl: "https://x.test/a"\n');
+      expect((lintTool({ cwd: dir }, ".") as { findings: unknown[] }).findings.length).toBe(1);
+      expect((lintTool({ cwd: dir }, ".", ["no-assertions"]) as { findings: unknown[] }).findings).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("imports an Insomnia export into request files", () => {
+    const dir = mkdtempSync(join(tmpdir(), "truspec-mcp-insomnia-"));
+    try {
+      writeFileSync(
+        join(dir, "e.json"),
+        JSON.stringify({
+          resources: [
+            { _id: "w", _type: "workspace", name: "W" },
+            { _id: "r", _type: "request", parentId: "w", name: "Get pet", method: "GET", url: "https://api.test/pets", headers: [] },
+          ],
+        }),
+      );
+      const r = importInsomniaTool({ cwd: dir }, "e.json", "api") as { created: number; files: string[] };
+      expect(r.created).toBe(1);
+      expect(readFileSync(join(dir, r.files[0]!), "utf8")).toContain("https://api.test/pets");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("imports a HAR file into request files", () => {
+    const dir = mkdtempSync(join(tmpdir(), "truspec-mcp-har-"));
+    try {
+      writeFileSync(
+        join(dir, "s.har"),
+        JSON.stringify({
+          log: { entries: [{ request: { method: "GET", url: "https://api.test/pets", headers: [] }, response: { status: 200 } }] },
+        }),
+      );
+      const r = importHarTool({ cwd: dir }, "s.har", "api", undefined, "baseUrl") as {
+        created: number;
+        files: string[];
+      };
+      expect(r.created).toBe(1);
+      expect(readFileSync(join(dir, r.files[0]!), "utf8")).toContain("{{baseUrl}}/pets");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("reports a HAR with nothing importable rather than writing files", () => {
+    const dir = mkdtempSync(join(tmpdir(), "truspec-mcp-har-empty-"));
+    try {
+      writeFileSync(join(dir, "s.har"), JSON.stringify({ log: { entries: [] } }));
+      const r = importHarTool({ cwd: dir }, "s.har") as { created: number; warnings: string[] };
+      expect(r.created).toBe(0);
+      expect(r.warnings.join(" ")).toMatch(/No importable entries/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

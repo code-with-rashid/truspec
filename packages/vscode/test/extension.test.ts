@@ -6,7 +6,7 @@ const repoRoot = resolve(import.meta.dirname, "..", "..", "..");
 // Shared mock state (hoisted so the vi.mock factory and the test see the same object).
 const S = vi.hoisted(() => ({
   commands: new Map<string, (...a: unknown[]) => unknown>(),
-  codeLens: null as { provideCodeLenses: () => unknown[] } | null,
+  codeLens: null as { provideCodeLenses: (d: { fileName: string }) => unknown[] } | null,
   // The extension reuses a single webview panel (module singleton), so createWebviewPanel fires once;
   // its `.title`/`.webview.html` are updated on each command. Track that one panel.
   panel: null as { title: string; webview: { html: string }; reveal: () => void } | null,
@@ -32,7 +32,7 @@ vi.mock("vscode", () => ({
     showQuickPick: async () => S.quickPick,
   },
   commands: { registerCommand: (id: string, cb: (...a: unknown[]) => unknown) => { S.commands.set(id, cb); return { dispose() {} }; } },
-  languages: { registerCodeLensProvider: (_s: unknown, p: { provideCodeLenses: () => unknown[] }) => { S.codeLens = p; return { dispose() {} }; } },
+  languages: { registerCodeLensProvider: (_s: unknown, p: { provideCodeLenses: (d: { fileName: string }) => unknown[] }) => { S.codeLens = p; return { dispose() {} }; } },
   workspace: {
     getConfiguration: () => ({ get: () => S.config }),
     findFiles: async () => S.specFiles,
@@ -60,8 +60,22 @@ describe("vscode extension", () => {
   });
 
   it("CodeLens provides Run / Run collection / Drift / Coverage lenses", () => {
-    const lenses = S.codeLens?.provideCodeLenses() as Array<{ command: { title: string } }>;
+    const lenses = S.codeLens?.provideCodeLenses({ fileName: "/w/get.tspec.yaml" }) as Array<{ command: { title: string } }>;
     expect(lenses.map((l) => l.command.title)).toEqual(["▶ Run", "Run collection", "Drift", "Coverage"]);
+  });
+
+  it("CodeLens does not offer '▶ Run' on a folder config, which can never be a request", () => {
+    // `**/*.tspec.yaml` matches folder.tspec.yaml, and running it produced an empty panel.
+    const lenses = S.codeLens?.provideCodeLenses({ fileName: "/w/folder.tspec.yaml" }) as Array<{ command: { title: string } }>;
+    expect(lenses.map((l) => l.command.title)).toEqual(["Run collection", "Drift", "Coverage"]);
+  });
+
+  it("runRequest on a folder config explains itself instead of running nothing", async () => {
+    S.panel = null;
+    S.activeFile = resolve(repoRoot, "examples", "blog", "folder.tspec.yaml");
+    await S.commands.get("truspec.runRequest")!();
+    expect(S.warnings.some((w) => /folder configuration, not a request/.test(w))).toBe(true);
+    expect(S.panel).toBeNull();
   });
 
   it("runRequest with no active .tspec.yaml warns instead of running", async () => {

@@ -81,7 +81,7 @@ TruSpec is a small monorepo. Most users only ever install `truspec` (the CLI).
 |---|---|---|
 | **`truspec`** | [`truspec`](https://www.npmjs.com/package/truspec) | The CLI: `run` / `drift` / `coverage` / `contract` / `gen` / `import` / `mock` / `serve`. |
 | **`@truspec/core`** | [`@truspec/core`](https://www.npmjs.com/package/@truspec/core) | The engine — pure TypeScript modules with no platform lock-in. Import it to build your own tooling. |
-| **`@truspec/mcp-server`** | [`@truspec/mcp-server`](https://www.npmjs.com/package/@truspec/mcp-server) | The agent surface — 11 MCP tools over the official SDK. |
+| **`@truspec/mcp-server`** | [`@truspec/mcp-server`](https://www.npmjs.com/package/@truspec/mcp-server) | The agent surface — 23 MCP tools over the official SDK. |
 | **`@truspec/web`** | — | The local web UI served by `truspec serve`. |
 | **TruSpec for VS Code** | — | CodeLens to run requests and check drift/coverage from your editor. |
 

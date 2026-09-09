@@ -202,12 +202,35 @@ export function createMockResponder(specText: string, opts: MockResponderOptions
       const m = method.toUpperCase();
       // Among all routes that match, prefer the most specific template (static beats parametric),
       // not merely the first in document order.
-      let route: MockRoute | undefined;
-      for (const r of routes) {
-        if (r.method !== m || !r.regex.test(path)) continue;
-        if (!route || compareSpecificity(r.pathTemplate, route.pathTemplate) > 0) route = r;
+      const pick = (want: string): MockRoute | undefined => {
+        let best: MockRoute | undefined;
+        for (const r of routes) {
+          if (r.method !== want || !r.regex.test(path)) continue;
+          if (!best || compareSpecificity(r.pathTemplate, best.pathTemplate) > 0) best = r;
+        }
+        return best;
+      };
+
+      // HEAD is GET without the body (RFC 9110 9.3.2). A spec almost never declares HEAD
+      // explicitly, so without this the mock 404s the existence check plenty of clients make
+      // before a GET — and a `method: HEAD` request in a collection could never be mocked at all.
+      const headOnly = m === "HEAD" && pick("HEAD") === undefined;
+      const route = headOnly ? pick("GET") : pick(m);
+
+      if (!route) {
+        // The path is defined, just not for this method. 404 reads as "wrong URL" and sends the
+        // reader looking in the wrong place; 405 with `Allow` says what the spec does define.
+        const allowed = new Set<string>();
+        for (const r of routes) if (r.regex.test(path)) allowed.add(r.method);
+        if (allowed.has("GET")) allowed.add("HEAD");
+        if (allowed.size === 0) return undefined;
+        const allow = [...allowed].sort();
+        return {
+          status: 405,
+          headers: { "content-type": "application/json", allow: allow.join(", ") },
+          body: JSON.stringify({ error: `${m} is not defined for ${path}`, allow }),
+        };
       }
-      if (!route) return undefined;
 
       const rule = rules.get(`${route.method} ${route.pathTemplate}`);
       if (rule) {
@@ -228,6 +251,11 @@ export function createMockResponder(specText: string, opts: MockResponderOptions
       if (route.body !== undefined) {
         headers["content-type"] = route.contentType ?? "application/json";
         body = JSON.stringify(route.body);
+      }
+      if (headOnly) {
+        // The headers GET would have sent, including the size of the body it would have sent.
+        headers["content-length"] = String(new TextEncoder().encode(body).length);
+        body = "";
       }
       return { status: route.status, headers, body };
     },

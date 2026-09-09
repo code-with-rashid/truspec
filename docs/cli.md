@@ -15,12 +15,17 @@ truspec --version
 
 | Command | One-liner |
 |---|---|
+| [`init`](#init) | Scaffold a runnable collection: a request, an environment, a `.gitignore`. |
 | [`run`](#run) | Run a request file or directory; non-zero exit on assertion failure. |
 | [`drift`](#drift) | Diff a collection against an OpenAPI spec; non-zero exit on drift. |
 | [`coverage`](#coverage) | Report which spec operations have a tested request. |
 | [`contract`](#contract) | Run the collection and validate responses against the spec's schemas. |
 | [`gen`](#gen) | Scaffold a request stub per operation from a spec. |
-| [`import`](#import) | Convert a Postman or Bruno collection to `.tspec.yaml`. |
+| [`codegen`](#codegen) | Render a request as a runnable snippet in another client or language. |
+| [`lint`](#lint) | Static checks over a collection; non-zero exit on an error. |
+| [`docs`](#docs) | Render a collection as committable Markdown documentation. |
+| [`env`](#env) | List, inspect, or diff the workspace's environments. |
+| [`import`](#import) | Convert a Postman/Bruno/Insomnia collection, curl command, or HAR. |
 | [`mock`](#mock) | Serve generated responses from a spec (offline). |
 | [`serve`](#serve) | Open the local web UI for a collection. |
 
@@ -40,23 +45,143 @@ Commands return conventional exit codes so they gate CI without extra glue:
 
 ---
 
+## `init`
+
+Scaffold a collection that **runs** — not a skeleton that needs three more edits first.
+
+```
+truspec init [<dir>] [--spec <openapi>] [--dir <requests>] [--base-url <url>] [--env <name>] [--force]
+```
+
+| Flag | Alias | Description |
+|---|---|---|
+| `--spec <openapi>` | `-s` | Scaffold a request per operation instead of one placeholder. |
+| `--dir <requests>` | | Subdirectory for requests. Default `api`. |
+| `--base-url <url>` | | Base URL the generated environment points at. Default `http://localhost:3000`. |
+| `--env <name>` | `-e` | Environment to create. Default `local`. |
+| `--force` | | Overwrite files that already exist. |
+
+It writes a folder config, a request, `environments/<env>.env.yaml`, a `.env.example`, and a
+`.gitignore` rule for `.env` — so the first secret anyone adds is not committed. Re-running is
+safe: existing files are reported and left alone.
+
+With `--spec`, the whole loop is green offline on the first try, because the scaffold asserts the
+status **the spec itself documents** and the generated environment declares every path parameter
+the requests introduce:
+
+```bash
+truspec init --spec openapi.yaml
+truspec mock --spec openapi.yaml --port 3000 &
+truspec run api --env local     # passes
+```
+
+---
+
 ## `run`
 
 Run a single request file or a whole directory of requests, evaluating each request's
 assertions.
 
 ```
-truspec run <path> [--env <name>] [--spec <openapi>] [--json] [--reporter <fmt>] [--output <file>] [--timeout <ms>]
+truspec run <path> [--env <name>] [--spec <openapi>] [--var k=v] [--grep <re>] [--tag <name>]
+                   [--bail] [--delay <ms>] [--json | --reporter <fmt>] [--output <file>] [--timeout <ms>]
 ```
 
 | Flag | Alias | Description |
 |---|---|---|
 | `--env <name>` | `-e` | Environment to load (`environments/<name>.env.yaml`). |
 | `--spec <openapi>` | `-s` | Validate each spec-linked request's response against the OpenAPI response schema. |
+| `--var <name=value>` | | Override or add a variable. Repeatable; wins over the environment. |
+| `--grep <regex>` | `-g` | Only run requests whose **name or path** matches (case-insensitive). |
+| `--tag <name>` | | Only run requests carrying this [`tag`](./file-format.md). Repeatable (OR). |
+| `--bail` | | Stop at the first failure; the remaining requests are reported as skipped. |
+| `--delay <ms>` | | Pause between requests, for rate-limited APIs. |
+| `--no-cookies` | | Send no cookies. By default a jar is shared across the run. |
+| `--data <file>` | `-d` | Run the selection once per row of a CSV or JSON dataset. |
+| `--repeat <n>` | | Run the selection `n` times (ignored when `--data` is given). |
+| `--watch` | `-w` | Re-run whenever a request, environment, `.env` or spec file changes. |
+| `--insecure` | `-k` | Skip TLS certificate verification (warns on stderr). |
+| `--proxy <url>` | | Route requests through a proxy. |
+| `--ca <file>` | | Trust an extra CA certificate. Repeatable. |
+| `--client-cert <file>` | | Client certificate for mutual TLS. |
+| `--client-key <file>` | | Client key for mutual TLS. |
+| `--client-key-passphrase <s>` | | Passphrase for an encrypted client key. |
 | `--json` | | Shorthand for `--reporter json`. |
-| `--reporter <fmt>` | | Output format: `human` (default), `json`, or `junit`. |
+| `--reporter <fmt>` | | Output format: `human` (default), `json`, `junit`, or `html`. |
 | `--output <file>` | `-o` | Write the report to a file instead of stdout. |
 | `--timeout <ms>` | | Per-request timeout. Default `30000`. Use `0` to disable. |
+
+**Data-driven runs.** `--data` runs the whole selection once per row, with the row's columns
+available as `{{variables}}`:
+
+```csv
+# pets.csv
+petId,expected
+1,Rex
+2,Fido
+```
+
+```bash
+truspec run ./api --env local --data pets.csv
+# [1] ✓ PASS  Get pet by id  (api/get-pet.tspec.yaml)  200 12ms
+# [2] ✓ PASS  Get pet by id  (api/get-pet.tspec.yaml)  200  9ms
+#
+# 2 passed, 0 failed, 2 iterations, 2 total
+```
+
+CSV is parsed properly (quoted fields, embedded commas and newlines, `""` escapes, CRLF), and a
+`.json` dataset is an array of objects. **Iterations are independent**: each starts from the same
+variables with a fresh cookie jar, so row 2 never inherits row 1's captured ids or session. The
+OAuth2 token cache *is* shared, since the credentials don't change between rows. Results carry
+their 1-based iteration, which appears in the human log and in JUnit test names — without it, N
+rows collapse into one testcase and a reporter shows only the last outcome.
+
+An empty or missing dataset is an error, not a pass: a gate that never exercised the data it was
+given has not passed.
+
+**Watch mode.** `--watch` re-runs on every change to a request, environment, `.env`, or spec file
+under the collection — the loop the plain-text format makes natural:
+
+```bash
+truspec run ./api --env local --watch
+```
+
+A burst of filesystem events from one editor save is debounced into a single run, a change arriving
+*during* a run is coalesced into exactly one follow-up (rather than queueing runs faster than they
+complete), and a run that throws is reported without ending the watch — a broken file is precisely
+when you keep editing. Watch mode exits only on Ctrl-C, returning the last run's exit code.
+
+<a id="transport-flags"></a>
+
+**TLS and proxy are flags, never request fields.** Whether to trust a self-signed certificate or
+route through a corporate proxy is a property of *where you are running*, not of the request — and
+a committed file saying "skip TLS verification" is a liability that outlives the afternoon it was
+needed. curl, git and every CI tool draw the line in the same place.
+
+```bash
+truspec run ./api --env staging --ca ./corp-root.pem
+truspec run ./api --proxy http://proxy.corp:8080
+truspec run ./api --client-cert ./client.pem --client-key ./client.key
+```
+
+`TRUSPEC_PROXY`, `HTTPS_PROXY`/`HTTP_PROXY` and `NODE_EXTRA_CA_CERTS` are read from the
+environment so CI can configure them once; an explicit flag wins per field.
+The same flags and variables are accepted by [`serve`](#serve), so the web UI reaches the same
+hosts the CLI does.
+`NODE_TLS_REJECT_UNAUTHORIZED` is deliberately **not** honored — turning off verification should
+be visible at the call site, not inherited from a variable someone set months ago for another
+tool. `--insecure` always warns.
+
+**Cookies.** A run shares one in-memory cookie jar, so a login request's session cookie is sent by
+the requests that follow — including cookies set on a redirect hop. The jar is never written to
+disk: a CI run must not inherit state from a previous one, and a session cookie is a credential
+with no business in a repository. A request that sets its own `Cookie` header wins over the jar.
+`--no-cookies` turns it off entirely.
+
+`--grep` and `--tag` combine as an **AND** (`--grep login --tag smoke` runs requests that match
+both); repeated `--tag` flags combine as an **OR**. A selection that matches nothing exits `1`
+with a message naming the filter — a filtered run that quietly passes because it ran zero requests
+is the false positive this gate exists to prevent.
 
 `<path>` may be a single `.tspec.yaml` file or a directory. A directory is searched
 recursively; requests run in `order` (ascending) then by file path, so
@@ -73,7 +198,12 @@ truspec run ./api/get-pet.tspec.yaml          # run one request
 truspec run ./api --env local --spec openapi.yaml  # also validate responses vs the spec
 truspec run ./api --json                       # machine-readable output
 truspec run ./api --reporter junit -o junit.xml   # JUnit XML for CI test reporters
+truspec run ./api --reporter html -o report.html  # standalone HTML artifact for a CI job
 truspec run ./api --timeout 5000               # 5s per-request timeout
+truspec run ./api --tag smoke --bail           # fast smoke gate: stop at the first failure
+truspec run ./api --grep '^billing/'           # just one folder
+truspec run ./api --var baseUrl=https://staging.example.com   # per-branch override in CI
+truspec run ./api --delay 200                  # 200ms between requests (rate limits)
 ```
 
 ### Human output
@@ -84,6 +214,28 @@ truspec run ./api --timeout 5000               # 5s per-request timeout
       ✗ status 500 fails == 201
 
 1 passed, 1 failed, 2 total
+```
+
+With `--bail` or a filter, the summary says what did not run:
+
+```
+1 passed, 1 failed, 2 skipped (bailed), 2 total, 3 deselected
+```
+
+### HTML report
+
+`--reporter html` writes one self-contained page: no external CSS, fonts, or scripts, so it
+renders from a `file://` path, a CI artifact viewer, or under a strict CSP. It shows the verdict,
+counts and total time, then a card per request with its assertions (failures first), captured
+values, and a collapsible response (headers + body, truncated past 200 KB). Response bodies and
+header values are attacker-controlled, so every interpolated value is HTML-escaped.
+
+```yaml
+# .github/workflows/api.yml
+- run: npx truspec run ./api --env ci --reporter html -o report.html
+- uses: actions/upload-artifact@v4
+  if: always()
+  with: { name: truspec-report, path: report.html }
 ```
 
 ### JSON output
@@ -289,14 +441,172 @@ truspec gen --spec openapi.yaml --out ./api
 
 ---
 
+## `env`
+
+Inspect the workspace's environments without opening the files.
+
+```
+truspec env [<name>] [--dir <collection>] [--json]
+truspec env --diff <a> <b> [--json]
+```
+
+```bash
+truspec env                      # every environment, with unresolved-secret warnings
+truspec env prod                 # one environment's variables and secret status
+truspec env --diff staging prod  # what differs
+```
+
+**Secret values are never printed** — only whether each resolves, and from where (the OS
+environment or the project `.env`). This output goes into terminals and gets pasted into issues; a
+tool that prints a token to help you debug a missing token has caused a worse problem than the one
+it solved.
+
+`--diff` exists for one boring failure in particular: staging declares a variable production does
+not, so the collection runs green everywhere except where it matters. A name present on only one
+side is reported as prominently as a changed value, and a name that is a plain variable on one side
+and a secret on the other is flagged as the real difference in kind that it is.
+
+---
+
+## `docs`
+
+Render a collection as Markdown — endpoints, parameters, headers, bodies, assertions, captures,
+the linked spec operation, and a runnable example per request.
+
+```
+truspec docs [<dir>] [--out <file>] [--title <text>] [--lang <target>|none] [--base-level <n>]
+```
+
+| Flag | Alias | Description |
+|---|---|---|
+| `--out <file>` | `-o` | Write to a file instead of stdout. |
+| `--title <text>` | | Document title. Defaults to the directory name. |
+| `--lang <target>` | `-l` | Example language ([any codegen target](#codegen)), or `none`. Default `curl`. |
+| `--base-level <n>` | | Heading level to start at (1–5), for embedding in a larger page. |
+
+**The output is deterministic** — no timestamp, no absolute paths, no run data. That is the point:
+the document is meant to live next to the collection and be reviewed in a diff, and a
+"generated on ⟨date⟩" line would make every regeneration a change, which is exactly how generated
+docs stop being regenerated.
+
+```bash
+truspec docs ./api -o docs/api.md
+git diff --exit-code docs/api.md   # CI: docs are up to date with the collection
+```
+
+An unreadable file is reported *in* the document and on stderr, and does not fail the command —
+[`lint`](#lint) is the command whose job it is to fail on a broken file.
+
+---
+
+## `lint`
+
+Static checks over a collection — everything knowable **without sending a request**. `run` tells
+you whether the API behaves; `lint` tells you whether the collection itself is sound.
+
+```
+truspec lint [<dir>] [--strict] [--json] [--disable <rule>] [--output <file>] [--list-rules]
+```
+
+| Flag | Alias | Description |
+|---|---|---|
+| `--strict` | | Also exit `1` on warnings. |
+| `--json` | | Machine-readable report (every finding carries a stable `rule` id). |
+| `--disable <rule>` | | Skip a rule. Repeatable. |
+| `--output <file>` | `-o` | Write the report to a file instead of stdout. |
+| `--list-rules` | | Print every rule with its severity and exit. |
+
+| Rule | Severity | Catches |
+|---|---|---|
+| `parse` | error | The file does not parse against the schema. |
+| `inline-secret` | error | A committed literal that looks like a real credential (JWT, `ghp_…`, `sk_live_…`, AWS key id, …). |
+| `bad-jsonpath` | error | A capture or assertion uses a JSONPath the engine cannot parse — it would silently never match. |
+| `no-assertions` | warning | The request asserts nothing, so a run can never fail on it. |
+| `duplicate-name` | warning | Two requests share a name, making reports ambiguous. |
+| `undeclared-var` | warning | A `{{var}}` no environment declares, no `.env` provides, and no *earlier* request captures. |
+| `absolute-url` | warning | An absolute URL under a folder that sets `baseUrl` — switching environments would not move it. |
+| `insecure-url` | warning | Plaintext `http://` to a host that is not the local machine. |
+| `body-on-bodiless-method` | error | A `GET` or `HEAD` request carries a body. The HTTP client refuses to send it, so the request can never run. |
+| `content-type-conflict` | warning | An explicit `Content-Type` names a different format than `body.type`. The header wins, so the body is sent under the wrong label. (A *narrower* type of the same format — `application/vnd.api+json` for a JSON body — is fine and is not flagged.) |
+| `capture-never-used` | warning | A captured variable is referenced by no later request — usually a rename applied on only one side. |
+
+**Exit code:** `1` if any error was found (or with `--strict`, any warning); otherwise `0`.
+
+```bash
+truspec lint ./api              # warnings are informational
+truspec lint ./api --strict     # CI gate: nothing at all may be wrong
+truspec lint ./api --json | jq '.findings[] | select(.severity=="error")'
+```
+
+The `undeclared-var` rule understands the run's own ordering: a variable a request captures counts
+as declared for every request that runs **after** it, and names a pre-request script sets with
+`tr.set("name", …)` count for that request. Environments are found the way the runner finds them,
+including nested collections, so linting a directory of several collections does not report every
+variable as missing.
+
+---
+
+## `codegen`
+
+Render a request as a runnable snippet in another HTTP client or language — for a bug report,
+a README, a colleague on a different stack, or pasting into a terminal.
+
+```
+truspec codegen <request.tspec.yaml> [--lang <target>] [--env <name>] [--output <file>] [--list]
+```
+
+| Flag | Alias | Description |
+|---|---|---|
+| `--lang <target>` | `-l` | Snippet target. Default `curl`. |
+| `--env <name>` | `-e` | Environment whose variables to substitute. |
+| `--output <file>` | `-o` | Write to a file instead of stdout. |
+| `--list` | | Print every supported target id and exit. |
+
+The snippet is built through the **same resolution the runner uses**: the folder chain's
+`baseUrl`, inherited headers, and auth are applied, and the environment's variables (including
+secrets from your OS env or project `.env`) are substituted. Anything still unresolved is left
+as its authored `{{name}}` placeholder rather than being silently blanked, so the reader can see
+exactly what to fill in.
+
+**Targets** (17): `curl`, `httpie`, `wget`, `powershell`, `javascript-fetch`, `javascript-axios`,
+`python-requests`, `python-httpx`, `go`, `ruby`, `php`, `java`, `kotlin`, `csharp`, `rust`,
+`swift`, `dart`.
+
+```bash
+truspec codegen api/get-pet.tspec.yaml --env local
+# curl -X GET 'http://localhost:4000/pets/1?expand=owner' \
+#   -H 'Accept: application/json' \
+#   -H 'Authorization: Bearer {{token}}'
+
+truspec codegen api/get-pet.tspec.yaml --lang python-requests --env local
+```
+
+The same generator backs the web UI's **code** button and the `truspec_codegen` MCP tool, so a
+snippet is identical wherever you ask for it.
+
+---
+
 ## `import`
 
-Convert an existing Postman or Bruno collection into `.tspec.yaml` files. See the
-[Importing guide](./importing.md) for details and caveats.
+Convert an existing Postman or Bruno collection — or a single `curl` command — into
+`.tspec.yaml` files. See the [Importing guide](./importing.md) for details and caveats.
 
 ```
-truspec import <postman|bruno> <path> [--out <dir>] [--dry-run]
+truspec import <postman|bruno|insomnia|curl|har> <path> [--out <dir>] [--dry-run] [--name <base>]
+truspec import curl -            # read the command from stdin
 ```
+
+For `curl`, the argument is the command itself when it isn't an existing file — so "Copy as cURL"
+from browser devtools pastes straight in:
+
+```bash
+truspec import curl "curl 'https://api.example.com/pets' -H 'Authorization: Bearer abc'" --out ./api
+```
+
+Headers, query params and the body become structured fields; a bearer or basic `Authorization`
+header (or `-u`) is lifted into an `auth` block; every imported request gets a
+`{ type: status, lt: 400 }` assertion so it is runnable immediately. Flags with no request-file
+equivalent (`-k`, `--proxy`, `-F` multipart) are reported as warnings rather than silently dropped.
 
 | Argument / flag | Alias | Description |
 |---|---|---|
@@ -332,7 +642,10 @@ truspec mock --spec <openapi> [--port <n>] [--delay <ms>] [--validate]
 | `--delay <ms>` | | Artificial response latency, in milliseconds. |
 | `--validate` | | Validate incoming requests against the spec (responds `400` on mismatch). |
 
-The server runs until interrupted (Ctrl+C). Routes that aren't in the spec return `404`.
+The server runs until interrupted (Ctrl+C). A path the spec doesn't define returns `404`; a path
+it does define, asked with a method it doesn't, returns `405` with an `Allow` header listing the
+methods that are defined. `HEAD` is served from the matching `GET` operation — same status and
+headers, no body — so you don't have to declare it in the spec.
 
 ```bash
 truspec mock --spec openapi.yaml                  # http://127.0.0.1:4000
@@ -349,6 +662,8 @@ engine (no CORS), and the UI is served from `@truspec/web`. See
 
 ```
 truspec serve [--dir <collection>] [--port <n>]
+             [--insecure] [--proxy <url>] [--ca <file>]
+             [--client-cert <file>] [--client-key <file>] [--client-key-passphrase <s>]
 ```
 
 | Flag | Alias | Description |
@@ -356,8 +671,14 @@ truspec serve [--dir <collection>] [--port <n>]
 | `--dir <collection>` | `-d` | Collection directory to serve. Default `.`. |
 | `--port <n>` | `-p` | Port. Default `4100`. |
 
+It also accepts every [transport flag](#transport-flags) `run` takes, and reads the same
+environment variables — so a host the CLI can reach is reachable from the UI too. Without
+this, a collection that passes in CI against a self-signed staging box would fail in the
+browser client, with nothing on screen to explain the difference.
+
 ```bash
 truspec serve --dir ./api       # opens http://localhost:4100
+truspec serve --dir ./api --ca ./corp-root.pem
 ```
 
 > Requires the web UI to be built. If you installed `truspec` from npm it's bundled; from

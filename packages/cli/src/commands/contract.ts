@@ -3,6 +3,7 @@ import { parseArgs } from "node:util";
 import { contractReport } from "@truspec/core/spec";
 import { formatContract } from "../output";
 import { type CommandDeps, emit, num, resolveDeps } from "./deps";
+import { argError } from "../args";
 
 /**
  * `truspec contract --spec <openapi> [<dir>] [--env <name>]` — run the collection and
@@ -25,7 +26,7 @@ export async function contractCommand(argv: string[], deps: Partial<CommandDeps>
     values = parsed.values;
     positionals = parsed.positionals;
   } catch (e) {
-    d.stderr(`${(e as Error).message}\n`);
+    d.stderr(argError(e, "contract", options));
     return 2;
   }
 

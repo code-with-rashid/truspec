@@ -25,7 +25,8 @@ The API-client market runs from **local-and-minimal** (Bruno) to **cloud-and-eve
 | OpenAPI **response contract** validation | ✗ | ✗ | ✓ |
 | Local **mock server** (no cloud) | cloud | ✗ | ✓ |
 | First-party **MCP server** for agents | bolted-on | community | ✓ |
-| Import from Postman + Bruno | — | partial | ✓ |
+| Import from Postman + Bruno + Insomnia + curl + HAR | — | partial | ✓ |
+| Code generation (17 clients/langs) | ✓ | ✓ | ✓ |
 
 ## Quickstart
 
@@ -51,6 +52,10 @@ assertions:
 spec:
   operation: "GET /pets/{id}"   # links back to your OpenAPI spec
 ```
+
+See the [blog](./examples/blog/API.md) and [petstore](./examples/petstore/API.md) example
+collections rendered by `truspec docs` — those files are regenerated and diffed in CI, so they are
+never out of date with the collections they describe.
 
 **Try it now** — clone the repo for a ready-made collection + OpenAPI spec and run the whole loop offline. These commands work as-is (no placeholders to fill in):
 
@@ -123,7 +128,7 @@ Or add it to your MCP client config:
 }
 ```
 
-Tools exposed: `truspec_list_collections`, `truspec_run_request`, `truspec_run_collection`, `truspec_create_request`, `truspec_update_request`, `truspec_drift`, `truspec_coverage`, `truspec_contract`, `truspec_scaffold_from_spec`, `truspec_mock_start`, `truspec_mock_stop`. Create/update operations validate against the schema before writing.
+Tools exposed: `truspec_list_collections`, `truspec_run_request`, `truspec_run_collection`, `truspec_create_request`, `truspec_update_request`, `truspec_drift`, `truspec_coverage`, `truspec_contract`, `truspec_scaffold_from_spec`, `truspec_mock_start`, `truspec_mock_stop`, `truspec_lint`, `truspec_docs`, `truspec_environments`, `truspec_import_curl`, `truspec_import_har`, `truspec_import_insomnia`, `truspec_codegen`, `truspec_codegen_targets`. Create/update operations validate against the schema before writing.
 
 ## How it fits together
 
@@ -136,7 +141,7 @@ Tools exposed: `truspec_list_collections`, `truspec_run_request`, `truspec_run_c
   ├─ importers   Postman v2.1 + Bruno → .tspec.yaml
   └─ mock        local mock server generated from a spec
 truspec              — the CLI (run / drift / coverage / contract / gen / import / mock / serve)
-@truspec/mcp-server  — the agent surface (10 MCP tools)
+@truspec/mcp-server  — the agent surface (23 MCP tools)
 @truspec/web         — the web UI + local server (truspec serve)
 ```
 
@@ -170,7 +175,7 @@ The CLI runs on Node ≥ 22. A Bun-compiled single binary for zero-install distr
 
 ## Status & roadmap
 
-**Shipped:** format + JSON Schema · runner (REST + GraphQL, auth, request chaining/capture, **pre-/post-request scripts**) · CLI (`run` [+ JUnit], `drift`, `coverage`, `contract`, `gen`, `import`, `mock`, `serve`) · OpenAPI drift (added/removed/**changed** + **`--live`** API probe) + coverage + **response contract validation** (`{ type: schema }` · `run --spec` · `contract`) · **local mock server** (latency + **request validation**) · `.env` + secrets (**masked in run output**) · Postman/Bruno import · MCP server (11 tools) · **web UI** (`truspec serve`, with a **Flow view** for visualizing + running request chains as a graph) · **installable desktop app** (Tauri; unsigned installers for Windows/macOS/Linux — see [Download](#download)) · **VS Code extension** (CodeLens + results view, pre-release).
+**Shipped:** format + JSON Schema · runner (REST + GraphQL, auth, request chaining/capture, **pre-/post-request scripts**) · CLI (`run` [+ JUnit], `drift`, `coverage`, `contract`, `gen`, `import`, `mock`, `serve`) · OpenAPI drift (added/removed/**changed** + **`--live`** API probe) + coverage + **response contract validation** (`{ type: schema }` · `run --spec` · `contract`) · **local mock server** (latency + **request validation**) · `.env` + secrets (**masked in run output**) · Postman/Bruno import · MCP server (23 tools) · **web UI** (`truspec serve`, with a **Flow view** for visualizing + running request chains as a graph) · **installable desktop app** (Tauri; unsigned installers for Windows/macOS/Linux — see [Download](#download)) · **VS Code extension** (CodeLens + results view, pre-release).
 **Next:** publish to the Marketplace · **Bun single-binary** distribution · **in-UI request editing**.
 
 Deferred by design (not bloat): hosted dashboards, visual flow builders, exotic protocols, mandatory cloud sync.

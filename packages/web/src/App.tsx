@@ -10,6 +10,8 @@ import {
 import {
   coverage as apiCoverage,
   createFolder,
+  type EnvListReport,
+  getEnvironments,
   deletePath,
   drift as apiDrift,
   duplicatePath,
@@ -44,6 +46,7 @@ import { FolderTree, type RowAction, type RowActionsController, type RowKind } f
 import { NewFolderModal } from "./components/NewFolderModal";
 import { NewRequestModal, type NewRequestPayload } from "./components/NewRequestModal";
 import { contractInfo, RequestWorkspace, specRefOf, type ReqTab, type RespTab } from "./components/RequestWorkspace";
+import { ShortcutsModal } from "./components/ShortcutsModal";
 import { TabStrip } from "./components/TabStrip";
 import { statusClass } from "./format-utils";
 import { FlowView } from "./FlowView";
@@ -129,10 +132,36 @@ interface SpecOpRow {
   badge: "tested" | "changed" | "untested";
 }
 
+/** True when the event came from somewhere the user is typing, where a bare `?` is just a `?`. */
+function isTypingTarget(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  if (!el || typeof el.tagName !== "string") return false;
+  return (
+    el.tagName === "INPUT" ||
+    el.tagName === "TEXTAREA" ||
+    el.tagName === "SELECT" ||
+    el.isContentEditable === true
+  );
+}
+
 const MIN_SIDEBAR = 200;
 const MAX_SIDEBAR = 480;
 const MIN_RAIL = 260;
 const MAX_RAIL = 560;
+/** Below this the request pane stops being usable, so a panel has to give way. */
+const MIN_MAIN = 500;
+const RAIL_KEY = "truspec.railHidden";
+
+/** Current viewport width, so layout decisions can be made in JS (the grid is an inline style). */
+function useViewportWidth(): number {
+  const [width, setWidth] = useState(() => window.innerWidth);
+  useEffect(() => {
+    const onResize = (): void => setWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  return width;
+}
 
 /** Drag-to-resize for a grid column's pixel width, persisted across sessions. */
 function usePanelWidth(storageKey: string, initial: number, min: number, max: number, invert: boolean) {
@@ -172,6 +201,22 @@ function usePanelWidth(storageKey: string, initial: number, min: number, max: nu
 }
 
 export function App() {
+  const viewportWidth = useViewportWidth();
+  const [railHidden, setRailHidden] = useState<boolean>(
+    () => window.localStorage.getItem(RAIL_KEY) === "1",
+  );
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  /**
+   * Actions the window-level shortcut handler needs. They are defined much further down, so a
+   * ref (assigned during render, below) is what lets one handler subscribe once instead of the
+   * effect re-binding on every keystroke — or, worse, reaching a not-yet-initialised const.
+   */
+  const shortcutActions = useRef<{
+    run: () => void;
+    save: () => void;
+    stepTab: (delta: number) => void;
+    closeTab: () => void;
+  }>({ run: () => {}, save: () => {}, stepTab: () => {}, closeTab: () => {} });
   const [state, setState] = useState<WorkspaceState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tabs, setTabs] = useState<OpenTab[]>([]);
@@ -181,6 +226,12 @@ export function App() {
   const [spec, setSpec] = useState("");
   const [running, setRunning] = useState(false);
   const [lastRun, setLastRun] = useState<{ missingSecrets: string[] } | null>(null);
+  const [envReport, setEnvReport] = useState<EnvListReport | null>(null);
+  const refreshEnvReport = useCallback((): void => {
+    void getEnvironments()
+      .then(setEnvReport)
+      .catch(() => setEnvReport(null));
+  }, []);
   const [ranResults, setRanResults] = useState<Map<string, RunResult>>(new Map());
   const [history, setHistory] = useState<HistoryEntry[]>(loadHistory);
   const [driftRep, setDriftRep] = useState<DriftReport | null>(null);
@@ -230,6 +281,12 @@ export function App() {
   const [railW, railDrag] = usePanelWidth("truspec.railWidth", 340, MIN_RAIL, MAX_RAIL, true);
 
   const activeTab = tabs.find((t) => t.path === activeTabPath) ?? null;
+  // Mirrors for the window-level shortcut handler, which is bound once and so cannot close over
+  // per-render values.
+  const tabsRef = useRef(tabs);
+  tabsRef.current = tabs;
+  const activeTabPathRef = useRef(activeTabPath);
+  activeTabPathRef.current = activeTabPath;
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -265,7 +322,8 @@ export function App() {
     apiMockStatus()
       .then(setMock)
       .catch(() => {});
-  }, []);
+    refreshEnvReport();
+  }, [refreshEnvReport]);
 
   // Fetch content for any tab that doesn't have it yet (freshly opened). A ref-tracked in-flight
   // set (rather than relying purely on `detail === null`) stops a second fetch from firing for the
@@ -322,13 +380,45 @@ export function App() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+      const mod = e.metaKey || e.ctrlKey;
+      // Send and save used to be bound inside the request view, so they only worked while focus
+      // happened to be in it — pressing them after clicking the sidebar did nothing. They are
+      // window-level now, which is what every editor does and what people expect.
+      if (mod && e.key === "Enter") {
+        e.preventDefault();
+        shortcutActions.current.run();
+        return;
+      }
+      if (mod && !e.altKey && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        shortcutActions.current.save();
+        return;
+      }
+      if (mod && e.altKey) {
+        if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+          e.preventDefault();
+          shortcutActions.current.stepTab(e.key === "ArrowLeft" ? -1 : 1);
+          return;
+        }
+        if (e.key.toLowerCase() === "w") {
+          e.preventDefault();
+          shortcutActions.current.closeTab();
+          return;
+        }
+      }
+      if (mod && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setPaletteOpen((v) => !v);
         setPaletteQ("");
-      } else if (e.key === "Escape" && paletteOpen) {
-        setPaletteOpen(false);
+        return;
       }
+      // `?` is a plain character, so it must not fire while the user is typing one.
+      if (e.key === "?" && !mod && !isTypingTarget(e.target)) {
+        e.preventDefault();
+        setShortcutsOpen(true);
+        return;
+      }
+      if (e.key === "Escape" && paletteOpen) setPaletteOpen(false);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -1070,6 +1160,36 @@ export function App() {
     return map;
   }, [state]);
 
+  /** Save the open request from anywhere, not only from inside the request view. */
+  const saveActiveTab = useCallback((): void => {
+    const tab = tabsRef.current.find((t) => t.path === activeTabPathRef.current);
+    if (!tab?.draft || !tab.dirty) return;
+    const { raw: _raw, ...request } = tab.draft as typeof tab.draft & { raw?: string };
+    void doSaveInline(tab.path, request as unknown as Record<string, unknown>);
+  }, [doSaveInline]);
+
+  /** Move `delta` tabs from the active one, wrapping at both ends. */
+  const stepTab = useCallback((delta: number): void => {
+    const open = tabsRef.current;
+    if (open.length < 2) return;
+    const at = open.findIndex((t) => t.path === activeTabPathRef.current);
+    const next = open[(((at === -1 ? 0 : at) + delta) % open.length + open.length) % open.length];
+    if (next) setActiveTabPath(next.path);
+  }, []);
+
+  // Assigned during render so the window-level handler always calls the current closures without
+  // re-subscribing on every keystroke.
+  shortcutActions.current = {
+    run: () => {
+      if (activeTabPathRef.current && !running) void doRun(activeTabPathRef.current);
+    },
+    save: saveActiveTab,
+    stepTab,
+    closeTab: () => {
+      if (activeTabPathRef.current) requestCloseTab(activeTabPathRef.current);
+    },
+  };
+
   const activeSpecRef = specRefOf(activeTab?.detail ?? null);
   const isStale = !!activeSpecRef && !!driftRep?.removed.includes(activeSpecRef);
   const contract = contractInfo(activeTab?.detail ?? null, selectedResult);
@@ -1089,9 +1209,36 @@ export function App() {
       { id: "view-mock", label: "go to mock view" },
       { id: "view-flow", label: "go to flow view" },
       { id: "run-all", label: "run all requests" },
+      // Every one of these was previously reachable only by knowing where its button lives; the
+      // palette is where people look for an action they cannot immediately see.
+      { id: "run-request", label: "run the open request" },
+      { id: "save-request", label: "save the open request" },
+      { id: "new-request", label: "new request" },
+      { id: "new-folder", label: "new folder" },
+      { id: "toggle-theme", label: "toggle light / dark theme" },
+      { id: "toggle-rail", label: "show or hide the spec panel" },
+      { id: "shortcuts", label: "keyboard shortcuts" },
     ];
     return all.filter((c) => !q || c.label.toLowerCase().includes(q));
   }, [paletteQ]);
+
+  /** Declared secrets with no value on the *selected* environment. */
+  const unresolvedForEnv = useMemo(
+    () => (env ? (envReport?.environments.find((e) => e.name === env)?.unresolved ?? []) : []),
+    [env, envReport],
+  );
+
+  const toggleRail = useCallback((): void => {
+    setRailHidden((v) => {
+      const next = !v;
+      try {
+        window.localStorage.setItem(RAIL_KEY, next ? "1" : "0");
+      } catch {
+        // private mode / storage disabled — the toggle still works for this session.
+      }
+      return next;
+    });
+  }, []);
 
   const runPaletteCommand = useCallback(
     (id: string) => {
@@ -1101,8 +1248,15 @@ export function App() {
       else if (id === "view-spec") setView("spec");
       else if (id === "view-mock") setView("mock");
       else if (id === "view-flow") setView("flow");
+      else if (id === "run-request") shortcutActions.current.run();
+      else if (id === "save-request") shortcutActions.current.save();
+      else if (id === "new-request") setQuickNewPrefix("");
+      else if (id === "new-folder") openNewFolder();
+      else if (id === "toggle-theme") setTheme(theme === "dark" ? "light" : "dark");
+      else if (id === "toggle-rail") toggleRail();
+      else if (id === "shortcuts") setShortcutsOpen(true);
     },
-    [doRun],
+    [doRun, openNewFolder, toggleRail, theme],
   );
 
   const jumpTo = useCallback(
@@ -1114,7 +1268,11 @@ export function App() {
     [openTab],
   );
 
-  const showRail = view === "workspace" && !editing;
+  // The rail is supplementary — its contents are also the `spec` view — so it is the panel that
+  // gives way when the window cannot hold three columns. Without this the workspace grid simply
+  // overflowed and the rail was clipped mid-word with no affordance to reach the rest of it.
+  const railFits = viewportWidth >= sidebarW + railW + MIN_MAIN + 40;
+  const showRail = view === "workspace" && !editing && !railHidden && railFits;
 
   return (
     <div className="app">
@@ -1168,6 +1326,17 @@ export function App() {
             ))}
           </select>
         </label>
+        {unresolvedForEnv.length > 0 && (
+          // Proactive, not post-mortem: this used to surface only in the status bar AFTER a run
+          // had already failed on it.
+          <button
+            className="badge-stale env-warn"
+            title={`no value for: ${unresolvedForEnv.join(", ")} — set them, or open environments to see where they resolve from`}
+            onClick={() => setEnvModalOpen(true)}
+          >
+            ⚠ {unresolvedForEnv.length} unset
+          </button>
+        )}
         <button className="btn ghost" onClick={() => setEnvModalOpen(true)} title="manage environments" aria-label="manage environments">
           ⚙
         </button>
@@ -1184,6 +1353,22 @@ export function App() {
 
         <button className="btn run" disabled={running} onClick={() => doRun(undefined)}>
           {running ? "running…" : "▶ run all"}
+        </button>
+        <button
+          className="btn ghost"
+          onClick={toggleRail}
+          disabled={!railFits}
+          title={
+            railFits
+              ? railHidden
+                ? "show the spec panel"
+                : "hide the spec panel"
+              : "the window is too narrow for the spec panel — use the spec tab"
+          }
+          aria-label={railHidden ? "show spec panel" : "hide spec panel"}
+          aria-pressed={!railHidden}
+        >
+          {railHidden || !railFits ? "▤" : "▥"}
         </button>
         <button className="btn ghost" onClick={() => setTheme(theme === "dark" ? "light" : "dark")} title="toggle theme" aria-label="toggle theme">
           {theme === "dark" ? "☾" : "☀"}
@@ -1272,6 +1457,21 @@ export function App() {
                   handleFolderDrop("");
                 }}
               >
+                {(state?.errors?.length ?? 0) > 0 && (
+                  // A file that does not parse belongs to no folder and appears in no row, so
+                  // without this it is simply missing from the sidebar with nothing to click.
+                  <div className="tree-errors" role="alert">
+                    <div className="tree-errors-head">
+                      {state!.errors.length} file{state!.errors.length === 1 ? "" : "s"} could not be read
+                    </div>
+                    {state!.errors.map((e) => (
+                      <details key={e.path} className="tree-error">
+                        <summary>{e.path}</summary>
+                        <pre>{e.error}</pre>
+                      </details>
+                    ))}
+                  </div>
+                )}
                 {treeNoMatches ? (
                   <div className="muted pad">no requests match "{treeQuery.trim()}".</div>
                 ) : (
@@ -1422,6 +1622,8 @@ export function App() {
                 isStale={isStale}
                 contract={contract}
                 envVarNames={envVarNames}
+                path={activeTab.path}
+                env={env}
                 onRun={() => doRun(activeTab.path)}
                 onEdit={openEdit}
                 onFieldChange={setActiveTabField}
@@ -1666,6 +1868,8 @@ export function App() {
         <span className="seg brandlet">TRUSPEC</span>
       </footer>
 
+      {shortcutsOpen && <ShortcutsModal onClose={() => setShortcutsOpen(false)} />}
+
       {paletteOpen && (
         <CommandPalette
           query={paletteQ}
@@ -1732,7 +1936,10 @@ export function App() {
           environments={state?.environments ?? []}
           onClose={() => setEnvModalOpen(false)}
           onDelete={deleteEnvironment}
-          onChanged={() => void onEnvironmentsChanged()}
+          onChanged={() => {
+            refreshEnvReport();
+            void onEnvironmentsChanged();
+          }}
         />
       )}
 

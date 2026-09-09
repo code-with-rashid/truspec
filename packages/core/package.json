@@ -44,9 +44,29 @@
       "types": "./dist/exporters/index.d.ts",
       "import": "./dist/exporters/index.js"
     },
+    "./codegen": {
+      "types": "./dist/codegen/index.d.ts",
+      "import": "./dist/codegen/index.js"
+    },
+    "./docs": {
+      "types": "./dist/docs/index.d.ts",
+      "import": "./dist/docs/index.js"
+    },
+    "./jsonpath": {
+      "types": "./dist/jsonpath/index.d.ts",
+      "import": "./dist/jsonpath/index.js"
+    },
+    "./lint": {
+      "types": "./dist/lint/index.d.ts",
+      "import": "./dist/lint/index.js"
+    },
     "./mock": {
       "types": "./dist/mock/index.d.ts",
       "import": "./dist/mock/index.js"
+    },
+    "./http": {
+      "types": "./dist/http/index.d.ts",
+      "import": "./dist/http/index.js"
     },
     "./schema/*": "./schema/*"
   },

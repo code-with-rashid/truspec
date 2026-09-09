@@ -1,8 +1,9 @@
-# Importing from Postman & Bruno
+# Importing from Postman, Bruno, Insomnia, curl & HAR
 
 `truspec import` converts an existing collection into TruSpec's plain-text format so you
-can migrate without rebuilding by hand. It supports **Postman v2.1** collections and
-**Bruno** directories.
+can migrate without rebuilding by hand. It supports **Postman v2.1** collections,
+**Bruno** directories, **Insomnia** exports, **`curl` command lines**, and **HAR** exports from
+browser devtools.
 
 ---
 
@@ -14,6 +15,18 @@ truspec import postman ./postman_collection.json --out ./api
 
 # Bruno — a directory of .bru files
 truspec import bruno ./bruno-collection --out ./api
+
+# curl — the command itself, straight from devtools' "Copy as cURL"
+truspec import curl "curl 'https://api.example.com/pets' -H 'Accept: application/json'" --out ./api
+
+# curl — piped in
+pbpaste | truspec import curl - --out ./api
+
+# Insomnia — an exported collection JSON (v4 or v5)
+truspec import insomnia ./insomnia_export.json --out ./api
+
+# HAR — "Save all as HAR" from the browser's Network panel
+truspec import har ./session.har --out ./api --filter api.example.com --base-url-var baseUrl
 ```
 
 Each source request becomes one `<name>.tspec.yaml` file, preserving the folder structure
@@ -45,15 +58,101 @@ truspec import postman ./postman_collection.json
 ## Options
 
 ```
-truspec import <postman|bruno> <path> [--out <dir>] [--dry-run]
+truspec import <postman|bruno|insomnia|curl|har> <path> [--out <dir>] [--dry-run] [--name <base>]
+                                             [--filter <substr>] [--base-url-var <name>]
+                                             [--keep-noise-headers] [--include-options]
 ```
 
 | Argument / flag | Alias | Description |
 |---|---|---|
-| `<postman\|bruno>` | | **Required.** Source format. |
-| `<path>` | | **Required.** Postman JSON file, or Bruno directory. |
+| `<postman\|bruno\|insomnia\|curl\|har>` | | **Required.** Source format. |
+| `<path>` | | **Required.** Postman JSON, Bruno directory, a curl command (`-` for stdin), or a `.har`. |
 | `--out <dir>` | `-o` | Destination directory. Omit for a dry-run preview. |
 | `--dry-run` | | Force preview mode even when `--out` is given. |
+| `--name <base>` | | curl only: base filename, instead of a slug of the derived request name. |
+| `--filter <substr>` | | HAR only: import only entries whose URL contains this. |
+| `--base-url-var <name>` | | HAR only: replace the recorded origin with `{{name}}`. |
+| `--keep-noise-headers` | | HAR only: keep `sec-*`, `user-agent`, … (stripped by default). |
+| `--include-options` | | HAR only: keep `OPTIONS` preflights (skipped by default). |
+
+---
+
+## Importing from Insomnia
+
+Insomnia stores a collection as a **flat** `resources` array with `parentId` pointers, not a tree,
+so folders are reassembled by walking parents (with a cycle guard — a malformed export can point a
+group at itself). Rows the user **disabled** are skipped rather than imported as live headers and
+parameters, and `{{ _.var }}` templates are normalized to `{{var}}`.
+
+An OAuth2 block is imported only for the grants a machine can complete unattended
+(`client_credentials`, `password`, `refresh_token`); an authorization-code flow needs a browser, so
+it is reported rather than imported as a block that could never run.
+
+---
+
+## Importing a HAR
+
+A HAR is the browser's own record of what an app actually did — the fastest route from
+"reproduce this bug" to a committed regression test. The import is deliberately opinionated so
+the result reads like a collection someone wrote rather than a packet dump:
+
+- **Browser noise is stripped** — `sec-*`, `user-agent`, `:authority`, `content-length`, `host`,
+  `accept-encoding` and friends. Several are actively wrong to replay (`content-length` is
+  recomputed; `accept-encoding` would make the recorded body unreadable), and keeping the rest
+  would bury the two headers that matter under thirty that don't. `--keep-noise-headers` opts out.
+- **`OPTIONS` preflights are skipped** — they are transport, not API surface.
+- **Each request asserts the status that was actually recorded**, so the import captures observed
+  behavior rather than a generic "didn't 4xx".
+- **`--base-url-var`** rewrites the recorded origin to `{{baseUrl}}`, which is what makes the
+  result usable against staging as well as the host it was recorded from.
+- Bearer/basic `Authorization` becomes structured `auth`; JSON and urlencoded bodies become typed
+  bodies. A multipart entry imports its field names and values, with a warning that **a HAR does
+  not store file contents**.
+
+Because a HAR usually contains real session tokens, treat the output the way you would a pasted
+curl command: move credentials into an [environment secret](./concepts.md) before committing.
+
+---
+
+## Importing a curl command
+
+“Copy as cURL” in Chrome/Firefox devtools is the shortest path from a request you just watched
+happen to a request you can replay, assert on, and commit. Paste the command as the argument (or
+pipe it in with `-`) and TruSpec converts it into a real request file:
+
+```bash
+truspec import curl "curl 'https://api.example.com/pets?expand=owner' \
+  -H 'Authorization: Bearer abc' -H 'Accept: application/json'" --out ./api
+```
+
+```yaml
+# api/get-pets.tspec.yaml
+tspec: "0.1"
+name: GET pets
+method: GET
+url: https://api.example.com/pets
+headers:
+  Accept: application/json
+query:
+  expand: owner
+auth:
+  type: bearer
+  token: abc
+assertions:
+  - { type: status, lt: 400 }
+```
+
+What it handles: shell quoting (including `$'…'` and `\`-continuations), `-X`, `-H`, `-d` /
+`--data-raw` / `--data-urlencode` / `--json`, `-G`, `-I`, `-F`, `-u`, `-A`, `-e`, `-b`, `--url`,
+and combined short flags (`-XPOST`). A bearer or basic `Authorization` header becomes an `auth`
+block instead of a raw header. Several commands in one paste import as several files.
+
+`-F` becomes a real [`multipart` body](./file-format.md#multipart), including `@path` file parts
+and their `;type=` / `;filename=` modifiers.
+
+What it warns about rather than silently dropping: `-k` (skip TLS verification) and `--proxy`,
+neither of which has a request-file equivalent. Also note that a pasted command usually contains **real credentials** —
+move them into an [environment secret](./concepts.md) before committing the file.
 
 ---
 

@@ -18,17 +18,24 @@
   --ink: #14161b;
   --panel: #181b21;
   --panel-2: #1e222a;
-  /* Decorative surfaces only (progress tracks, subtle fills) — never a direct background
-     for --dimmer text: at this lightness --dimmer no longer clears WCAG AA 4.5:1 on it. */
   --panel-3: #242932;
   --line: #2b303a;
   --line-2: #373d48;
   --text: #d5d9e0;
   --dim: #9499a3;
-  --dimmer: #868c96;
+  /* Raised from #868c96, which cleared AA on --panel (5.10) but only 4.31 on --panel-3. That used
+     to be handled by a comment telling future authors not to put muted text on --panel-3 — a rule
+     no one can enforce while writing a new component. #8a909a clears every panel surface (4.54 /
+     4.96 / 5.37), so the constraint simply no longer exists. */
+  --dimmer: #8a909a;
 
   --lime: #c2d96b;
   --on-lime: #181b21;
+  /* The accent used as TEXT (badges, the dirty bar, the response timing). The dark palette's
+     accents already clear WCAG AA wherever they are drawn; the light palette's do not, so text
+     and fill are separate roles rather than one variable doing both jobs. */
+  --lime-ink: var(--lime);
+  --amber-ink: var(--amber);
   --green: #84c98d;
   --red: #e57689;
   --amber: #e0b072;
@@ -51,9 +58,15 @@
   --line-2: #cbc6b6;
   --text: #1a1c20;
   --dim: #5d6157;
-  --dimmer: #6b6f63;
+  /* Raised from #6b6f63, which cleared AA on --panel (4.93) but only reached 4.36 on --panel-3 —
+     exactly the constraint the dark palette's comment warns about. #5f6357 clears both. */
+  --dimmer: #5f6357;
   --lime: #5f7a00;
   --on-lime: #fbfaf5;
+  /* Measured, not guessed: as text, #5f7a00 reaches only 3.85:1 on the badge tint and 4.49:1 on
+     the response panel, and #96650f only 3.94:1 on the dirty bar — all under AA. */
+  --lime-ink: #4c6100;
+  --amber-ink: #7d520b;
   /* Darkened from the previously-shipped values: those cleared WCAG AA only inside a bordered
      badge; used as plain text (status pills, footer segments, dashboard stat numbers — all new
      in this redesign) against --panel/--panel-2 they fell under 4.5:1. */
@@ -458,7 +471,7 @@ select:focus {
   padding: 2px;
 }
 .tree-search-clear:hover {
-  color: var(--fg);
+  color: var(--text);
 }
 .collection-block {
   position: sticky;
@@ -496,7 +509,7 @@ select:focus {
   min-width: 0;
   font-size: 13px;
   font-weight: 600;
-  color: var(--fg);
+  color: var(--text);
   text-transform: none;
   letter-spacing: 0;
   white-space: nowrap;
@@ -506,7 +519,10 @@ select:focus {
 .collection-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  /* Wrap: four buttons do not fit the sidebar's default 270px, and a non-wrapping row silently
+     clipped "export" off the right edge at the default width. */
+  flex-wrap: wrap;
+  gap: 6px 8px;
   padding: 0 14px 9px;
   border-bottom: 1px solid var(--line);
 }
@@ -526,7 +542,7 @@ select:focus {
 }
 .folder-row:hover {
   background: var(--panel-3);
-  color: var(--fg);
+  color: var(--text);
 }
 .folder-row.dragging,
 .req.dragging {
@@ -536,7 +552,7 @@ select:focus {
   background: var(--panel-3);
   outline: 1px dashed var(--lime);
   outline-offset: -2px;
-  color: var(--fg);
+  color: var(--text);
 }
 .folder-chev {
   display: inline-block;
@@ -585,7 +601,7 @@ select:focus {
 }
 .row-action-btn:hover {
   background: var(--panel-2);
-  color: var(--fg);
+  color: var(--text);
 }
 .row-action-btn.danger:hover {
   color: var(--red);
@@ -910,22 +926,34 @@ select:focus {
 .tab-strip-item {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 10px;
   border-right: 1px solid var(--line);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+/* The selectable part is its own button now (see TabStrip.tsx); it carries the padding and the
+   colours the row used to, so the visual result is unchanged. */
+.tab-strip-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 4px 8px 10px;
+  border: 0;
+  background: transparent;
   cursor: pointer;
   white-space: nowrap;
   color: var(--dim);
+  font: inherit;
   font-size: 12px;
-  flex-shrink: 0;
 }
 .tab-strip-item:hover {
   background: var(--panel-3);
 }
 .tab-strip-item.active {
   background: var(--panel-2);
-  color: var(--fg);
   box-shadow: inset 0 -2px 0 var(--lime);
+}
+.tab-strip-item.active .tab-strip-main {
+  color: var(--text);
 }
 .tab-strip-name {
   max-width: 160px;
@@ -946,11 +974,12 @@ select:focus {
   cursor: pointer;
   font-size: 10px;
   padding: 2px;
+  margin-right: 8px;
   border-radius: 3px;
   flex-shrink: 0;
 }
 .tab-strip-close:hover {
-  color: var(--fg);
+  color: var(--text);
   background: var(--panel-2);
 }
 
@@ -972,6 +1001,7 @@ select:focus {
 .req-top {
   display: flex;
   align-items: stretch;
+  flex-wrap: wrap;
   gap: 10px;
 }
 .url-bar {
@@ -981,8 +1011,10 @@ select:focus {
   border: 1px solid var(--line-2);
   border-radius: 8px;
   overflow: hidden;
-  flex: 1;
-  min-width: 0;
+  /* The URL is the most important field in the app; below this width it stops being readable, so
+     the action buttons wrap to their own line rather than squeezing it into a stub. */
+  flex: 1 1 320px;
+  min-width: 260px;
 }
 .url-bar .m {
   padding: 0 13px;
@@ -1102,7 +1134,7 @@ select:focus {
   background: color-mix(in oklab, var(--amber) 10%, transparent);
   border-radius: 8px;
   font-size: 12px;
-  color: var(--amber);
+  color: var(--amber-ink);
 }
 .req-name {
   font-size: 15px;
@@ -1114,7 +1146,7 @@ select:focus {
   align-items: center;
   gap: 6px;
   font-size: 11px;
-  color: var(--lime);
+  color: var(--lime-ink);
   background: color-mix(in oklab, var(--lime) 10%, transparent);
   border: 1px solid color-mix(in oklab, var(--lime) 35%, transparent);
   border-radius: 20px;
@@ -1126,7 +1158,7 @@ select:focus {
 }
 .badge-stale {
   font-size: 10.5px;
-  color: var(--amber);
+  color: var(--amber-ink);
   border: 1px solid color-mix(in oklab, var(--amber) 40%, transparent);
   border-radius: 20px;
   padding: 3px 11px;
@@ -1480,7 +1512,7 @@ select:focus {
   color: var(--dim);
 }
 .time {
-  color: var(--lime);
+  color: var(--lime-ink);
   font-size: 12px;
 }
 .bytes {
@@ -2773,4 +2805,350 @@ select:focus {
 }
 .modal-actions .btn {
   flex: 1;
+}
+
+/* --- code snippet panel (RequestWorkspace → "code") --- */
+.modal.modal-wide {
+  width: min(880px, 92vw);
+}
+.code-modal .code-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.code-modal .code-lang {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--dim);
+  font-size: 12px;
+}
+.code-modal .code-lang select {
+  min-width: 200px;
+}
+.code-modal .spacer {
+  flex: 1;
+}
+.code-out {
+  margin: 0;
+  max-height: min(52vh, 520px);
+  overflow: auto;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-3);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.55;
+  white-space: pre;
+  tab-size: 2;
+}
+.code-modal .small {
+  font-size: 11.5px;
+  margin: 8px 0 0;
+}
+
+/* --- paste-a-curl import pane --- */
+.curl-paste {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-3);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.curl-paste:focus-visible {
+  outline: 2px solid var(--lime);
+  outline-offset: 1px;
+}
+
+/* --- response body viewer (filter / pretty / wrap) --- */
+.response-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.body-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 0 8px;
+}
+.body-toolbar .spacer {
+  flex: 1;
+}
+.body-filter {
+  flex: 1 1 240px;
+  min-width: 160px;
+  max-width: 420px;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.btn.ghost.small.on {
+  background: var(--panel-3);
+  color: var(--text);
+  border-color: var(--line-2);
+}
+.path-result {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--lime);
+  border-radius: 6px;
+  background: var(--panel-2);
+  font-size: 12px;
+}
+.path-result.bad {
+  border-left-color: var(--red);
+  color: var(--red);
+}
+.path-result .spacer {
+  flex: 1;
+}
+.path-count {
+  color: var(--dim);
+  white-space: nowrap;
+}
+.path-value {
+  font-family: var(--mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 46ch;
+}
+.capture-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--dim);
+}
+.capture-name input {
+  width: 160px;
+}
+.body-wrap .body {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.body-nowrap {
+  overflow-x: auto;
+}
+.body-nowrap .body {
+  white-space: pre;
+}
+
+/* --- keyboard shortcut reference --- */
+.shortcut-group + .shortcut-group {
+  margin-top: 14px;
+}
+.shortcut-title {
+  font-size: 10.5px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--dim);
+  margin-bottom: 6px;
+}
+.shortcut-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 3px 0;
+  font-size: 12.5px;
+}
+.shortcut-keys {
+  display: inline-flex;
+  gap: 4px;
+  flex: 0 0 128px;
+  justify-content: flex-end;
+}
+.shortcut-what {
+  color: var(--dim);
+}
+
+/* --- secret resolution status (environments) --- */
+.secret-status {
+  font-size: 10.5px;
+  color: var(--dim);
+  margin-left: 6px;
+}
+.captured-chip.unset {
+  border-color: color-mix(in oklab, var(--amber) 45%, transparent);
+}
+.captured-chip.unset .secret-status {
+  color: var(--amber-ink);
+}
+.env-warn {
+  cursor: pointer;
+  background: none;
+}
+.env-list-row .badge-stale {
+  margin-left: auto;
+}
+
+/* ---- Unparseable files (sidebar) ---- */
+/* A file that does not parse belongs to no folder and shows in no tree row; without this it is
+   silently absent, which reads as "I deleted it" rather than "I broke it". */
+.tree-errors {
+  margin: 6px 8px 10px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in oklab, var(--red) 45%, var(--line));
+  border-radius: 6px;
+  background: color-mix(in oklab, var(--red) 8%, transparent);
+}
+.tree-errors-head {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--red);
+  margin-bottom: 4px;
+}
+.tree-error > summary {
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text);
+  word-break: break-all;
+  padding: 2px 0;
+}
+.tree-error > summary:focus-visible {
+  outline: 2px solid var(--lime);
+  outline-offset: 2px;
+}
+.tree-error pre {
+  margin: 4px 0 6px;
+  font-size: 11px;
+  color: var(--dimmer);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ---- Tags + transport options (request meta) ---- */
+.tags-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 4px 1px 7px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  background: var(--panel-3);
+  font-size: 11px;
+  color: var(--text);
+}
+.tag-chip button {
+  border: 0;
+  background: none;
+  color: var(--dimmer);
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+  padding: 2px 3px;
+  border-radius: 999px;
+}
+.tag-chip button:hover {
+  color: var(--red);
+}
+.tag-chip button:focus-visible,
+.tag-add:focus-visible,
+.tag-input:focus-visible {
+  outline: 2px solid var(--lime);
+  outline-offset: 1px;
+}
+.tag-add {
+  border: 1px dashed var(--line-2);
+  background: none;
+  color: var(--dimmer);
+  border-radius: 999px;
+  font-size: 11px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+.tag-add:hover {
+  color: var(--text);
+  border-color: var(--lime);
+}
+.tag-input {
+  width: 120px;
+  font-size: 11px;
+  padding: 2px 6px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+/* Its own class, not `.order-add`: two unrelated controls sharing a selector is how a locator
+   ends up matching both. */
+.options-add {
+  margin-top: 9px;
+  border: 1px dashed var(--line-2);
+  background: none;
+  color: var(--dimmer);
+  border-radius: 4px;
+  font-size: 12px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+.options-add:hover {
+  color: var(--text);
+  border-color: var(--lime);
+}
+.options-add:focus-visible {
+  outline: 2px solid var(--lime);
+  outline-offset: 2px;
+}
+
+.options-edit {
+  margin-top: 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-2);
+  padding: 8px 10px;
+}
+.options-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin-top: 6px;
+}
+.options-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--dimmer);
+}
+.options-grid label input[type="number"] {
+  width: 96px;
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 3px 6px;
+  border: 1px solid var(--line-2);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--text);
+}
+.options-grid .options-check {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-end;
+  padding-bottom: 4px;
+  color: var(--text);
+  font-size: 12px;
 }
