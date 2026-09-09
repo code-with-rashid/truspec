@@ -2462,3 +2462,43 @@ captured" chips sit next to the ones that worked.
 **Verification.** 1011 unit tests (8 new) and 112 e2e, coverage 95.95% lines / 87.73% branches /
 96.51% functions, typecheck 8/8, docs updated (the file-format note that used to read "simply
 skipped" now shows what is printed instead).
+
+### 70 — the machine-facing contract, and a gate that keeps it honest
+
+**What I looked for.** The last several iterations added fields to `RunResult` — `bytes`,
+`binary`, `bodyBase64`, `missedCaptures`. That object is not an internal detail: `truspec run
+--json` hands it to CI reporters, the MCP tools hand it to agents, and the web client reads it. For
+a project whose pitch is "agent-native", it is a published interface.
+
+Both places that describe it were behind. Not only by my four:
+
+```
+docs/api.md: bytes, binary, bodyBase64, missedCaptures, redirects,
+             redirectLimitHit, retries, iteration
+docs/cli.md: missingVars, bytes, binary, bodyBase64, missedCaptures,
+             redirectLimitHit, retries
+```
+
+`redirects`, `retries` and `iteration` predate this campaign entirely. Nobody consuming the JSON
+would have known a data-driven run tags each result with its row, or that a 302 in the report might
+be the third hop rather than the server's answer — both of which exist precisely so a machine can
+tell.
+
+**The fix is the gate, not the prose.** Documenting eleven fields once is worth little; they will
+be behind again in five iterations. So the test reads the field names **out of `run.ts` itself**
+and asserts each one appears in both documents. A field added without a doc line fails the run, and
+the gate cannot be satisfied by editing a list of names inside the test — the list is derived from
+the type that defines the contract.
+
+It also asserts it found something to check (`ok`, `assertions`, `status`, and at least five
+response fields), so a parser that silently matched nothing cannot pass as a clean run — the same
+"a gate that checked nothing is worse than no gate" principle as iterations 40, 55 and 64, applied
+to this gate itself.
+
+Both documents now carry a table rather than a one-line type sketch, including which fields are
+present only sometimes and why: `bytes` is not `bodyText.length`, `binary` means `bodyText` is
+lossy, `redirectLimitHit` distinguishes the cap from the server, `iteration` is what makes a
+data-driven failure traceable to its row.
+
+**Verification.** 1014 unit tests (3 new, and the two contract tests fail against the docs as they
+stood), coverage 95.95% lines / 87.73% branches / 96.51% functions, typecheck 8/8, docs site builds.

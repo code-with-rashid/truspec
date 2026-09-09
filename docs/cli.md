@@ -288,6 +288,21 @@ header values are attacker-controlled, so every interpolated value is HTML-escap
 }
 ```
 
+A result carries more than the happy path shows, and every field is optional — present only when
+it applies:
+
+| Field | When |
+|---|---|
+| `error`, `missingVars` | the request could not be sent; `{{names}}` that resolved to nothing |
+| `missedCaptures` | a `capture` matched nothing — `{ name, source, reason? }` |
+| `redirects`, `redirectLimitHit` | hops followed, and whether `maxRedirects` stopped the chain |
+| `retries` | re-sends performed under `options.retries` |
+| `iteration` | 1-based row index under `--data` / `--repeat` |
+| `response.bytes` | body size as it arrived (not `bodyText.length`, which counts characters) |
+| `response.binary`, `response.bodyBase64` | the body is not text; its real bytes, base64-encoded |
+| `parseErrors` (top level) | files that did not parse, with the reason |
+| `iterations`, `skipped`, `deselected` (top level) | data/repeat count, bailed, filtered out |
+
 > **Secrets are masked.** Declared secret values are replaced with `***` throughout the
 > output (URLs, bodies, headers, captured values, errors). See
 > [File format → Environments](./file-format.md#environment-files).
