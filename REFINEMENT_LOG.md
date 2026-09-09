@@ -616,3 +616,23 @@ it rather than twenty commits later.
 **Verification.** Coverage now 95.43% lines, 87.78% branches, 97.01% functions — above where the
 campaign started. 687 tests (was 644), typecheck 8/8, build 5/5.
 
+### 22 — Dogfood the new commands as CI gates
+
+**Observation.** Twenty-one iterations added `lint` and `docs`, and this repository — which ships
+two example collections — did not use either. A tool whose own examples are not checked by it is a
+tool nobody has actually run in anger.
+
+**Change.** Two gates on every push and PR:
+
+- **`truspec lint examples --strict`** — even a *warning* fails. If TruSpec's own examples cannot
+  pass TruSpec's linter, either the linter is wrong or the examples are, and both are worth
+  knowing on the commit that caused it.
+- **`truspec docs` regenerated and `git diff --exit-code`'d.** This turns the determinism claim
+  from a docstring into something CI proves on every push, *and* keeps the committed example docs
+  (`examples/*/API.md`, now linked from the README) in sync with the collections they describe.
+
+The CI comment describing the coverage thresholds was also stale (it still said ≥90/≥85); a
+comment that misstates the gate is worse than none.
+
+**Verification.** Both gates pass locally; `truspec docs` verified byte-identical across two runs.
+

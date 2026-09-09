@@ -53,6 +53,10 @@ spec:
   operation: "GET /pets/{id}"   # links back to your OpenAPI spec
 ```
 
+See the [blog](./examples/blog/API.md) and [petstore](./examples/petstore/API.md) example
+collections rendered by `truspec docs` — those files are regenerated and diffed in CI, so they are
+never out of date with the collections they describe.
+
 **Try it now** — clone the repo for a ready-made collection + OpenAPI spec and run the whole loop offline. These commands work as-is (no placeholders to fill in):
 
 ```bash

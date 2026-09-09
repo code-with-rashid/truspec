@@ -22,7 +22,8 @@ jobs:
       - run: pnpm typecheck
 
       # Coverage gate — fails if line/branch/function coverage regresses below the thresholds in
-      # vitest.config.ts (lines ≥90, branches ≥85). The committed seeded fuzz (fuzz.test.ts) runs here too.
+      # vitest.config.ts (lines ≥95, branches ≥87, functions ≥96). The committed seeded fuzz
+      # (fuzz.test.ts) runs here too.
       - run: pnpm test:coverage
 
       - run: pnpm build
@@ -33,3 +34,18 @@ jobs:
         run: |
           pnpm gen:schema
           git diff --exit-code packages/core/schema
+
+      # Dogfood gate — the tool is run against this repository's own collections. `--strict` means
+      # even a warning fails: if TruSpec's own examples cannot pass TruSpec's linter, the linter is
+      # either wrong or the examples are, and both are worth knowing on the commit that caused it.
+      - name: Our own example collections pass `truspec lint --strict`
+        run: node packages/cli/dist/index.js lint examples --strict
+
+      # Determinism gate — `truspec docs` promises byte-identical output for unchanged files, which
+      # is the entire reason its output is committable. This proves it on every push, and keeps the
+      # committed example docs in sync with the collections they describe.
+      - name: Committed example docs are up to date and deterministic
+        run: |
+          node packages/cli/dist/index.js docs examples/blog --title "Blog API (example collection)" -o examples/blog/API.md
+          node packages/cli/dist/index.js docs examples/petstore --title "Petstore API (example collection)" -o examples/petstore/API.md
+          git diff --exit-code examples
