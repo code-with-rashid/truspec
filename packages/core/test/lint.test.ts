@@ -2,7 +2,15 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { LINT_RULES, type LintFinding, lintWorkspace, looksLikeSecret, referencedVars } from "../src/lint";
+import {
+  isLiteralCredential,
+  LINT_RULES,
+  type LintFinding,
+  lintWorkspace,
+  looksLikeSecret,
+  referencedVars,
+} from "../src/lint";
+import { urlQueryLiterals } from "../src/lint/rules";
 import { parse } from "../src/format";
 
 let dir: string;
@@ -204,5 +212,80 @@ body:
   content: { deep: ["{{b}}"] }
 `);
     expect(referencedVars(req).sort()).toEqual(["b", "baseUrl", "h", "id", "qv"]);
+  });
+});
+
+describe("inline-secret finds a credential inside a larger value", () => {
+  it("catches the shape a real key actually gets committed in", () => {
+    // `Authorization: "Bearer <key>"` is the likeliest place of all, and anchoring the patterns to
+    // the whole value made exactly that case invisible.
+    expect(looksLikeSecret(`Bearer ${fixture("sk", "_live_abcdefghijklmnopqrstuvwx")}`)).toContain("Stripe");
+    expect(looksLikeSecret(`token=${fixture("ghp", "_abcdefghijklmnopqrstuvwxyz0123")}&x=1`)).toContain("GitHub");
+    expect(looksLikeSecret(`Bearer ${fixture("ey", "JhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abcdefghijklmnop")}`)).toContain("JWT");
+  });
+
+  it("still refuses to cry wolf on ordinary long strings", () => {
+    // A linter that fires on anything long gets muted, and then it catches nothing.
+    for (const v of [
+      "https://api.example.com/v1/organisations/12345/members?include=roles",
+      "550e8400-e29b-41d4-a716-446655440000",
+      "the quick brown fox jumps over the lazy dog again and again",
+      "application/vnd.example.v3+json; charset=utf-8",
+      "2026-09-09T13:00:00.000Z/2026-09-10T13:00:00.000Z",
+    ]) {
+      expect(looksLikeSecret(v), v).toBeUndefined();
+    }
+  });
+
+  it("does not fire on a match embedded in a longer opaque token", () => {
+    // The lookbehind: `xxAKIAIOSFODNN7EXAMPLE` is not an AWS key id, it is a different string.
+    expect(looksLikeSecret(`zz${fixture("AKIA", "IOSFODNN7EXAMPLE")}`)).toBeUndefined();
+    expect(looksLikeSecret(`abc${fixture("sk", "_live_abcdefghijklmnopqrstuvwx")}`)).toBeUndefined();
+  });
+
+  it("still treats a template as a template, not a literal", () => {
+    expect(looksLikeSecret("Bearer {{token}}")).toBeUndefined();
+  });
+});
+
+describe("a credential with no recognisable shape", () => {
+  // The vendor patterns catch a Stripe key or a JWT because their shape gives them away. A plain
+  // 36-character hex string in a header called `X-Api-Key` has no shape at all — and is just as
+  // committed. The name is the one thing an opaque token cannot hide.
+  it.each([
+    ["headers.X-Api-Key", "9f8e7d6c5b4a39281706abcdef1234567890"],
+    ["query.access_token", "abc123def456"],
+    ["url?api_key", "9f8e7d6c5b4a39281706abcdef1234567890"],
+    ["body.password", "hunter2000"],
+    ["auth.clientSecret", "s3cr3t-value-here"],
+    ["headers.Authorization", "Bearer 9f8e7d6c5b4a3928"],
+  ])("flags %s", (where, value) => {
+    expect(isLiteralCredential(where, value)).toBe(true);
+  });
+
+  it.each([
+    ["headers.X-Api-Key", "{{apiKey}}"],
+    ["headers.Accept", "application/json"],
+    ["query.page", "2"],
+    ["body.note", "a long literal that is not a credential at all"],
+    ["body.password", "test"],
+    ["body.api_key", "your-key-here"],
+    ["body.token", "<token>"],
+    ["headers.Authorization", "Bearer {{token}}"],
+    ["headers.Authorization", "Basic xxx"],
+  ])("leaves %s alone", (where, value) => {
+    expect(isLiteralCredential(where, value)).toBe(false);
+  });
+
+  it("pulls query parameters out of a URL so they can be judged by name", () => {
+    expect(urlQueryLiterals("https://x.test/a?api_key=abc&page=2")).toEqual([
+      { where: "url?api_key", value: "abc" },
+      { where: "url?page", value: "2" },
+    ]);
+    expect(urlQueryLiterals("https://x.test/a")).toEqual([]);
+  });
+
+  it("does not decode, because a stray % in a URL is not an error", () => {
+    expect(urlQueryLiterals("https://x.test/a?q=100%")).toEqual([{ where: "url?q", value: "100%" }]);
   });
 });

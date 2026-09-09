@@ -27,13 +27,13 @@ Usage:
   truspec coverage --spec <openapi> [<dir>] [--min <percent>] [--json]
   truspec contract --spec <openapi> [<dir>] [--env <name>] [--json]
   truspec gen --spec <openapi> --out <dir> [--base-url-var <name>]
-  truspec env [<name>] [--diff <a> <b>] [--json]
+  truspec env [<name>] [--diff <a> <b>] [--strict] [--json]
   truspec docs [<dir>] [--out <file>] [--lang <target>]
   truspec lint [<dir>] [--strict] [--json] [--disable <rule>] [--list-rules]
   truspec codegen <request> [--lang <target>] [--env <name>] [--list]
   truspec import <postman|bruno|insomnia|curl|har> <path|-> [--out <dir>] [--filter <substr>]
   truspec mock --spec <openapi> [--port <n>] [--delay <ms>]
-  truspec serve [--dir <collection>] [--port <n>] [--insecure] [--proxy <url>]
+  truspec serve [--dir <collection>] [--port <n>] [--insecure] [--proxy <url>] [--no-proxy <list>]
   truspec --help
   truspec --version
 

@@ -31,6 +31,14 @@ export interface SpecOperation {
   key: string;
   parameters: SpecParam[];
   requestBodyRequired: boolean;
+  /**
+   * The JSON schema of a required request body, when the operation declares one.
+   *
+   * `gen` needs it to scaffold a body that satisfies the spec — without it, a generated POST omits
+   * the body its own operation requires, and `drift` immediately reports the collection it just
+   * produced as drifted.
+   */
+  requestBodySchema?: Record<string, unknown>;
   /** Declared response schemas (one entry per status × media type that carries a schema). */
   responses: SpecResponseSchema[];
   /**
@@ -45,6 +53,12 @@ export interface OpenApiSummary {
   title?: string;
   version?: string;
   operations: SpecOperation[];
+  /**
+   * The parsed document, for consumers that must resolve a `$ref` reached from an operation's
+   * schema — `gen` scaffolding a request body, for one. Callers that only want the operation list
+   * can ignore it.
+   */
+  document: Record<string, unknown>;
 }
 
 export function asRecord(v: unknown): Record<string, unknown> | undefined {
@@ -122,6 +136,21 @@ function isRequestBodyRequired(op: Record<string, unknown>, doc: Record<string, 
   return rb?.required === true;
 }
 
+/** The JSON schema a request body should satisfy, preferring `application/json`. */
+function requestBodySchemaOf(
+  op: Record<string, unknown>,
+  doc: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+  let rb = asRecord(op.requestBody);
+  if (rb && typeof rb.$ref === "string") rb = resolveRef(rb.$ref, doc);
+  const content = asRecord(rb?.content);
+  if (!content) return undefined;
+  const key =
+    Object.keys(content).find((k) => k.toLowerCase().includes("json")) ?? Object.keys(content)[0];
+  if (key === undefined) return undefined;
+  return asRecord(asRecord(content[key])?.schema);
+}
+
 /** The lowest documented 2xx status, across every declared response (schema-bearing or not). */
 function successStatusOf(op: Record<string, unknown>): number | undefined {
   const responses = asRecord(op.responses);
@@ -186,6 +215,10 @@ export function parseOpenApi(text: string): OpenApiSummary {
         key: `${M} ${path}`,
         parameters: extractParams(item, op, doc),
         requestBodyRequired: isRequestBodyRequired(op, doc),
+        ...(() => {
+          const schema = requestBodySchemaOf(op, doc);
+          return schema ? { requestBodySchema: schema } : {};
+        })(),
         responses: extractResponses(op, doc),
         ...(successStatusOf(op) !== undefined ? { successStatus: successStatusOf(op) } : {}),
       });
@@ -198,5 +231,6 @@ export function parseOpenApi(text: string): OpenApiSummary {
     title: typeof info?.title === "string" ? info.title : undefined,
     version: typeof info?.version === "string" ? info.version : undefined,
     operations,
+    document: doc,
   };
 }

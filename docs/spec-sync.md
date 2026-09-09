@@ -43,6 +43,20 @@ diverged. It reports four categories:
 | **Changed** (`changed`) | Matched, but the request no longer satisfies the spec. | The contract tightened — e.g. a parameter became required — and the request didn't keep up. |
 | **Missing from live API** (`liveMissing`) | With `--live`, a spec operation a running API doesn't serve. | The deployed API and the spec disagree. |
 
+**Stale** and **Changed** entries name the request file they came from — fixing drift means
+editing a file, and the report already read it to notice:
+
+```
+Stale — not in the spec (1):
+  - GET /search  (api/legacy.tspec.yaml)
+
+Changed (2):
+  ~ GET /products: missing required query param 'limit'  (api/list.tspec.yaml)
+```
+
+(`--json` carries the same as `sources`, keyed by the entry text. **Untracked** has no file to
+name: that is the point of it.)
+
 "Changed" currently fires when:
 
 - the spec marks a **query parameter as required** and the request doesn't include it, or
@@ -103,6 +117,11 @@ bound each probe.
 also has assertions** — a request with no assertions doesn't count, because it asserts
 nothing about the contract.
 
+That rule is easy to trip over, so the report says which case each uncovered operation is: an
+operation nothing points at needs a request written, while one a request *does* point at but
+never asserts on needs an assertion added to a file you already have. The second is named, with
+its request and file, rather than left looking identical to the first.
+
 ```bash
 truspec coverage --spec openapi.yaml ./api
 ```
@@ -112,6 +131,15 @@ Coverage: 75% (3/4 operations tested)
 
 Uncovered (1):
   ✗ GET /users/{id}
+```
+
+An operation whose request exists but asserts nothing is called out in place:
+
+```
+Coverage: 50% (1/2 operations tested)
+
+Uncovered (1):
+  ✗ GET /health  — "Health" (api/health.tspec.yaml) has no assertions; a request that asserts nothing tests nothing
 ```
 
 Gate on a minimum with `--min`:
@@ -167,6 +195,21 @@ Because it sends requests, `contract` takes the same knobs as [`run`](./cli.md#r
 [mock](./mocking.md) or a real API. It exits non-zero **only** on a schema violation;
 untested and status-undocumented operations are reported but don't fail the gate (that's
 `coverage`/`drift`'s job).
+
+Because of that, `contract` is not a substitute for `run`. An operation it could not validate is
+listed under **Not validated**, with which of the two reasons applies:
+
+```
+Contract: 0/1 tested operations conform to the spec
+
+Not validated (1):
+  ~ GET /pets/{id}  — the request failed (500) — see `truspec run`
+
+No operation was validated against the spec.
+```
+
+The summary never claims conformance that wasn't established: with nothing validated it says so
+outright, and a partial result is reported as partial.
 
 This is **behavioral** drift — the kind the structural `drift` check can't catch. A handler
 that returns a string `id` where the spec promises an integer, drops a required field, or
@@ -239,6 +282,13 @@ spec:
 - The base-URL variable defaults to `baseUrl`; override with `--base-url-var`.
 - File names are slugified from the `operationId` (or the `METHOD path` key).
 - Operations with an unsupported HTTP method are skipped and reported.
+
+A scaffolded request carries what the spec says the operation cannot work without: the
+success status it documents, its path parameters as `{{variables}}`, every **required**
+query parameter (optional ones are left out — scaffolding them all buries the request in
+noise), and a JSON body when the operation requires one, generated from the request-body
+schema. That is the invariant `gen` and `drift` owe each other: **`truspec drift` against the
+spec a collection was generated from reports no drift.**
 
 After `gen`, flesh out the stubs (real assertions, bodies, auth) and your drift count drops
 to zero. Agents can do this too — see the

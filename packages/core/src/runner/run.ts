@@ -7,13 +7,14 @@ import {
   evaluateSchemaAssertion,
   type ResponseView,
 } from "./assertions";
-import { evaluateCaptures } from "./capture";
+import { captureValues, type MissedCapture } from "./capture";
 import { type CookieJar, setCookiesOf } from "./cookies";
 import type { VarValue, Vars } from "./interpolate";
 import { type OAuth2Auth, resolveOAuthToken, type TokenCache } from "./oauth";
 import { type ResolvedPart, resolveRequest } from "./resolve";
 import { runPostScript, runPreScript } from "./script";
 import { send } from "./transport";
+import { countEventBlocks, isEventStream, MAX_STREAM_EVENTS, parseEventStream, type SseEvent } from "./sse";
 import { describeTransportError } from "./transport-error";
 
 export interface RunContext {
@@ -63,11 +64,43 @@ export interface RunResult {
     durationMs: number;
     headers: Record<string, string>;
     bodyText: string;
+    /** Size of the body as it arrived, in bytes — not the length of the decoded string. */
+    bytes?: number;
+    /**
+     * The body is not text: it decoded with replacement characters or NUL bytes. `bodyText` is
+     * then lossy and must not be shown as if it were the response — a viewer that prints it emits
+     * mojibake (and whatever terminal escapes the bytes happen to contain).
+     */
+    binary?: boolean;
+    /**
+     * The body's real bytes, base64-encoded, for a binary response small enough to carry
+     * ({@link MAX_BINARY_BASE64_BYTES}). Without it a client can only offer to save the mojibake,
+     * which produces a file that is not the one the server sent.
+     */
+    bodyBase64?: string;
+    /**
+     * Server-sent events, when the response is a `text/event-stream`.
+     *
+     * A streaming endpoint is the ordinary shape of an LLM API, and the runner used to buffer the
+     * whole stream as one string — or, for a stream that never ends, time out and report nothing
+     * at all, discarding everything the server had already sent.
+     */
+    events?: SseEvent[];
+    /** The stream was closed at the event cap or by the timeout, not by the server. */
+    streamTruncated?: boolean;
   };
   assertions: AssertionResult[];
   captured?: Record<string, VarValue>;
+  /**
+   * Captures that matched nothing. Not a failure on its own — nothing may consume the variable —
+   * but the request that does consume it fails several files later with "Unresolved variables",
+   * naming the consumer rather than the producer. Reporting it here names the producer.
+   */
+  missedCaptures?: MissedCapture[];
   /** Redirect hops actually followed, when `options.followRedirects` is on. */
   redirects?: string[];
+  /** The chain stopped because `maxRedirects` was reached, not because the server stopped redirecting. */
+  redirectLimitHit?: boolean;
   /** How many times the request had to be re-sent, when `options.retries` is set. */
   retries?: number;
   /** 1-based iteration this result belongs to, when the run was data-driven or repeated. */
@@ -85,19 +118,128 @@ const MAX_RESPONSE_BYTES = 50 * 1024 * 1024;
 class ResponseTooLargeError extends Error {}
 
 /**
+ * The charset the response declares, as a `TextDecoder` label.
+ *
+ * HTTP's historical default for `text/*` is ISO-8859-1, but in practice a response that omits a
+ * charset today means UTF-8, and decoding a modern JSON API as latin-1 would corrupt every
+ * non-ASCII byte in it. So: honour an explicit charset, default to UTF-8.
+ */
+function charsetOf(contentType: string): string {
+  return /charset\s*=\s*"?([\w.:+-]+)"?/i.exec(contentType)?.[1]?.toLowerCase() ?? "utf-8";
+}
+
+/**
+ * Decode a response body the way the response says to.
+ *
+ * Two things a plain `buf.toString("utf8")` gets wrong. A server that declares
+ * `charset=iso-8859-1` (legacy APIs still do) had every accented character replaced with U+FFFD,
+ * so `body contains "café"` could not match a body that plainly contained it. And a UTF-8 BOM —
+ * emitted by plenty of .NET and PHP stacks — is invisible in every viewer but makes `JSON.parse`
+ * throw, which surfaced as *every* jsonpath assertion reporting "(no match)" against a 200 whose
+ * body was obviously right. An unknown charset label is not a reason to fail the request; fall
+ * back to UTF-8, which is what would have happened anyway.
+ */
+export function decodeResponseBody(buf: Buffer, contentType: string): string {
+  const label = charsetOf(contentType);
+  let text: string;
+  if (label === "utf-8" || label === "utf8") text = buf.toString("utf8");
+  else {
+    try {
+      text = new TextDecoder(label).decode(buf);
+    } catch {
+      text = buf.toString("utf8");
+    }
+  }
+  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+}
+
+/**
+ * Whether a decoded body is not text after all.
+ *
+ * Decided on content rather than on the content type: plenty of servers label JSON as
+ * `application/octet-stream`, and plenty label a PDF `text/plain`. A replacement character means
+ * the bytes were not valid in the declared encoding; a NUL means they were never text.
+ */
+function looksBinary(text: string): boolean {
+  return text.includes("\uFFFD") || text.includes("\u0000");
+}
+
+/** Ceiling on a binary body carried along as base64 — past this, only the size is reported. */
+export const MAX_BINARY_BASE64_BYTES = 8 * 1024 * 1024;
+
+/**
  * Read a response body as text, but stop and throw once `maxBytes` is exceeded
  * (streaming, so we never buffer an unbounded body into memory). Falls back to
- * `response.text()` when the body isn't a readable stream (empty/HEAD responses).
+ * buffering the whole response when the body isn't a readable stream (empty/HEAD responses).
  */
-async function readResponseText(response: Response, maxBytes: number): Promise<string> {
+interface ReadBody {
+  text: string;
+  bytes: number;
+  binary: boolean;
+  base64?: string;
+  /** Parsed server-sent events, when the response is an event stream. */
+  events?: SseEvent[];
+  /** The stream was closed at the event cap rather than by the server. */
+  truncated?: boolean;
+}
+
+/** Package a buffer as the runner's view of a body: decoded text, plus the bytes if it is binary. */
+function describeBody(buf: Buffer, contentType: string, truncated = false): ReadBody {
+  const text = decodeResponseBody(buf, contentType);
+  if (isEventStream(contentType)) {
+    // An event stream is text by construction, and its events are the thing worth asserting on —
+    // `bodyText` keeps the raw stream so nothing is hidden.
+    return {
+      text,
+      bytes: buf.byteLength,
+      binary: false,
+      events: parseEventStream(text),
+      ...(truncated ? { truncated: true } : {}),
+    };
+  }
+  if (!looksBinary(text)) return { text, bytes: buf.byteLength, binary: false };
+  return {
+    text,
+    bytes: buf.byteLength,
+    binary: true,
+    ...(buf.byteLength <= MAX_BINARY_BASE64_BYTES ? { base64: buf.toString("base64") } : {}),
+  };
+}
+
+async function readResponseText(response: Response, maxBytes: number, maxEvents?: number): Promise<ReadBody> {
+  const contentType = response.headers.get("content-type") ?? "";
   const body = response.body;
-  if (!body) return response.text();
+  if (!body) return describeBody(Buffer.from(await response.arrayBuffer()), contentType);
   const reader = body.getReader();
+  const stream = isEventStream(contentType);
+  const eventCap = maxEvents ?? MAX_STREAM_EVENTS;
   const chunks: Uint8Array[] = [];
   let size = 0;
+  let truncated = false;
+  const collected = (): Buffer => {
+    const buf = Buffer.allocUnsafe(size);
+    let offset = 0;
+    for (const c of chunks) {
+      buf.set(c, offset);
+      offset += c.byteLength;
+    }
+    return buf;
+  };
   for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
+    let chunk: Awaited<ReturnType<typeof reader.read>>;
+    try {
+      chunk = await reader.read();
+    } catch (e) {
+      // A stream that is still open when the request's timeout fires: everything the server sent
+      // is right here, and throwing it away to report "timed out" is the least useful of the two
+      // answers. An ordinary body cannot be salvaged this way — half a JSON document is not a
+      // response — so only a stream returns what it has.
+      if (!stream || size === 0) throw e;
+      truncated = true;
+      break;
+    }
+    if (chunk.done) break;
+    const value = chunk.value;
     if (!value) continue;
     size += value.byteLength;
     if (size > maxBytes) {
@@ -105,14 +247,15 @@ async function readResponseText(response: Response, maxBytes: number): Promise<s
       throw new ResponseTooLargeError(`Response body exceeded ${maxBytes} bytes`);
     }
     chunks.push(value);
+    // A stream that never ends is the normal case for SSE, so stop at a bound of our own rather
+    // than waiting for the request timeout to kill it and report nothing.
+    if (stream && countEventBlocks(collected().toString("utf8")) >= eventCap) {
+      await reader.cancel().catch(() => {});
+      truncated = true;
+      break;
+    }
   }
-  const buf = Buffer.allocUnsafe(size);
-  let offset = 0;
-  for (const c of chunks) {
-    buf.set(c, offset);
-    offset += c.byteLength;
-  }
-  return buf.toString("utf8");
+  return describeBody(collected(), contentType, truncated);
 }
 
 /**
@@ -239,6 +382,12 @@ export async function runRequest(req: TruSpecRequest, ctx: RunContext = {}): Pro
   }
 
   const start = now();
+  // What was actually in force, so a failure can name the limit that expired and how many times
+  // it was tried. A thrown send has used every attempt: `send` retries until they run out.
+  const errorContext = {
+    ...(req.options?.timeoutMs ?? ctx.timeoutMs ? { timeoutMs: req.options?.timeoutMs ?? ctx.timeoutMs } : {}),
+    attempts: (req.options?.retries ?? 0) + 1,
+  };
   let sent: Awaited<ReturnType<typeof send>>;
   try {
     sent = await send(
@@ -268,18 +417,19 @@ export async function runRequest(req: TruSpecRequest, ctx: RunContext = {}): Pro
       },
     );
   } catch (e) {
-    return { ...head, ok: false, error: describeTransportError(e, eff.url), assertions: [] };
+    return { ...head, ok: false, error: describeTransportError(e, eff.url, errorContext), assertions: [] };
   }
   const response = sent.response;
 
   const durationMs = now() - start;
-  let bodyText: string;
+  let body: ReadBody;
   try {
-    bodyText = await readResponseText(response, ctx.maxResponseBytes ?? MAX_RESPONSE_BYTES);
+    body = await readResponseText(response, ctx.maxResponseBytes ?? MAX_RESPONSE_BYTES);
   } catch (e) {
     // The response started arriving and then stopped; name the same causes the send path does.
-    return { ...head, ok: false, error: describeTransportError(e, eff.url), assertions: [] };
+    return { ...head, ok: false, error: describeTransportError(e, eff.url, errorContext), assertions: [] };
   }
+  const bodyText = body.text;
   const headers: Record<string, string> = {};
   response.headers.forEach((value, key) => {
     headers[key.toLowerCase()] = value;
@@ -303,7 +453,8 @@ export async function runRequest(req: TruSpecRequest, ctx: RunContext = {}): Pro
   if (ctx.contract?.auto && !req.assertions.some((a) => a.type === "schema")) {
     assertions.push(evaluateSchemaAssertion({ type: "schema" }, view, contractCtx));
   }
-  const captured = evaluateCaptures(req.capture, view);
+  const capture = captureValues(req.capture, view);
+  const captured = capture.values;
 
   let scriptError: string | undefined;
   if (req.script?.post) {
@@ -319,10 +470,23 @@ export async function runRequest(req: TruSpecRequest, ctx: RunContext = {}): Pro
     ...head,
     ok,
     ...(sent.redirects.length > 0 ? { redirects: sent.redirects } : {}),
+    ...(sent.redirectLimitHit ? { redirectLimitHit: true } : {}),
     ...(sent.attempts > 0 ? { retries: sent.attempts } : {}),
-    response: { status: response.status, statusText: response.statusText, durationMs, headers, bodyText },
+    response: {
+      status: response.status,
+      statusText: response.statusText,
+      durationMs,
+      headers,
+      bodyText,
+      bytes: body.bytes,
+      ...(body.binary ? { binary: true } : {}),
+      ...(body.base64 !== undefined ? { bodyBase64: body.base64 } : {}),
+      ...(body.events !== undefined ? { events: body.events } : {}),
+      ...(body.truncated ? { streamTruncated: true } : {}),
+    },
     assertions,
     ...(scriptError ? { error: `Script error: ${scriptError}` } : {}),
     ...(Object.keys(captured).length > 0 ? { captured } : {}),
+    ...(capture.missed.length > 0 ? { missedCaptures: capture.missed } : {}),
   };
 }

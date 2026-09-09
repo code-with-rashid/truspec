@@ -150,7 +150,9 @@ export function resolveRequest(req: TruSpecRequest, opts: ResolveOptions = {}): 
   let body: string | undefined;
   if (req.body && req.body.type !== "none") {
     if (req.body.type === "json") {
-      const r = interpolateDeep(req.body.content, vars, io);
+      // `typed`: this body becomes JSON, so a value that is exactly one `{{var}}` keeps the
+      // variable's own type instead of being stringified.
+      const r = interpolateDeep(req.body.content, vars, { ...io, typed: true });
       missing.push(...r.missing);
       body = JSON.stringify(r.value);
       if (!hasHeader(headers, "content-type")) headers["Content-Type"] = "application/json";
@@ -205,7 +207,9 @@ export function resolveRequest(req: TruSpecRequest, opts: ResolveOptions = {}): 
       missing.push(...q.missing);
       let variables: Record<string, unknown> | undefined;
       if (req.body.variables) {
-        const r = interpolateDeep(req.body.variables, vars, io);
+        // GraphQL variables are JSON too, and a typed one matters more here than anywhere:
+        // an `Int!` argument sent as a string is rejected by the server outright.
+        const r = interpolateDeep(req.body.variables, vars, { ...io, typed: true });
         missing.push(...r.missing);
         variables = r.value;
       }

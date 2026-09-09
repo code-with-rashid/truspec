@@ -3152,3 +3152,79 @@ select:focus {
   color: var(--text);
   font-size: 12px;
 }
+
+/* Large-response notice: the body view is bounded to stay responsive, and says so. */
+/* A binary body: say what arrived instead of printing a lossy decode of it. */
+.body-binary {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-2, transparent);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.body-image {
+  display: block;
+  max-width: 100%;
+  margin-top: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  /* A transparent PNG on a dark panel is invisible; a checkerboard is what image viewers do. */
+  background-image: linear-gradient(45deg, var(--line) 25%, transparent 25%),
+    linear-gradient(-45deg, var(--line) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, var(--line) 75%),
+    linear-gradient(-45deg, transparent 75%, var(--line) 75%);
+  background-size: 12px 12px;
+  background-position: 0 0, 0 6px, 6px -6px, -6px 0;
+}
+
+.body-truncated {
+  padding: 6px 10px;
+  margin-bottom: 6px;
+  border: 1px solid color-mix(in oklab, var(--amber) 40%, var(--line));
+  border-radius: 6px;
+  background: color-mix(in oklab, var(--amber) 8%, transparent);
+  color: var(--text);
+  font-size: 11.5px;
+}
+
+/* The empty-workspace state offers more than one way forward; keep them on one row. */
+.empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin: 4px 0 8px;
+}
+
+/* A capture that matched nothing sits beside the ones that did, in the warning colour. */
+.captured.missed .captured-title,
+.captured-chip.missed .k {
+  color: var(--amber);
+}
+
+.captured-chip.missed {
+  border-color: color-mix(in oklab, var(--amber) 40%, var(--line));
+}
+
+/* Re-sends, beside the timing: a 200 that took three attempts is not a clean 200. */
+.response-head .retries {
+  color: var(--amber);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+/* The reason a flow step failed, where its URL would be — a step that never reached the network
+   has no status to show, and "fail" alone says nothing. */
+.flow-node-why {
+  color: var(--red);
+  font-size: 11.5px;
+}
+
+.capture-missed {
+  color: var(--amber);
+}

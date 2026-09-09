@@ -116,3 +116,121 @@ describe("rule registry", () => {
     expect(report.ok).toBe(true); // the error is what made it not ok
   });
 });
+
+describe("script-runs-unsandboxed", () => {
+  const withScript = (name: string, script: string): string =>
+    `tspec: "0.1"\nname: ${name}\nmethod: GET\nurl: "{{baseUrl}}/x"\nscript: ${script}\nassertions: [ { type: status, equals: 200 } ]\n`;
+
+  it("names which script a request carries", () => {
+    // The point is reviewability after an import: a script has the same access as the process,
+    // so a collection you did not write deserves a line telling you to look.
+    write("pre.tspec.yaml", withScript("A", '{ pre: "tr.set(\'a\',1)" }'));
+    const pre = find("script-runs-unsandboxed");
+    expect(pre?.severity).toBe("warning");
+    expect(pre?.message).toContain("script.pre runs");
+    expect(pre?.message).toContain("same access as the truspec process");
+
+    rmSync(join(dir, "pre.tspec.yaml"));
+    write("post.tspec.yaml", withScript("B", '{ post: "tr.expect(true)" }'));
+    expect(find("script-runs-unsandboxed")?.message).toContain("script.post runs");
+
+    rmSync(join(dir, "post.tspec.yaml"));
+    write("both.tspec.yaml", withScript("C", '{ pre: "tr.set(\'a\',1)", post: "tr.expect(true)" }'));
+    expect(find("script-runs-unsandboxed")?.message).toContain("script.pre and script.post");
+  });
+
+  it("says nothing about a request with no script", () => {
+    write("plain.tspec.yaml", `tspec: "0.1"\nname: D\nmethod: GET\nurl: "{{baseUrl}}/x"\nassertions: [ { type: status, equals: 200 } ]\n`);
+    expect(rules()).not.toContain("script-runs-unsandboxed");
+  });
+
+  it("can be disabled like any other rule", () => {
+    write("pre.tspec.yaml", withScript("A", '{ pre: "tr.set(\'a\',1)" }'));
+    const report = lintWorkspace(dir, { disable: ["script-runs-unsandboxed"] });
+    expect(report.findings.some((f) => f.rule === "script-runs-unsandboxed")).toBe(false);
+  });
+
+  it("is listed in LINT_RULES, so `--list-rules` and the docs can stay in step", () => {
+    expect(LINT_RULES.some((r) => r.id === "script-runs-unsandboxed")).toBe(true);
+  });
+});
+
+describe("inline-secret in environment files", () => {
+  // Built at run time: a credential-shaped literal must never be a committed string.
+  const fixture = (prefix: string, rest: string): string => prefix + rest;
+  const writeEnv = (name: string, body: string): void =>
+    writeFileSync(join(dir, "environments", name), body);
+
+  it("flags a credential inlined as an environment variable", () => {
+    // CLAUDE.md's hard rule names environment files alongside requests, but the linter only ever
+    // read requests — and an env file is exactly where someone puts a value a {{var}} needs.
+    writeEnv(
+      "leaky.env.yaml",
+      `tspec: "0.1"\nname: leaky\nvariables:\n  baseUrl: "https://api.test"\n  apiToken: "${fixture("sk", "_live_abcdefghijklmnopqrstuvwx")}"\n  awsKey: "${fixture("AKIA", "IOSFODNN7EXAMPLE")}"\n`,
+    );
+    const found = lintWorkspace(dir).findings.filter((f) => f.rule === "inline-secret");
+    expect(found).toHaveLength(2);
+    expect(found.every((f) => f.severity === "error")).toBe(true);
+    expect(found.every((f) => f.path === "environments/leaky.env.yaml")).toBe(true);
+    expect(found.map((f) => f.message).join(" ")).toContain("variables.apiToken");
+    expect(found.map((f) => f.message).join(" ")).toContain("variables.awsKey");
+    expect(found[0]?.message).toContain("secrets:");
+  });
+
+  it("says nothing about a well-formed environment", () => {
+    // The default `local.env.yaml` from beforeEach plus a properly declared secret name.
+    writeEnv("ok.env.yaml", 'tspec: "0.1"\nname: ok\nvariables: { baseUrl: "https://api.test" }\nsecrets: [ token ]\n');
+    expect(lintWorkspace(dir).findings.some((f) => f.rule === "inline-secret")).toBe(false);
+  });
+
+  it("reports an environment file that does not parse, rather than skipping it", () => {
+    writeEnv("broken.env.yaml", 'tspec: "0.1"\nname: broken\nvariables: { a: 1 }\nnope: true\n');
+    const parseErrors = lintWorkspace(dir).findings.filter(
+      (f) => f.rule === "parse" && f.path === "environments/broken.env.yaml",
+    );
+    expect(parseErrors).toHaveLength(1);
+    expect(parseErrors[0]?.severity).toBe("error");
+  });
+});
+
+describe("folder configs are linted too", () => {
+  const fixture = (prefix: string, rest: string): string => prefix + rest;
+
+  it("flags a credential in a folder's auth, which applies to every request beneath it", () => {
+    // The most attractive place to paste a real token and the most damaging place for one to sit,
+    // and it was the last of the three file types the secret rule never read.
+    mkdirSync(join(dir, "sub"), { recursive: true });
+    writeFileSync(
+      join(dir, "sub", "folder.tspec.yaml"),
+      `tspec: "0.1"\nname: S\nheaders: { X-Api-Key: "${fixture("AKIA", "IOSFODNN7EXAMPLE")}" }\nauth: { type: bearer, token: "${fixture("sk", "_live_abcdefghijklmnopqrstuvwx")}" }\n`,
+    );
+    const found = lintWorkspace(dir).findings.filter((f) => f.rule === "inline-secret");
+    expect(found).toHaveLength(2);
+    expect(found.every((f) => f.path === "sub/folder.tspec.yaml")).toBe(true);
+    expect(found.map((f) => f.message).join(" ")).toContain("headers.X-Api-Key");
+    expect(found.map((f) => f.message).join(" ")).toContain("auth.token");
+    expect(found[0]?.message).toContain("every request beneath it");
+  });
+
+  it("reports a folder config that does not parse, which otherwise only surfaces at run time", () => {
+    mkdirSync(join(dir, "sub"), { recursive: true });
+    writeFileSync(join(dir, "sub", "folder.tspec.yaml"), 'tspec: "0.1"\nname: S\nheadrs: { A: b }\n');
+    const found = lintWorkspace(dir).findings.filter(
+      (f) => f.rule === "parse" && f.path === "sub/folder.tspec.yaml",
+    );
+    expect(found).toHaveLength(1);
+    expect(found[0]?.severity).toBe("error");
+    expect(found[0]?.message).toContain("headers");
+  });
+
+  it("says nothing about a folder config that is fine", () => {
+    mkdirSync(join(dir, "sub"), { recursive: true });
+    writeFileSync(
+      join(dir, "sub", "folder.tspec.yaml"),
+      'tspec: "0.1"\nname: S\nbaseUrl: "{{baseUrl}}"\nauth: { type: bearer, token: "{{token}}" }\n',
+    );
+    const rules = lintWorkspace(dir).findings.map((f) => f.rule);
+    expect(rules).not.toContain("inline-secret");
+    expect(rules).not.toContain("parse");
+  });
+});

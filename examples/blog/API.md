@@ -30,8 +30,8 @@
 
 **Asserts**
 
-- `{"type":"status","equals":201}`
-- `{"type":"jsonpath","path":"$.id","exists":true}`
+- status is 201
+- `$.id` exists
 
 <details><summary>Example (cURL)</summary>
 
@@ -58,8 +58,8 @@ curl -X POST '{{baseUrl}}/posts' \
 
 **Asserts**
 
-- `{"type":"status","equals":200}`
-- `{"type":"jsonpath","path":"$.title","exists":true}`
+- status is 200
+- `$.title` exists
 
 <details><summary>Example (cURL)</summary>
 
@@ -80,8 +80,8 @@ curl -X GET '{{baseUrl}}/posts/{{postId}}' \
 
 **Asserts**
 
-- `{"type":"status","equals":200}`
-- `{"type":"jsonpath","path":"$[0].id","exists":true}`
+- status is 200
+- `$[0].id` exists
 
 <details><summary>Example (cURL)</summary>
 

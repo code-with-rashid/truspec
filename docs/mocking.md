@@ -70,6 +70,23 @@ response.
 truspec mock --spec openapi.yaml --validate
 ```
 
+It checks three things: required query parameters are present, a required request body was
+sent, and — for a JSON body — that the body **satisfies the schema its operation declares**.
+The 400 names every field that violates it:
+
+```json
+{
+  "error": "Request body does not satisfy the spec",
+  "violations": [
+    { "path": "/name", "message": "expected string, got number" },
+    { "path": "/priceCents", "message": "expected integer, got string" }
+  ]
+}
+```
+
+A body that is not valid JSON gets `Request body is not valid JSON`; a non-JSON media type
+(form, multipart) is passed through, since there is no JSON Schema to check it against.
+
 This is useful for confirming your *client* sends spec-compliant requests, not just that it
 handles spec-compliant responses.
 

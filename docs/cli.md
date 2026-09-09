@@ -102,6 +102,7 @@ truspec run <path> [--env <name>] [--spec <openapi>] [--var k=v] [--grep <re>] [
 | `--watch` | `-w` | Re-run whenever a request, environment, `.env` or spec file changes. |
 | `--insecure` | `-k` | Skip TLS certificate verification (warns on stderr). |
 | `--proxy <url>` | | Route requests through a proxy. |
+| `--no-proxy <list>` | | Hosts that bypass `--proxy`, in `NO_PROXY` syntax. |
 | `--ca <file>` | | Trust an extra CA certificate. Repeatable. |
 | `--client-cert <file>` | | Client certificate for mutual TLS. |
 | `--client-key <file>` | | Client key for mutual TLS. |
@@ -112,7 +113,9 @@ truspec run <path> [--env <name>] [--spec <openapi>] [--var k=v] [--grep <re>] [
 | `--timeout <ms>` | | Per-request timeout. Default `30000`. Use `0` to disable. |
 
 **Data-driven runs.** `--data` runs the whole selection once per row, with the row's columns
-available as `{{variables}}`:
+available as `{{variables}}`. A JSON dataset carries types into a JSON body (see
+[File format → Types in a JSON body](./file-format.md#types-in-a-json-body)); CSV cells are always
+text:
 
 ```csv
 # pets.csv
@@ -158,14 +161,30 @@ route through a corporate proxy is a property of *where you are running*, not of
 a committed file saying "skip TLS verification" is a liability that outlives the afternoon it was
 needed. curl, git and every CI tool draw the line in the same place.
 
+When redirects are followed, the run names the chain and says whether it ended because the server
+stopped redirecting or because `maxRedirects` was reached — a bare `302` in a report otherwise reads
+as the server's answer when it may be the third one:
+
+```
+✗ FAIL  R  (api/r.tspec.yaml)  302 26ms
+      ↪ followed 1 redirect(s) — stopped at maxRedirects: http://127.0.0.1:4000/step1
+```
+
 ```bash
 truspec run ./api --env staging --ca ./corp-root.pem
 truspec run ./api --proxy http://proxy.corp:8080
+truspec run ./api --proxy http://proxy.corp:8080 --no-proxy localhost,127.0.0.1,.internal
 truspec run ./api --client-cert ./client.pem --client-key ./client.key
 ```
 
-`TRUSPEC_PROXY`, `HTTPS_PROXY`/`HTTP_PROXY` and `NODE_EXTRA_CA_CERTS` are read from the
-environment so CI can configure them once; an explicit flag wins per field.
+`TRUSPEC_PROXY`, `HTTPS_PROXY`/`HTTP_PROXY`, `TRUSPEC_NO_PROXY`/`NO_PROXY` and
+`NODE_EXTRA_CA_CERTS` are read from the environment so CI can configure them once; an explicit
+flag wins per field.
+
+The bypass list follows the convention curl and wget use: a comma-separated list where `*` means
+never proxy, an entry may be a host, a `.suffix`, or a `host:port`, and a bare suffix matches on a
+label boundary (`example.com` covers `api.example.com`, never `notexample.com`). It is what makes
+your own dev server on `localhost` reachable while everything else still goes through the proxy.
 The same flags and variables are accepted by [`serve`](#serve), so the web UI reaches the same
 hosts the CLI does.
 `NODE_TLS_REJECT_UNAUTHORIZED` is deliberately **not** honored — turning off verification should
@@ -177,6 +196,12 @@ the requests that follow — including cookies set on a redirect hop. The jar is
 disk: a CI run must not inherit state from a previous one, and a session cookie is a credential
 with no business in a repository. A request that sets its own `Cookie` header wins over the jar.
 `--no-cookies` turns it off entirely.
+
+The jar scopes cookies the way a browser does: loopback (`localhost`, `127.0.0.1`) counts as a
+secure origin, so a dev server's `Secure` session cookie is sent back over plain http; a `Domain`
+attribute with no dot in it (`Domain=com`) is refused rather than scoping the cookie to an entire
+suffix; and the `__Host-` / `__Secure-` name prefixes are enforced, so a cookie whose name promises
+host-only scoping is not stored with a `Domain`.
 
 `--grep` and `--tag` combine as an **AND** (`--grep login --tag smoke` runs requests that match
 both); repeated `--tag` flags combine as an **OR**. A selection that matches nothing exits `1`
@@ -262,6 +287,22 @@ header values are attacker-controlled, so every interpolated value is HTML-escap
   "missingSecrets": []
 }
 ```
+
+A result carries more than the happy path shows, and every field is optional — present only when
+it applies:
+
+| Field | When |
+|---|---|
+| `error`, `missingVars` | the request could not be sent; `{{names}}` that resolved to nothing |
+| `missedCaptures` | a `capture` matched nothing — `{ name, source, reason? }` |
+| `redirects`, `redirectLimitHit` | hops followed, and whether `maxRedirects` stopped the chain |
+| `retries` | re-sends performed under `options.retries` — also printed in the human report (`↻ re-sent 2 time(s)`), because a 200 the server only gave on the third try is not a clean 200 |
+| `iteration` | 1-based row index under `--data` / `--repeat` |
+| `response.bytes` | body size as it arrived (not `bodyText.length`, which counts characters) |
+| `response.binary`, `response.bodyBase64` | the body is not text; its real bytes, base64-encoded |
+| `response.events`, `response.streamTruncated` | a `text/event-stream`'s parsed events, and whether the stream was cut short rather than finished by the server |
+| `parseErrors` (top level) | files that did not parse, with the reason |
+| `iterations`, `skipped`, `deselected` (top level) | data/repeat count, bailed, filtered out |
 
 > **Secrets are masked.** Declared secret values are replaced with `***` throughout the
 > output (URLs, bodies, headers, captured values, errors). See
@@ -447,13 +488,14 @@ Inspect the workspace's environments without opening the files.
 
 ```
 truspec env [<name>] [--dir <collection>] [--json]
-truspec env --diff <a> <b> [--json]
+truspec env --diff <a> <b> [--strict] [--json]
 ```
 
 ```bash
-truspec env                      # every environment, with unresolved-secret warnings
-truspec env prod                 # one environment's variables and secret status
-truspec env --diff staging prod  # what differs
+truspec env                               # every environment, with unresolved-secret warnings
+truspec env prod                          # one environment's variables and secret status
+truspec env --diff staging prod           # what differs
+truspec env --diff staging prod --strict  # exit 1 if either declares a name the other does not
 ```
 
 **Secret values are never printed** — only whether each resolves, and from where (the OS
@@ -464,7 +506,12 @@ it solved.
 `--diff` exists for one boring failure in particular: staging declares a variable production does
 not, so the collection runs green everywhere except where it matters. A name present on only one
 side is reported as prominently as a changed value, and a name that is a plain variable on one side
-and a secret on the other is flagged as the real difference in kind that it is.
+and a secret on the other is flagged as the real difference in kind that it is. Names that are
+secrets are marked `(secret)`, because the fix differs: a missing variable is added to the file, a
+missing secret is set in the environment that runs it.
+
+`--strict` turns it into a CI gate — exit 1 when either side declares a name the other does not.
+Differing *values* never fail: environments are supposed to differ that way.
 
 ---
 
@@ -519,7 +566,7 @@ truspec lint [<dir>] [--strict] [--json] [--disable <rule>] [--output <file>] [-
 | Rule | Severity | Catches |
 |---|---|---|
 | `parse` | error | The file does not parse against the schema. |
-| `inline-secret` | error | A committed literal that looks like a real credential (JWT, `ghp_…`, `sk_live_…`, AWS key id, …). |
+| `inline-secret` | error | A literal that looks like a real credential is committed in a request, a `folder.tspec.yaml` **or an `environments/*.env.yaml`** — including one embedded in a larger value, such as `Bearer <key>`. |
 | `bad-jsonpath` | error | A capture or assertion uses a JSONPath the engine cannot parse — it would silently never match. |
 | `no-assertions` | warning | The request asserts nothing, so a run can never fail on it. |
 | `duplicate-name` | warning | Two requests share a name, making reports ambiguous. |
@@ -529,6 +576,8 @@ truspec lint [<dir>] [--strict] [--json] [--disable <rule>] [--output <file>] [-
 | `body-on-bodiless-method` | error | A `GET` or `HEAD` request carries a body. The HTTP client refuses to send it, so the request can never run. |
 | `content-type-conflict` | warning | An explicit `Content-Type` names a different format than `body.type`. The header wins, so the body is sent under the wrong label. (A *narrower* type of the same format — `application/vnd.api+json` for a JSON body — is fine and is not flagged.) |
 | `capture-never-used` | warning | A captured variable is referenced by no later request — usually a rename applied on only one side. |
+| `script-runs-unsandboxed` | warning | The request carries a `script`, which runs with the same access as the `truspec` process — review it before running a collection you did not write. See [Scripting](./scripting.md). |
+| `literal-credential-field` | warning | A field whose *name* says credential — `X-Api-Key`, `access_token`, `password`, `client_secret`, a query parameter of the same name written into the URL — holds a literal rather than a `{{variable}}`. `inline-secret` recognises a credential by its shape (a JWT, a Stripe key); this one recognises it by where it sits, which is the only clue an opaque token gives. Templates, values under 8 characters and obvious placeholders (`your-key-here`, `<token>`, `test`) are not flagged. |
 
 **Exit code:** `1` if any error was found (or with `--strict`, any warning); otherwise `0`.
 
@@ -662,7 +711,7 @@ engine (no CORS), and the UI is served from `@truspec/web`. See
 
 ```
 truspec serve [--dir <collection>] [--port <n>]
-             [--insecure] [--proxy <url>] [--ca <file>]
+             [--insecure] [--proxy <url>] [--no-proxy <list>] [--ca <file>]
              [--client-cert <file>] [--client-key <file>] [--client-key-passphrase <s>]
 ```
 

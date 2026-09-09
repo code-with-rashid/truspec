@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { toPosixPath } from "@truspec/core/workspace";
@@ -250,6 +251,35 @@ function deriveCopyPath(ctx: ApiContext, relPath: string, isDir: boolean): strin
   return candidate;
 }
 
+/**
+ * A version tag for a file's exact bytes, used to detect an edit that landed while a tab was open.
+ *
+ * Content, not mtime: a `git checkout` can restore a file to a byte-identical state with a new
+ * mtime, and that is not a conflict. Truncated because it only ever has to distinguish one
+ * version of one file from another.
+ */
+export function fileVersion(text: string): string {
+  return createHash("sha256").update(text).digest("hex").slice(0, 16);
+}
+
+/**
+ * Whether a save would overwrite an edit the client never saw.
+ *
+ * The files are the source of truth and other things edit them — an agent through the MCP server,
+ * a `git pull`, the user's own editor. A save used to write whatever the tab held, so whatever had
+ * landed in between was gone, with no message. The client sends the version it loaded; if the file
+ * on disk no longer matches, the save is refused and the current content comes back with it.
+ */
+function conflictOf(
+  abs: string,
+  baseVersion: unknown,
+): { ok: false; conflict: true; error: string; current: string } | undefined {
+  if (typeof baseVersion !== "string" || !existsSync(abs)) return undefined;
+  const current = readFileSync(abs, "utf8");
+  if (fileVersion(current) === baseVersion) return undefined;
+  return { ok: false, conflict: true, error: "This file changed on disk since you opened it.", current };
+}
+
 export async function handleApi(
   method: string,
   pathname: string,
@@ -267,11 +297,13 @@ export async function handleApi(
     const p = query.get("path");
     if (!p) return { status: 400, json: { error: "path required" } };
     const text = readFileSync(confinePath(ctx.dir, p), "utf8");
-    // Parsed fields for display + the raw source so the editor round-trips exactly.
-    return { status: 200, json: { ...parse.request.parse(text), raw: text } };
+    // Parsed fields for display + the raw source so the editor round-trips exactly, and the
+    // version of those exact bytes so a later save can tell whether it is about to overwrite
+    // an edit that landed in between.
+    return { status: 200, json: { ...parse.request.parse(text), raw: text, version: fileVersion(text) } };
   }
   if (method === "POST" && pathname === "/api/request") {
-    const b = (body ?? {}) as { path?: string; content?: string };
+    const b = (body ?? {}) as { path?: string; content?: string; baseVersion?: string };
     if (!b.path || typeof b.content !== "string") {
       return { status: 400, json: { error: "path and content required" } };
     }
@@ -286,6 +318,8 @@ export async function handleApi(
     } catch (e) {
       return { status: 200, json: { ok: false, error: (e as Error).message } };
     }
+    const conflict = conflictOf(abs, b.baseVersion);
+    if (conflict) return { status: 200, json: conflict };
     mkdirSync(dirname(abs), { recursive: true });
     writeFileSync(abs, b.content);
     return { status: 200, json: { ok: true, path: toPosixPath(relative(ctx.dir, abs)) } };
@@ -294,7 +328,7 @@ export async function handleApi(
     // Structured counterpart to the raw-YAML POST /api/request above: the client sends the full
     // parsed request object (as returned by GET /api/request, minus `raw`) rather than YAML text,
     // so inline field editing doesn't need to round-trip through client-side YAML stringification.
-    const b = (body ?? {}) as { path?: string; request?: unknown };
+    const b = (body ?? {}) as { path?: string; request?: unknown; baseVersion?: string };
     if (!b.path || b.request === undefined) {
       return { status: 400, json: { error: "path and request required" } };
     }
@@ -309,6 +343,8 @@ export async function handleApi(
     } catch (e) {
       return { status: 200, json: { ok: false, error: (e as Error).message } };
     }
+    const objConflict = conflictOf(abs, b.baseVersion);
+    if (objConflict) return { status: 200, json: objConflict };
     mkdirSync(dirname(abs), { recursive: true });
     writeFileSync(abs, parse.request.serialize(validation.data));
     return { status: 200, json: { ok: true, path: toPosixPath(relative(ctx.dir, abs)) } };

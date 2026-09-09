@@ -48,7 +48,10 @@ describe("collectionDocs", () => {
     expect(markdown).toContain("Fetch a single pet.");
     expect(markdown).toContain("| `expand` | `owner` |");
     expect(markdown).toContain("| `Accept` | `application/json` |");
-    expect(markdown).toContain('{"type":"status","equals":200}');
+    // In words, not as the internal object: this document is read by people who do not have the
+    // schema open.
+    expect(markdown).toContain("- status is 200");
+    expect(markdown).not.toContain('{"type":"status"');
     expect(markdown).toContain("`{{ownerId}}` ← `$.owner.id`");
     expect(markdown).toContain("**Spec operation:** `GET /pets/{id}`");
     expect(markdown).toContain("**Tags:** `smoke`");

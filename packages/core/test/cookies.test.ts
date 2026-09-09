@@ -205,3 +205,55 @@ describe("cookies through a workspace run", () => {
     expect(s.seen[1]!.cookie).toBeUndefined();
   });
 });
+
+describe("scoping a cookie the way a browser does", () => {
+  it("sends a Secure cookie back over http on loopback", () => {
+    // The one that bites in practice. `http://localhost` is what a collection points at all day,
+    // and Rails/Django/Express set `Secure` on the session cookie by default: the jar stored it
+    // and never sent it, so the login returned 200 and the next request 401 with no explanation.
+    for (const origin of ["http://localhost:3000", "http://127.0.0.1:4000", "http://app.localhost"]) {
+      const jar = new CookieJar();
+      jar.setFromResponse(`${origin}/login`, ["sid=abc; Secure; HttpOnly; Path=/"]);
+      expect(jar.headerFor(`${origin}/me`), origin).toBe("sid=abc");
+    }
+  });
+
+  it("still withholds a Secure cookie from plain http elsewhere", () => {
+    const jar = new CookieJar();
+    jar.setFromResponse("https://api.test/", ["s=1; Secure", "p=2"]);
+    expect(jar.headerFor("http://api.test/")).toBe("p=2");
+    expect(jar.headerFor("https://api.test/")).toBe("p=2; s=1");
+  });
+
+  it("refuses a Domain that would scope a cookie to a whole suffix", () => {
+    // `Domain=com` was accepted, so a cookie set by one host was sent to every other .com host
+    // the run touched. A run that talks to an auth server and an API is exactly that shape.
+    const jar = new CookieJar();
+    jar.setFromResponse("https://evil.com/x", ["sid=leak; Domain=com; Path=/"]);
+    expect(jar.headerFor("https://api.com/v1")).toBeUndefined();
+    // It is kept for the host that set it — dropping the attribute, not the cookie.
+    expect(jar.headerFor("https://evil.com/x")).toBe("sid=leak");
+  });
+
+  it("still allows widening to a real registrable domain", () => {
+    const jar = new CookieJar();
+    jar.setFromResponse("https://a.example.com/x", ["sid=1; Domain=example.com"]);
+    expect(jar.headerFor("https://b.example.com/")).toBe("sid=1");
+    expect(jar.headerFor("https://notexample.com/")).toBeUndefined();
+  });
+
+  it("honours the __Host- and __Secure- name prefixes", () => {
+    // The prefix is a promise about scope. Storing one that breaks it is worse than ignoring
+    // prefixes entirely: the name says host-only while the jar hands it to every sibling host.
+    const jar = new CookieJar();
+    jar.setFromResponse("https://api.test/", [
+      "__Host-a=1; Secure; Domain=api.test; Path=/", // Domain is forbidden on __Host-
+      "__Host-b=2; Secure; Path=/deep", // Path must be /
+      "__Host-c=3; Path=/", // must be Secure
+      "__Secure-d=4", // must be Secure
+      "__Host-ok=5; Secure; Path=/",
+      "__Secure-ok=6; Secure",
+    ]);
+    expect(jar.all().map((c) => c.name).sort()).toEqual(["__Host-ok", "__Secure-ok"]);
+  });
+});

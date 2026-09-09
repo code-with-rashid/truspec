@@ -413,11 +413,32 @@ function splitQuery(raw: string): { url: string; query?: Record<string, string> 
 
 const VALID_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]);
 
+/**
+ * Whether a token can actually be a request URL.
+ *
+ * The first non-flag token after `curl` is taken as the URL, so prose that merely contains the
+ * word — "not a curl command", pasted into the importer by a person or an agent — used to produce
+ * a request with `url: command`: a file that validates, gets written, and can never run. A URL
+ * carries a scheme, a `{{template}}`, an absolute path, or a host-shaped authority (a dot, a
+ * port, or `localhost`), which is also exactly what curl itself will accept.
+ */
+function looksLikeUrl(raw: string): boolean {
+  if (raw.includes("{{")) return true;
+  if (/^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(raw)) return true;
+  if (raw.startsWith("/")) return true;
+  const authority = raw.split(/[/?#]/)[0] ?? "";
+  return authority.includes(".") || /:\d/.test(authority) || /^localhost(?::|$)/i.test(authority);
+}
+
 /** Convert one already-tokenized curl command into a request. */
 function curlToRequest(tokens: Token[], warnings: string[]): TruSpecRequest | undefined {
   const p = parseOne(tokens, warnings);
   if (!p.url) {
     warnings.push("Skipped a curl command with no URL");
+    return undefined;
+  }
+  if (!looksLikeUrl(p.url)) {
+    warnings.push(`Skipped a curl command whose URL is not a URL: ${p.url}`);
     return undefined;
   }
   if (p.insecure) {

@@ -1,12 +1,34 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { isRelevantChange, watchWorkspace } from "../src/workspace";
 
+/**
+ * Poll until `ready()` holds, running `tick` before each attempt, and report how long it took.
+ *
+ * Fails loudly at the deadline rather than asserting on a sleep.
+ */
+async function waitFor(
+  ready: () => boolean,
+  { timeoutMs = 8000, tick }: { timeoutMs?: number; tick?: () => void } = {},
+): Promise<number> {
+  const started = Date.now();
+  const deadline = started + timeoutMs;
+  while (!ready()) {
+    if (Date.now() > deadline) throw new Error(`condition not met within ${timeoutMs}ms`);
+    tick?.();
+    await new Promise((r) => setTimeout(r, 25));
+  }
+  return Date.now() - started;
+}
+
 let dir: string;
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), "truspec-watch-"));
+  // realpath, because macOS hands out /var/folders/… which is a symlink to /private/var/folders/…
+  // — and a recursive fs.watch on the symlinked path reports paths under the real one, so a
+  // watcher rooted at the link can miss its own events.
+  dir = realpathSync(mkdtempSync(join(tmpdir(), "truspec-watch-")));
   mkdirSync(join(dir, "api"), { recursive: true });
   mkdirSync(join(dir, "environments"), { recursive: true });
   writeFileSync(join(dir, "api", "a.tspec.yaml"), 'tspec: "0.1"\nname: A\nurl: "https://x.test"\n');
@@ -189,15 +211,24 @@ describe("watchWorkspace", () => {
     const stop = watchWorkspace(join(dir, "api"), () => {
       fired += 1;
     }, { debounceMs: 5 });
-    writeFileSync(join(dir, "api", "b.tspec.yaml"), 'tspec: "0.1"\nname: B\nurl: "https://x.test"\n');
-    await new Promise((r) => setTimeout(r, 250));
+
+    // Keep writing until an event arrives, rather than writing once and waiting. `fs.watch` is
+    // backed by FSEvents on macOS, which does not arm synchronously — a file written in the same
+    // tick as the watcher is created can be missed entirely, so a single write is a coin toss
+    // there (and was: this test timed out on every macOS run). What is being asserted is that a
+    // real filesystem change reaches the watcher, not that the very first one does.
+    const write = (name: string): void =>
+      writeFileSync(join(dir, "api", name), `tspec: "0.1"\nname: B\nurl: "https://x.test"\n# ${Date.now()}\n`);
+    const deliveryMs = await waitFor(() => fired >= 1, { tick: () => write("b.tspec.yaml") });
     stop();
     expect(fired).toBeGreaterThanOrEqual(1);
 
-    // Nothing fires after teardown, which is what keeps a finished run from hanging.
+    // Nothing fires after teardown, which is what keeps a finished run from hanging. The wait has
+    // to be a real one — the assertion is that nothing arrives — and it is scaled by how long
+    // delivery actually took above, so on a platform where events lag it is not a vacuous pass.
     const after = fired;
-    writeFileSync(join(dir, "api", "c.tspec.yaml"), 'tspec: "0.1"\nname: C\nurl: "https://x.test"\n');
-    await new Promise((r) => setTimeout(r, 150));
+    write("c.tspec.yaml");
+    await new Promise((r) => setTimeout(r, Math.max(300, deliveryMs * 3)));
     expect(fired).toBe(after);
   });
 

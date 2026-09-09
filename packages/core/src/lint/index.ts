@@ -10,15 +10,18 @@ import { walkDirSafe } from "../workspace/walk";
 import { toPosixPath } from "../workspace/paths";
 import {
   credentialLiterals,
+  folderCredentialLiterals,
   isInsecureUrl,
+  isLiteralCredential,
   type LintFinding,
   looksLikeSecret,
   referencedVars,
   type Severity,
+  urlQueryLiterals,
 } from "./rules";
 
 export type { LintFinding, Severity } from "./rules";
-export { looksLikeSecret, referencedVars } from "./rules";
+export { isLiteralCredential, looksLikeSecret, referencedVars } from "./rules";
 
 export interface LintOptions {
   /** Extra variable names to treat as declared (OS env, CI-injected `--var`). */
@@ -51,6 +54,8 @@ export const LINT_RULES: Array<{ id: string; severity: Severity; description: st
   { id: "body-on-bodiless-method", severity: "error", description: "A GET or HEAD request carries a body, which the HTTP client refuses to send at all." },
   { id: "content-type-conflict", severity: "warning", description: "An explicit Content-Type contradicts the body's declared type, so the bytes are sent under the wrong label." },
   { id: "capture-never-used", severity: "warning", description: "A captured variable is referenced by no later request." },
+  { id: "script-runs-unsandboxed", severity: "warning", description: "The request carries a script, which runs with the same access as the truspec process itself." },
+  { id: "literal-credential-field", severity: "warning", description: "A field whose name says credential (api key, token, password) holds a literal value rather than a {{variable}}." },
 ];
 
 /**
@@ -86,7 +91,9 @@ export function lintWorkspace(dir: string, opts: LintOptions = {}): LintReport {
     if (req.assertions.length === 0) {
       add(path, "warning", "no-assertions", "No assertions — this request can never fail a run.");
     }
-    for (const { where, value } of credentialLiterals(req)) {
+    // Query parameters written into the URL are linted by name too: a credential in a query
+    // string is the worst place for one — it lands in every access log along the way.
+    for (const { where, value } of [...credentialLiterals(req), ...urlQueryLiterals(req.url)]) {
       const what = looksLikeSecret(value);
       if (what) {
         add(
@@ -94,6 +101,17 @@ export function lintWorkspace(dir: string, opts: LintOptions = {}): LintReport {
           "error",
           "inline-secret",
           `${where} looks like ${what}. Reference it as {{name}} and declare it under an environment's \`secrets\`.`,
+        );
+        continue;
+      }
+      // No recognisable vendor shape, but the field's *name* says what it holds. Reported as a
+      // warning rather than an error: the name is strong evidence, not proof.
+      if (isLiteralCredential(where, value)) {
+        add(
+          path,
+          "warning",
+          "literal-credential-field",
+          `${where} holds a literal value. If it is a credential, reference it as {{name}} and declare it under an environment's \`secrets\`.`,
         );
       }
     }
@@ -193,6 +211,76 @@ export function lintWorkspace(dir: string, opts: LintOptions = {}): LintReport {
     for (const name of Object.keys(req.capture ?? {})) {
       if (usedNames.has(name)) continue;
       add(path, "warning", "capture-never-used", `capture.${name} is referenced by no later request.`);
+    }
+  }
+
+  // A `script:` block is not sandboxed — `docs/scripting.md` says so, and it is demonstrably true:
+  // a script can reach the host realm through any object handed into the vm context, and from
+  // there read every environment variable and file the user can. That is fine for a collection you
+  // wrote. It is worth seeing for one you just imported, were sent, or generated — which is
+  // exactly when nobody thinks to open the files. Surfacing it here makes an invisible risk a
+  // reviewable line in `truspec lint`.
+  for (const { path, req } of ordered) {
+    const which = [req.script?.pre ? "pre" : "", req.script?.post ? "post" : ""].filter(Boolean);
+    if (which.length === 0) continue;
+    add(
+      path,
+      "warning",
+      "script-runs-unsandboxed",
+      `script.${which.join(" and script.")} runs with the same access as the truspec process (no sandbox) — review it before running a collection you did not write.`,
+    );
+  }
+
+  // Folder configs — the third file type the format defines, and the last one the secret rule
+  // never read. A broken one aborts a whole run, and a credential in one applies to every request
+  // beneath it, so both are worth catching before a push rather than at run time.
+  const folderConfigs: string[] = [];
+  walkDirSafe(dir, (full, name) => {
+    if (name === "folder.tspec.yaml") folderConfigs.push(full);
+  });
+  for (const abs of folderConfigs.sort()) {
+    const rel = toPosixPath(relative(dir, abs));
+    const parsed = parse.folderConfig.safeParse(readFileSync(abs, "utf8"));
+    if (!parsed.ok || !parsed.data) {
+      add(rel, "error", "parse", parsed.error ?? "does not parse as a folder config");
+      continue;
+    }
+    for (const { where, value } of folderCredentialLiterals(parsed.data)) {
+      const what = looksLikeSecret(value);
+      if (!what) continue;
+      add(
+        rel,
+        "error",
+        "inline-secret",
+        `${where} looks like ${what}. A folder's auth applies to every request beneath it — reference it as {{name}} and declare it under an environment's \`secrets\`.`,
+      );
+    }
+  }
+
+  // Environment files, which CLAUDE.md's hard rule names alongside requests: "Never inline secrets
+  // into request or environment files." The linter enforced it for requests only, so an
+  // `environments/*.env.yaml` carrying a committed AWS or Stripe key passed clean — and an env
+  // file is exactly where someone reaches for when a `{{var}}` needs a value.
+  const envDir = join(dir, "environments");
+  if (existsSync(envDir)) {
+    for (const entry of readdirSync(envDir).sort()) {
+      if (!entry.endsWith(".env.yaml")) continue;
+      const rel = toPosixPath(join("environments", entry));
+      const parsed = parse.environment.safeParse(readFileSync(join(envDir, entry), "utf8"));
+      if (!parsed.ok || !parsed.data) {
+        add(rel, "error", "parse", parsed.error ?? "does not parse as an environment");
+        continue;
+      }
+      for (const [name, value] of Object.entries(parsed.data.variables ?? {})) {
+        const what = typeof value === "string" ? looksLikeSecret(value) : undefined;
+        if (!what) continue;
+        add(
+          rel,
+          "error",
+          "inline-secret",
+          `variables.${name} looks like ${what}. Declare it under \`secrets:\` (a name, no value) and supply it from the environment or a .env file.`,
+        );
+      }
     }
   }
 

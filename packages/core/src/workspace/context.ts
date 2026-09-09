@@ -1,10 +1,11 @@
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { parse } from "../format";
 import { SCHEMA_VERSION } from "../format/schema";
 import type { TruSpecEnvironment, TruSpecFolderConfig } from "../format/types";
 import type { Vars } from "../runner";
 import { findUp } from "./discover";
+import { toPosixPath } from "./paths";
 
 /** Merge a root→leaf chain of folder configs; deeper entries win. */
 export function mergeFolderConfigs(chain: TruSpecFolderConfig[]): TruSpecFolderConfig {
@@ -33,7 +34,14 @@ export function loadFolderChain(leafDir: string, rootDir: string): TruSpecFolder
   const chain: TruSpecFolderConfig[] = [];
   for (const d of dirs) {
     const p = join(d, "folder.tspec.yaml");
-    if (existsSync(p)) chain.push(parse.folderConfig.parse(readFileSync(p, "utf8")));
+    if (!existsSync(p)) continue;
+    try {
+      chain.push(parse.folderConfig.parse(readFileSync(p, "utf8")));
+    } catch (e) {
+      // A workspace can hold many folder configs, and the bare schema message names none of them.
+      // The file that has to be opened is the single most useful thing to say here.
+      throw new Error(`${toPosixPath(relative(root, p)) || "folder.tspec.yaml"}: ${(e as Error).message}`);
+    }
   }
   return mergeFolderConfigs(chain);
 }

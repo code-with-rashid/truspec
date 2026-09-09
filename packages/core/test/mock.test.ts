@@ -156,6 +156,108 @@ paths:
   });
 });
 
+describe("mock validation of the request body", () => {
+  // Before this the mock checked only that *a* body was sent. It answered 201 to
+  // `{"name": 1, "priceCents": "free"}` against `name: string, priceCents: integer` — agreeing
+  // with a request the real API would reject, which is the one thing a spec-backed mock exists
+  // to prevent.
+  const SPEC = `
+openapi: 3.0.3
+info: { title: Shop, version: "1" }
+paths:
+  /products:
+    post:
+      operationId: createProduct
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, priceCents]
+              properties:
+                name: { type: string }
+                priceCents: { type: integer }
+      responses: { "201": { description: created } }
+`.trim();
+
+  const post = (bodyText: string, contentType = "application/json") =>
+    createMockResponder(SPEC, { validate: true }).respond("POST", "/products", {
+      hasBody: bodyText.length > 0,
+      bodyText,
+      contentType,
+    });
+
+  const parsed = (r: { body: string } | undefined) => JSON.parse(r?.body ?? "null");
+
+  it("accepts a body that satisfies the schema", () => {
+    expect(post('{"name":"x","priceCents":100}')?.status).toBe(201);
+  });
+
+  it("names every field that violates it", () => {
+    const r = post('{"name":1,"priceCents":"free"}');
+    expect(r?.status).toBe(400);
+    expect(parsed(r).violations).toEqual([
+      { path: "/name", message: "expected string, got number" },
+      { path: "/priceCents", message: "expected integer, got string" },
+    ]);
+  });
+
+  it("reports a missing required property", () => {
+    const r = post('{"name":"x"}');
+    expect(r?.status).toBe(400);
+    expect(parsed(r).violations[0].message).toMatch(/priceCents/);
+  });
+
+  it("says when the body is not JSON at all", () => {
+    const r = post("{oops");
+    expect(r?.status).toBe(400);
+    expect(parsed(r).error).toBe("Request body is not valid JSON");
+  });
+
+  it("still reports an absent required body as missing, not as malformed", () => {
+    const r = createMockResponder(SPEC, { validate: true }).respond("POST", "/products", { hasBody: false });
+    expect(r?.status).toBe(400);
+    expect(parsed(r).missing).toEqual(["body"]);
+  });
+
+  it("leaves a non-JSON media type alone — there is no JSON Schema to check it against", () => {
+    expect(post("name=x&priceCents=1", "application/x-www-form-urlencoded")?.status).toBe(201);
+  });
+
+  it("checks nothing when validate is off", () => {
+    const r = createMockResponder(SPEC).respond("POST", "/products", {
+      hasBody: true,
+      bodyText: '{"name":1}',
+      contentType: "application/json",
+    });
+    expect(r?.status).toBe(201);
+  });
+
+  it("reads the body over HTTP, not just in the engine", async () => {
+    const handle = await startMockServer(SPEC, { port: 0, validate: true });
+    try {
+      const bad = await fetch(`${handle.url}/products`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: '{"name":1,"priceCents":2}',
+      });
+      expect(bad.status).toBe(400);
+      const body = (await bad.json()) as { violations: Array<{ path: string }> };
+      expect(body.violations[0]?.path).toBe("/name");
+
+      const good = await fetch(`${handle.url}/products`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: '{"name":"x","priceCents":2}',
+      });
+      expect(good.status).toBe(201);
+    } finally {
+      await handle.close();
+    }
+  });
+});
+
 describe("mock route specificity", () => {
   // Regression: a literal route declared AFTER a parametric one used to be unreachable, because
   // `respond` returned the first regex match in document order. A static segment must beat a param.

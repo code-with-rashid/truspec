@@ -60,6 +60,57 @@ describe("computeDrift", () => {
     expect(drift.ok).toBe(false);
   });
 
+  it("says which file each stale or changed entry came from", () => {
+    // Drift names an operation; fixing it means editing a file. Without this the reader greps a
+    // hundred requests for whichever one carries the reference — a search the report can do,
+    // since it read the file to notice in the first place.
+    const colOps = collectionOperations([
+      {
+        req: parse.request.parse('name: gone\nurl: http://x\nspec: { operation: "DELETE /pets/{id}" }'),
+        file: "/w/api/gone.tspec.yaml",
+      },
+      {
+        req: parse.request.parse('name: list\nurl: http://x\nspec: { operation: "GET /pets" }'),
+        file: "/w/api/list.tspec.yaml",
+      },
+      {
+        req: parse.request.parse('name: create\nurl: http://x\nspec: { operation: "POST /pets" }'),
+        file: "/w/api/create.tspec.yaml",
+      },
+      { req: parse.request.parse("name: byid\nurl: http://x\nspec: { operationId: getPetById }") },
+    ]);
+    const drift = computeDrift(ops, colOps);
+    expect(drift.sources?.["DELETE /pets/{id}"]).toEqual(["/w/api/gone.tspec.yaml"]);
+    for (const entry of drift.changed) {
+      expect(drift.sources?.[entry], entry).toBeDefined();
+    }
+  });
+
+  it("lists every file when more than one request produces the same entry", () => {
+    const colOps = collectionOperations([
+      {
+        req: parse.request.parse('name: a\nurl: http://x\nspec: { operation: "DELETE /gone" }'),
+        file: "/w/a.tspec.yaml",
+      },
+      {
+        req: parse.request.parse('name: b\nurl: http://x\nspec: { operation: "DELETE /gone" }'),
+        file: "/w/b.tspec.yaml",
+      },
+    ]);
+    expect(computeDrift(ops, colOps).sources?.["DELETE /gone"]).toEqual(["/w/a.tspec.yaml", "/w/b.tspec.yaml"]);
+  });
+
+  it("carries no sources when nothing drifted", () => {
+    const colOps = collectionOperations([
+      { req: parse.request.parse('name: a\nurl: http://x\nspec: { operation: "GET /pets" }'), file: "/w/a.tspec.yaml" },
+      { req: parse.request.parse('name: b\nurl: http://x\nspec: { operation: "POST /pets" }'), file: "/w/b.tspec.yaml" },
+      { req: parse.request.parse("name: c\nurl: http://x\nspec: { operationId: getPetById }"), file: "/w/c.tspec.yaml" },
+    ]);
+    const drift = computeDrift(ops, colOps);
+    expect(drift.ok).toBe(true);
+    expect(drift.sources).toBeUndefined();
+  });
+
   it("is clean when every operation is referenced", () => {
     const colOps = collectionOperations([
       { req: parse.request.parse('name: a\nurl: http://x\nspec: { operation: "GET /pets" }') },

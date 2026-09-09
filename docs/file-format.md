@@ -127,6 +127,18 @@ options:
   maxRedirects: 5
 ```
 
+Both are visible in the report rather than silent: a timeout names the limit that expired
+(`Timed out waiting for api.example.com:443 after 500ms (3 attempts)`), so it is clear whether the
+request's own `timeoutMs`, `--timeout` or the 30s default applied; and a response that arrived only
+after a re-send is annotated `↻ re-sent 2 time(s) before this response`.
+
+**Streaming responses.** A `text/event-stream` response is parsed into its events rather than left
+as one long string: `response.events` carries `{ event?, data, id? }` per event, and the human
+report says `↯ 7 server-sent event(s)`. A stream that never ends — the ordinary shape of an LLM
+API — is closed after 200 events, or by the request timeout, and **what arrived is still
+reported**: before, such a request timed out having thrown away everything the server sent.
+`streamTruncated` says the stream was cut short rather than finished by the server.
+
 **Redirects are not followed by default.** TruSpec reports the *actual* response a URL returns, so
 a `301` stays assertable and [`contract`](./cli.md#contract) can validate a redirect operation the
 spec declares. Turn `followRedirects` on for a request where the hop is incidental.
@@ -468,7 +480,17 @@ Notes:
 - Requests run in `order` (ascending), then by file path — so lower-`order` requests can
   feed higher ones.
 - A jsonpath that selects an object/array is captured as its JSON string.
-- A capture whose source resolves to nothing is simply skipped (the variable stays unset).
+- A capture whose source resolves to nothing leaves the variable unset, and **says so on the
+  request that should have produced it**:
+
+  ```
+  ✓ PASS  Login  (api/01-login.tspec.yaml)  200 25ms
+        ! capture token ← $.access_token matched nothing — $ has no "access_token"; keys: token_value
+  ```
+
+  It is not a failure by itself — nothing may consume the variable — but the request that does
+  consume it fails with `Unresolved variables: {{token}}`, which names the consumer rather than
+  the producer. The web UI shows the same thing beside the values that were captured.
 - Captures flow forward only within a single `run` invocation; they are not persisted.
 
 ---
@@ -507,6 +529,28 @@ the active environment, folder config, secrets, and values captured earlier in t
 - Interpolation descends into objects and arrays (e.g. every string in a JSON body).
 - **Unresolved variables fail the request before it is sent**, and the run reports exactly
   which names were missing — nothing is silently sent with an empty value baked in.
+
+### Types in a JSON body
+
+In a `json` (or `graphql` variables) body, a value that is **exactly one placeholder** keeps the
+variable's own type. Anything else is text, because concatenation is a string operation:
+
+```yaml
+body:
+  type: json
+  content:
+    qty: "{{qty}}"        # qty = 2      -> 2      (a number)
+    live: "{{live}}"      # live = true  -> true   (a boolean)
+    sku: "sku-{{qty}}"    # qty = 2      -> "sku-2"
+```
+
+This matters most for a spec-validated API: an `integer` field sent as `"2"` fails its own schema.
+Typed values reach a run from an environment's `variables` (declared as `string | number | boolean`),
+from a `capture` (which stores the JSON value it read), and from a **JSON** dataset. A **CSV**
+dataset has no types — every cell is text — so use a JSON dataset when the type matters.
+
+URLs, headers, query parameters, `text` bodies and `form` fields are always text: those are string
+formats, and there is nothing to preserve.
 
 ---
 

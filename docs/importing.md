@@ -29,6 +29,16 @@ truspec import insomnia ./insomnia_export.json --out ./api
 truspec import har ./session.har --out ./api --filter api.example.com --base-url-var baseUrl
 ```
 
+A devtools HAR of a single page load is mostly the asset pipeline: the document, stylesheets,
+script chunks, images, fonts. Those are skipped by default — the same call `OPTIONS` preflights
+get, and for the same reason: they are not API surface, and importing them leaves a collection you
+have to prune before it is usable. The decision is made from the **recorded response content type**,
+never the URL, and an entry whose type the HAR did not record is kept.
+
+The count is always reported (`Skipped 8 static asset(s) …`), and `--include-assets` keeps
+everything. Use it when your API genuinely serves one of those types — an avatar or a PDF endpoint
+looks exactly like a page asset from the outside, and nothing can tell them apart for you.
+
 Each source request becomes one `<name>.tspec.yaml` file, preserving the folder structure
 of the original collection.
 
@@ -61,6 +71,7 @@ truspec import postman ./postman_collection.json
 truspec import <postman|bruno|insomnia|curl|har> <path> [--out <dir>] [--dry-run] [--name <base>]
                                              [--filter <substr>] [--base-url-var <name>]
                                              [--keep-noise-headers] [--include-options]
+                                             [--include-assets]
 ```
 
 | Argument / flag | Alias | Description |
@@ -74,6 +85,7 @@ truspec import <postman|bruno|insomnia|curl|har> <path> [--out <dir>] [--dry-run
 | `--base-url-var <name>` | | HAR only: replace the recorded origin with `{{name}}`. |
 | `--keep-noise-headers` | | HAR only: keep `sec-*`, `user-agent`, … (stripped by default). |
 | `--include-options` | | HAR only: keep `OPTIONS` preflights (skipped by default). |
+| `--include-assets` | | HAR only: keep static assets — documents, styles, scripts, images, fonts, media (skipped by default). |
 
 ---
 
@@ -166,6 +178,16 @@ The importer maps the common surface of each format onto TruSpec's
   [`body` types](./file-format.md#bodies).
 - **Auth** — bearer, basic, and API-key auth map to TruSpec [`auth`](./file-format.md#auth).
 - **Folder structure** — preserved as directories of `.tspec.yaml` files.
+- **Bruno `assert` blocks** — `res.status`, `res.responseTime` (to a `duration` assertion),
+  `res.body.<path>` with any of `eq neq gt gte lt lte contains matches length isDefined
+  isUndefined isNull isEmpty isNotEmpty isString isNumber isBoolean isArray`, and
+  `res.headers['name']`. Two constraints on the same field both survive.
+- **Bruno `vars:post-response`** — becomes [`capture`](./file-format.md#chaining-with-capture),
+  so a login that saves a token still saves it and the chain still runs.
+- **Postman `pm.test(...)` assertions and `pm.environment.set(...)` captures** — the common idioms
+  convert to assertions and [`capture`](./file-format.md#chaining-with-capture). Export puts them
+  back as `pm.test` and `pm.environment.set`, so a collection survives the round trip with its
+  chain intact.
 
 Everything is run through the schema and **validated before it's written**, so an import
 never produces a file that won't parse.
@@ -220,6 +242,38 @@ writeImport(result, "./api");  // write the .tspec.yaml files
 ```
 
 See [Programmatic API → importers](./api.md#importers--postman--bruno).
+
+---
+
+## Exporting back to Postman
+
+Going the other way — handing a collection to someone who works in Postman — is available from the
+web UI's export button and from `@truspec/core/exporters`:
+
+```ts
+import { exportPostman } from "@truspec/core/exporters";
+
+const { collection, warnings, stats } = exportPostman("./api");
+```
+
+**Assertions come back too.** Importing a Postman collection recovers declarative assertions from
+its `test` scripts — `pm.response.to.have.status(200)`, `pm.expect(pm.response.code).to.eql(201)`,
+response-time and header checks, `pm.expect(pm.response.text()).to.include(...)`, and a value read
+off `pm.response.json()` by accessor chain or `_.get`. Anything not recognised stays in the ported
+comment for you to port by hand, because a guessed assertion is worse than an honest gap. Before
+this, an imported collection ran without checking anything and reported 0% coverage.
+
+**Assertions come with it.** Each request's declarative assertions are rendered as a Postman test
+script (`pm.test(...)`), so the exported collection still checks what the TruSpec one checked
+rather than becoming a set of requests that assert nothing. `status`, `header`, `body` and
+`duration` map directly; a `jsonpath` maps when it is simple enough for the lodash `_.get` Postman
+ships (`$.data.items[0].id` yes, a filter or a `..` descent no).
+
+Anything with no Postman equivalent is reported in `warnings` rather than dropped silently:
+`schema` assertions (they need the OpenAPI spec, which a Postman collection does not carry), a
+`jsonpath` too complex to express, transport `options`, OAuth2 `audience`/`extra`, and the `spec`
+link itself. Those survive only in the `.tspec.yaml` files you exported from — which is the
+argument for keeping those the source of truth.
 
 ---
 

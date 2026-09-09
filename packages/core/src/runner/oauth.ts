@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { TruSpecAuth } from "../format/types";
 import { interpolate, type Vars } from "./interpolate";
 
@@ -80,13 +81,6 @@ export async function resolveOAuthToken(
   const required = requiredFields(auth.grant, { clientId, username, password, refreshToken });
   if (required) return { ok: false, error: `OAuth2: ${required}` };
 
-  const now = opts.now ?? (() => Date.now());
-  const cacheKey = [auth.grant, tokenUrl, clientId ?? "", username ?? "", scope ?? "", audience ?? ""].join("\u0000");
-  const hit = opts.cache?.get(cacheKey);
-  if (hit && hit.expiresAt > now()) {
-    return { ok: true, header: `${auth.scheme} ${hit.accessToken}`, cached: true };
-  }
-
   const form = new URLSearchParams({ grant_type: auth.grant });
   if (scope) form.set("scope", scope);
   if (audience) form.set("audience", audience);
@@ -96,6 +90,13 @@ export async function resolveOAuthToken(
   }
   if (auth.grant === "refresh_token") form.set("refresh_token", refreshToken ?? "");
   for (const [k, v] of Object.entries(extra)) form.set(k, v);
+
+  const now = opts.now ?? (() => Date.now());
+  const cacheKey = tokenCacheKey(tokenUrl, auth.clientAuth, clientId, clientSecret, form);
+  const hit = opts.cache?.get(cacheKey);
+  if (hit && hit.expiresAt > now()) {
+    return { ok: true, header: `${auth.scheme} ${hit.accessToken}`, cached: true };
+  }
 
   const headers: Record<string, string> = {
     "Content-Type": "application/x-www-form-urlencoded",
@@ -148,6 +149,31 @@ export async function resolveOAuthToken(
     expiresAt: now() + Math.max(expiresIn - EXPIRY_SKEW_MS, 0),
   });
   return { ok: true, header: `${auth.scheme} ${accessToken}`, cached: false };
+}
+
+/**
+ * Cache key for an access token: everything that decides *which* token comes back.
+ *
+ * It used to be built from a hand-picked subset — grant, url, clientId, username, scope, audience
+ * — which omitted the two fields that most often distinguish one token from another. Two requests
+ * with different `refreshToken`s (one per user, the ordinary way to test a multi-tenant API), or
+ * different `extra.resource` / `extra.tenant`, produced the same key, so the second silently
+ * reused the first's token. The visible outcome is a 401 you cannot explain; the invisible one is
+ * a request that passes as the wrong identity.
+ *
+ * So the key is the whole resolved token request. Hashed because it contains the client secret and
+ * password, and a key that carries those is a key that must never be printed.
+ */
+function tokenCacheKey(
+  tokenUrl: string,
+  clientAuth: string,
+  clientId: string | undefined,
+  clientSecret: string | undefined,
+  form: URLSearchParams,
+): string {
+  const body = [...form.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => `${k}=${v}`);
+  const material = [tokenUrl, clientAuth, clientId ?? "", clientSecret ?? "", ...body].join("\u0000");
+  return createHash("sha256").update(material).digest("hex");
 }
 
 function requiredFields(

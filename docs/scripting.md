@@ -20,9 +20,20 @@ Both run in a Node `vm` context with a curated `tr` API. They set **variables**,
 request object directly — so to use a computed value, set it in the script and reference it
 as `{{name}}` in the request.
 
-> **Not a security sandbox.** A `vm` context is *not* an isolation boundary. Scripts are
-> authored in your own collection — the same trust model as Postman/Bruno scripts. **Only
-> run collections you trust.** Each script is bounded by a ~1s execution timeout.
+> **Not a security sandbox.** A `vm` context is *not* an isolation boundary, and it is worth being
+> concrete about what that means rather than leaving it abstract. Obvious globals are absent —
+> `process`, `require` and `fetch` are all `undefined` inside a script — but a script can still
+> reach the host realm through any object handed into the context, and from there it has **the same
+> access as the `truspec` process itself**: every environment variable (including every resolved
+> secret), and every file your user account can read or write.
+>
+> That is the same trust model as Postman and Bruno scripts, and it is fine for a collection you
+> wrote. It matters for one you **imported, were sent, or generated** — exactly the case where
+> nobody thinks to open the files first. `truspec lint` flags every request carrying a script
+> (`script-runs-unsandboxed`), so a freshly imported collection tells you what to review before you
+> run it. **Only run collections you trust.**
+>
+> Each script is bounded by a ~1s execution timeout, which bounds a runaway loop — not access.
 
 ---
 

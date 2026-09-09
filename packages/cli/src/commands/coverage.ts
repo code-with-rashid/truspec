@@ -40,6 +40,6 @@ export async function coverageCommand(argv: string[], deps: Partial<CommandDeps>
     return 1;
   }
 
-  emit(d, values.json ? JSON.stringify(report, null, 2) : formatCoverage(report), values.output);
+  emit(d, values.json ? JSON.stringify(report, null, 2) : formatCoverage(report, d.cwd), values.output);
   return report.ok ? 0 : 1;
 }

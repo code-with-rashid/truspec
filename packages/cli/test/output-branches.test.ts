@@ -47,7 +47,8 @@ describe("output formatter branch coverage", () => {
   it("formatContract covers conformed/violations/skipped/untested and both verdicts", () => {
     const bad = formatContract({ specOperations: 4, conformed: ["GET /a"], violations: [{ op: "GET /b", status: 500, message: "x" }], skipped: [{ op: "GET /c", message: "no schema" }], untested: ["GET /d"], ok: false });
     expect(bad).toMatch(/Violations \(1\)/);
-    expect(bad).toMatch(/Skipped/);
+    // Renamed from "Skipped": the section now says why each operation was not validated.
+    expect(bad).toMatch(/Not validated \(1\)/);
     expect(bad).toMatch(/Untested/);
     expect(bad).toMatch(/Contract violations: 1/);
     const good = formatContract({ specOperations: 1, conformed: ["GET /a"], violations: [], skipped: [], untested: [], ok: true });

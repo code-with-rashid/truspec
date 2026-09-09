@@ -44,6 +44,12 @@ edit the `.tspec.yaml` files directly (with [schema-backed
 autocomplete](./file-format.md#editor-integration)) or use the VS Code extension below; the files
 are the source of truth either way.
 
+If a file changes on disk while you have it open — an agent editing it through the [MCP
+server](./mcp.md), a `git pull`, your own editor — a save is **refused rather than silently
+overwriting it**. The UI says the file changed and offers both ways out: reload to take what is on
+disk (discarding your unsaved edits to that request), or overwrite it with what is in the tab. Your
+repo is the source of truth, and more than one thing writes to it.
+
 `tags` shown next to the request's name are the ones `truspec run --tag <name>` selects on, so the
 subset your CI runs is visible in the client you author in. Transport `options` (timeout, retries,
 retry delay, redirect following) sit below the description.
@@ -95,12 +101,15 @@ no CORS, fully local.
 
 Features:
 
-- **CodeLens** on every request `.tspec.yaml`: ▶ Run · Run collection · Drift · Coverage
+- **CodeLens** on every request `.tspec.yaml`: ▶ Run · Run folder · Drift · Coverage
   (a `folder.tspec.yaml` is configuration, not a request, so it gets the last three only).
-- **Commands** (⇧⌘P): *TruSpec: Run Request / Run Collection / Drift / Coverage*.
+  **Run folder** runs the directory the open file is in — not the whole repository, which is
+  what the workspace root usually is once `truspec init` has put `environments/` there.
+- **Commands** (⇧⌘P): *TruSpec: Run Request / Run Folder / Drift / Coverage*.
 - Results render in a side panel — status, timing, assertions, plus drift and coverage
   views.
 - The `truspec.environment` setting picks the environment (otherwise you're prompted).
+- Drift and coverage find a spec named `*openapi*` or `*swagger*` (`.yaml`, `.yml`, `.json`).
 
 > The extension is **pre-release**; it isn't on the Marketplace yet. To run it from a source
 > checkout: `pnpm --filter truspec-vscode build`, then press **F5** in the repo (the *Run

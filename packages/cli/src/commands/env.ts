@@ -11,7 +11,7 @@ import { argError } from "../args";
 import { toPosixPath } from "@truspec/core/workspace";
 
 const USAGE =
-  "Usage: truspec env [<name>] [--dir <collection>] [--json]\n       truspec env --diff <a> <b> [--json]\n";
+  "Usage: truspec env [<name>] [--dir <collection>] [--json]\n       truspec env --diff <a> <b> [--strict] [--json]\n";
 
 /** `truspec env` — list, inspect, or diff the workspace's environments. */
 export async function envCommand(argv: string[], deps: Partial<CommandDeps> = {}): Promise<number> {
@@ -20,10 +20,11 @@ export async function envCommand(argv: string[], deps: Partial<CommandDeps> = {}
     dir: { type: "string" },
     json: { type: "boolean" },
     diff: { type: "boolean" },
+    strict: { type: "boolean" },
     output: { type: "string", short: "o" },
   } as const;
 
-  let values: { dir?: string; json?: boolean; diff?: boolean; output?: string };
+  let values: { dir?: string; json?: boolean; diff?: boolean; strict?: boolean; output?: string };
   let positionals: string[];
   try {
     const parsed = parseArgs({ args: argv, allowPositionals: true, options });
@@ -57,6 +58,14 @@ export async function envCommand(argv: string[], deps: Partial<CommandDeps> = {}
     const diff = diffEnvironments(a, b);
     emit(d, values.json ? JSON.stringify(diff, null, 2) : formatDiff(diff), values.output);
     // A difference is information, not a failure — `run` is what fails when a value is missing.
+    // `--strict` makes it gateable: the boring outage is staging declaring a name production does
+    // not, which nothing catches until the collection runs green everywhere except where it
+    // matters. Only a *missing name* fails; values are supposed to differ between environments.
+    const missingNames = diff.onlyInA.length + diff.onlyInB.length;
+    if (values.strict && missingNames > 0) {
+      d.stderr(`${missingNames} name(s) declared in only one of ${diff.a}, ${diff.b}.\n`);
+      return 1;
+    }
     return 0;
   }
 
@@ -118,14 +127,17 @@ function formatOne(env: EnvironmentReport): string {
 
 function formatDiff(diff: ReturnType<typeof diffEnvironments>): string {
   const lines = [`${diff.a} → ${diff.b}`, ""];
+  // Marking secrets matters because the fix differs: a missing variable is added to the file, a
+  // missing secret is set in the environment that runs it.
+  const kind = (n: string): string => (diff.secretNames.includes(n) ? "  (secret)" : "");
   if (diff.onlyInA.length > 0) {
     lines.push(`only in ${diff.a} (${diff.onlyInA.length}):`);
-    for (const n of diff.onlyInA) lines.push(`  - ${n}`);
+    for (const n of diff.onlyInA) lines.push(`  - ${n}${kind(n)}`);
     lines.push("");
   }
   if (diff.onlyInB.length > 0) {
     lines.push(`only in ${diff.b} (${diff.onlyInB.length}):`);
-    for (const n of diff.onlyInB) lines.push(`  + ${n}`);
+    for (const n of diff.onlyInB) lines.push(`  + ${n}${kind(n)}`);
     lines.push("");
   }
   if (diff.changed.length > 0) {

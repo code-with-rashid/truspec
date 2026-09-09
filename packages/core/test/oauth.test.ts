@@ -206,6 +206,62 @@ describe("token cache", () => {
     );
     expect(calls.length).toBe(2);
   });
+
+  // Everything that decides *which* token comes back has to be in the key. These two were not:
+  // a per-user refresh token, and provider-specific `extra` fields (Azure AD's `resource`, a
+  // `tenant`). Both produced the same key, so the second request silently reused the first's
+  // token — a 401 you cannot explain, or worse, a request that passes as the wrong identity.
+  it("does not hand one refresh token's result to another", async () => {
+    const { fetch, calls } = stubFetch();
+    const cache: TokenCache = new Map();
+    const base = auth(`  type: oauth2
+  grant: refresh_token
+  tokenUrl: "${TOKEN_URL}"
+  refreshToken: user-a
+`);
+    await resolveOAuthToken(base, { vars: {}, fetch, cache, now: () => 0 });
+    await resolveOAuthToken({ ...base, refreshToken: "user-b" }, { vars: {}, fetch, cache, now: () => 0 });
+    expect(calls.length).toBe(2);
+    expect(calls[1]?.body).toContain("refresh_token=user-b");
+  });
+
+  it("does not share a token between two different `extra` payloads", async () => {
+    const { fetch, calls } = stubFetch();
+    const cache: TokenCache = new Map();
+    await resolveOAuthToken(
+      { ...CLIENT_CREDENTIALS, extra: { resource: "api-one" } },
+      { vars: {}, fetch, cache, now: () => 0 },
+    );
+    await resolveOAuthToken(
+      { ...CLIENT_CREDENTIALS, extra: { resource: "api-two" } },
+      { vars: {}, fetch, cache, now: () => 0 },
+    );
+    expect(calls.length).toBe(2);
+  });
+
+  it("does not share a token between two clients that differ only by secret", async () => {
+    const { fetch, calls } = stubFetch();
+    const cache: TokenCache = new Map();
+    await resolveOAuthToken(CLIENT_CREDENTIALS, { vars: {}, fetch, cache, now: () => 0 });
+    await resolveOAuthToken(
+      { ...CLIENT_CREDENTIALS, clientSecret: "rotated" },
+      { vars: {}, fetch, cache, now: () => 0 },
+    );
+    expect(calls.length).toBe(2);
+  });
+
+  it("still caches when nothing that matters differs", async () => {
+    // The point of the cache: twenty requests under one folder-level block fetch one token.
+    const { fetch, calls } = stubFetch();
+    const cache: TokenCache = new Map();
+    for (let i = 0; i < 5; i++) {
+      await resolveOAuthToken(
+        { ...CLIENT_CREDENTIALS, extra: { resource: "api-one" } },
+        { vars: {}, fetch, cache, now: () => 0 },
+      );
+    }
+    expect(calls.length).toBe(1);
+  });
 });
 
 describe("runRequest with oauth2", () => {

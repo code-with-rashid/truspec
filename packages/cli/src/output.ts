@@ -18,8 +18,31 @@ export function formatHuman(result: WorkspaceRunResult, cwd: string): string {
     const iter = r.iteration !== undefined ? `[${r.iteration}] ` : "";
     lines.push(`${iter}${r.ok ? "✓" : "✗"} ${r.ok ? "PASS" : "FAIL"}  ${r.name}  (${where})${meta}`);
     if (r.error) lines.push(`      error: ${r.error}`);
+    // A bare 302 in the report reads as the server's answer. When redirects were followed it may
+    // be the last of several, and when the cap stopped the chain the status says nothing about
+    // why. The chain was already recorded; it was just invisible in the format people read.
+    if (r.redirects && r.redirects.length > 0) {
+      const stopped = r.redirectLimitHit ? " — stopped at maxRedirects" : "";
+      lines.push(`      ↪ followed ${r.redirects.length} redirect(s)${stopped}: ${r.redirects.join(" → ")}`);
+    }
     for (const a of r.assertions) {
       if (!a.ok) lines.push(`      ✗ ${a.message}`);
+    }
+    // A request that only passed on the third attempt is a fact about the API, not a detail: the
+    // result reads as a clean 200 while the server answered 503 twice. The count was recorded and
+    // simply never printed.
+    if (r.retries) lines.push(`      ↻ re-sent ${r.retries} time(s) before this response`);
+    // A stream's events are the response; saying "200, 4KB" about one says nothing about what
+    // arrived, and a stream cut short at the cap must not read as one the server finished.
+    if (r.response?.events) {
+      const cut = r.response.streamTruncated ? " — stream closed at the limit, not by the server" : "";
+      lines.push(`      ↯ ${r.response.events.length} server-sent event(s)${cut}`);
+    }
+    // A capture that matched nothing is reported on the request that *should have produced* the
+    // value. Without it the only sign is a failure several files later that names the consumer
+    // ("Unresolved variables: {{token}}") and says nothing about which request went wrong.
+    for (const m of r.missedCaptures ?? []) {
+      lines.push(`      ! capture ${m.name} ← ${m.source} matched nothing${m.reason ? ` — ${m.reason}` : ""}`);
     }
   }
   // Before the summary, and never silently: a file that did not parse ran no request at all, so it
@@ -41,8 +64,16 @@ export function formatHuman(result: WorkspaceRunResult, cwd: string): string {
   return lines.join("\n");
 }
 
-export function formatDrift(report: DriftReport): string {
+export function formatDrift(report: DriftReport, cwd = process.cwd()): string {
   const lines: string[] = [];
+  // Drift names an operation; fixing it means editing a file. The report knows which one — it read
+  // the file to notice — so saying it here saves grepping a hundred requests for the reference.
+  const where = (entry: string): string => {
+    const files = report.sources?.[entry];
+    if (!files || files.length === 0) return "";
+    const rel = files.map((f) => toPosixPath(relative(cwd, f)));
+    return rel.length === 1 ? `  (${rel[0]})` : `  (${rel.length} files: ${rel.join(", ")})`;
+  };
   lines.push(
     `Spec operations: ${report.specOperations}   Collection operations: ${report.collectionOperations}`,
   );
@@ -52,11 +83,11 @@ export function formatDrift(report: DriftReport): string {
   }
   if (report.removed.length > 0) {
     lines.push("", `Stale — not in the spec (${report.removed.length}):`);
-    for (const k of report.removed) lines.push(`  - ${k}`);
+    for (const k of report.removed) lines.push(`  - ${k}${where(k)}`);
   }
   if (report.changed.length > 0) {
     lines.push("", `Changed (${report.changed.length}):`);
-    for (const k of report.changed) lines.push(`  ~ ${k}`);
+    for (const k of report.changed) lines.push(`  ~ ${k}${where(k)}`);
   }
   if (report.liveMissing && report.liveMissing.length > 0) {
     lines.push("", `Missing from live API (${report.liveMissing.length}):`);
@@ -87,28 +118,53 @@ export function formatContract(report: ContractReport): string {
     for (const v of report.violations) lines.push(`  ✗ ${v.op}  →  ${v.message}`);
   }
   if (report.skipped.length > 0) {
-    lines.push("", `Skipped — spec declares no schema for the response status (${report.skipped.length}):`);
-    for (const s of report.skipped) lines.push(`  ~ ${s.op}`);
+    lines.push("", `Not validated (${report.skipped.length}):`);
+    for (const s of report.skipped) {
+      // "the request failed" and "the spec documents no schema for this status" are different
+      // problems with different fixes; reporting both as a bare skip hid the first one entirely.
+      const why = s.requestFailed
+        ? `the request failed${s.status ? ` (${s.status})` : ""} — see \`truspec run\``
+        : "the spec declares no schema for the response status";
+      lines.push(`  ~ ${s.op}  — ${why}`);
+    }
   }
   if (report.untested.length > 0) {
     lines.push("", `Untested — no request exercises these (${report.untested.length}, see \`coverage\`):`);
     for (const k of report.untested) lines.push(`  – ${k}`);
   }
   lines.push("");
+  // Never claim conformance that was not established. With nothing validated this used to print
+  // "All 1 tested operation(s) conform to the spec." directly under a header saying 0/1 conform.
+  const n = report.conformed.length;
   lines.push(
-    report.ok
-      ? `All ${tested} tested operation(s) conform to the spec.`
-      : `Contract violations: ${report.violations.length}.`,
+    !report.ok
+      ? `Contract violations: ${report.violations.length}.`
+      : n === 0
+        ? `No operation was validated against the spec.`
+        : report.skipped.length > 0
+          ? `${n} operation(s) conform to the spec; ${report.skipped.length} could not be validated.`
+          : `All ${n} tested operation(s) conform to the spec.`,
   );
   return lines.join("\n");
 }
 
-export function formatCoverage(report: CoverageReport): string {
+export function formatCoverage(report: CoverageReport, cwd = process.cwd()): string {
   const lines: string[] = [];
   lines.push(`Coverage: ${report.percent}% (${report.covered.length}/${report.total} operations tested)`);
+  // An operation a request points at but never asserts on is uncovered for a different reason
+  // than one nothing points at — and needs a different fix. Say which, and where.
+  const silent = new Map(report.unasserted?.map((u) => [u.op, u]) ?? []);
   if (report.uncovered.length > 0) {
     lines.push("", `Uncovered (${report.uncovered.length}):`);
-    for (const k of report.uncovered) lines.push(`  ✗ ${k}`);
+    for (const k of report.uncovered) {
+      const u = silent.get(k);
+      if (!u) {
+        lines.push(`  ✗ ${k}`);
+        continue;
+      }
+      const where = u.filePath ? ` (${toPosixPath(relative(cwd, u.filePath))})` : "";
+      lines.push(`  ✗ ${k}  — "${u.request}"${where} has no assertions; a request that asserts nothing tests nothing`);
+    }
   }
   return lines.join("\n");
 }

@@ -24,6 +24,15 @@ jobs:
       # so build the whole graph (turbo orders core before web).
       - run: pnpm build
 
+      # `playwright install --with-deps` runs `apt-get update`, and the hosted runner image ships
+      # Google's and Microsoft's apt repositories. Neither provides anything installed here, and
+      # when one of their CDNs serves an index whose hash does not match its own Release file,
+      # `apt-get update` exits 100 and takes the job with it — which is what happened across five
+      # consecutive runs. Drop the lists we do not use.
+      - name: Drop unused third-party apt sources
+        if: runner.os == 'Linux'
+        run: sudo rm -f /etc/apt/sources.list.d/google-chrome.list /etc/apt/sources.list.d/microsoft-prod.list
+
       - name: Install Playwright chromium + OS deps
         run: pnpm exec playwright install --with-deps chromium
 

@@ -146,9 +146,39 @@ for (const a of result.assertions) console.log(a.ok, a.message);
 
 ### `RunResult`
 
-`{ name, request: { method, url }, filePath?, ok, error?, missingVars?, response?: {
-status, statusText, durationMs, headers, bodyText }, assertions: AssertionResult[],
-captured? }`.
+One request's outcome. This is the object `truspec run --json`, the MCP tools and the web client
+all read, so treat it as a contract: a field is added, never repurposed.
+
+| Field | Type | Present |
+|---|---|---|
+| `name` | `string` | always |
+| `request` | `{ method, url }` | always — as sent, after interpolation |
+| `filePath` | `string?` | when the request came from a file |
+| `ok` | `boolean` | always — every assertion passed and no error |
+| `error` | `string?` | when the request could not be completed at all |
+| `missingVars` | `string[]?` | `{{names}}` that resolved to nothing |
+| `response` | object? | absent when nothing came back (see below) |
+| `assertions` | `AssertionResult[]` | always (may be empty) |
+| `captured` | `Record<string, VarValue>?` | values `capture` saved for later requests |
+| `missedCaptures` | `{ name, source, reason? }[]?` | captures that matched nothing |
+| `redirects` | `string[]?` | hops followed, with `options.followRedirects` |
+| `redirectLimitHit` | `boolean?` | the chain stopped at `maxRedirects`, not at the server |
+| `retries` | `number?` | re-sends, with `options.retries` |
+| `iteration` | `number?` | 1-based row/repeat index, for `--data` / `--repeat` |
+
+`response`:
+
+| Field | Type | Present |
+|---|---|---|
+| `status` / `statusText` | `number` / `string` | always |
+| `durationMs` | `number` | always |
+| `headers` | `Record<string, string>` | always — keys lowercased |
+| `bodyText` | `string` | always — decoded with the response's charset, BOM stripped |
+| `bytes` | `number?` | size as it arrived, which is not `bodyText.length` |
+| `binary` | `boolean?` | the body is not text; `bodyText` is a lossy decode of it |
+| `bodyBase64` | `string?` | the real bytes of a binary body, when small enough to carry |
+| `events` | `SseEvent[]?` | parsed `text/event-stream` events (`{ event?, data, id? }`) |
+| `streamTruncated` | `boolean?` | the stream was closed at the event cap or by the timeout, not by the server |
 
 ### Lower-level building blocks
 

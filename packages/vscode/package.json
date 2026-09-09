@@ -18,7 +18,7 @@
   "contributes": {
     "commands": [
       { "command": "truspec.runRequest", "title": "TruSpec: Run Request", "icon": "$(play)" },
-      { "command": "truspec.runCollection", "title": "TruSpec: Run Collection" },
+      { "command": "truspec.runCollection", "title": "TruSpec: Run Folder" },
       { "command": "truspec.drift", "title": "TruSpec: Drift vs OpenAPI" },
       { "command": "truspec.coverage", "title": "TruSpec: Coverage vs OpenAPI" }
     ],

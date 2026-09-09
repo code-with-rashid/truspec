@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   codegen,
   codegenTargets,
+  requestFields,
   type CodegenTargetInfo,
   type RequestDetail,
 } from "../api";
@@ -44,11 +45,8 @@ export function CodeModal({
       .catch(() => setTargets([]));
   }, []);
 
-  // Strip client-only fields (`raw` is the YAML source) before the object hits schema validation.
-  const payload = useMemo(() => {
-    const { raw: _raw, ...rest } = request as RequestDetail & { raw?: string };
-    return rest as unknown as Record<string, unknown>;
-  }, [request]);
+  // Strip client-only fields (the raw YAML source, the version tag) before schema validation.
+  const payload = useMemo(() => requestFields(request), [request]);
 
   useEffect(() => {
     let cancelled = false;

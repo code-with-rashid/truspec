@@ -1,4 +1,4 @@
-import { createServer } from "node:http";
+import { createServer, type IncomingMessage } from "node:http";
 import { closeHttpServer } from "../http/close";
 import { createMockResponder } from "./engine";
 
@@ -17,6 +17,28 @@ export interface MockRequestLogEntry {
 }
 
 /** Start a local HTTP mock server from OpenAPI text. Port 0 picks a free port. */
+/** A local mock has no reason to buffer more than this from a client. */
+const MAX_MOCK_BODY_BYTES = 2 * 1024 * 1024;
+
+/** Collect a request body as text, rejecting once it exceeds `maxBytes`. */
+function readBody(req: IncomingMessage, maxBytes: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    req.on("data", (c: Buffer) => {
+      size += c.byteLength;
+      if (size > maxBytes) {
+        req.destroy();
+        reject(new Error("body too large"));
+        return;
+      }
+      chunks.push(c);
+    });
+    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    req.on("error", reject);
+  });
+}
+
 export async function startMockServer(
   specText: string,
   opts: {
@@ -61,13 +83,18 @@ export async function startMockServer(
     });
     const hasBody = Number(req.headers["content-length"] ?? 0) > 0;
     const method = req.method ?? "GET";
-    const send = (): void => {
+    const send = (bodyText: string): void => {
       const t0 = Date.now();
       const log = (status: number): void => {
         opts.onRequest?.({ method, path: u.pathname, status, durationMs: Date.now() - t0 });
       };
       try {
-        const result = responder.respond(method, u.pathname, { query, hasBody });
+        const result = responder.respond(method, u.pathname, {
+          query,
+          hasBody,
+          bodyText,
+          contentType: req.headers["content-type"],
+        });
         if (!result) {
           res.writeHead(404, { "content-type": "application/json" });
           res.end(JSON.stringify({ error: `No mock for ${method} ${u.pathname}` }));
@@ -82,8 +109,15 @@ export async function startMockServer(
         log(500);
       }
     };
-    if (delayMs > 0) setTimeout(send, delayMs);
-    else send();
+    // Read the body before answering: with `--validate` the mock checks it against the schema its
+    // operation declares, and it cannot do that from a content-length alone. Bounded, because a
+    // local mock should refuse a body rather than buffer whatever arrives.
+    readBody(req, MAX_MOCK_BODY_BYTES)
+      .then((bodyText) => {
+        if (delayMs > 0) setTimeout(() => send(bodyText), delayMs);
+        else send(bodyText);
+      })
+      .catch(() => fail(413, "Request body too large"));
   });
 
   await new Promise<void>((resolve, reject) => {

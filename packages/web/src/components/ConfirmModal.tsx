@@ -5,6 +5,9 @@ export interface ConfirmModalProps {
   danger?: boolean;
   busy?: boolean;
   error?: string | null;
+  /** An optional third choice, for a dialog where "cancel" and "confirm" are not the whole story. */
+  secondaryLabel?: string;
+  onSecondary?: () => void;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -17,6 +20,8 @@ export function ConfirmModal({
   danger,
   busy,
   error,
+  secondaryLabel,
+  onSecondary,
   onConfirm,
   onCancel,
 }: ConfirmModalProps) {
@@ -35,6 +40,11 @@ export function ConfirmModal({
             <button className="btn ghost" disabled={busy} onClick={onCancel}>
               cancel
             </button>
+            {secondaryLabel && onSecondary && (
+              <button className="btn" disabled={busy} onClick={onSecondary}>
+                {secondaryLabel}
+              </button>
+            )}
             <button className={`btn ${danger ? "danger" : "run"}`} disabled={busy} onClick={onConfirm}>
               {busy ? "…" : confirmLabel}
             </button>

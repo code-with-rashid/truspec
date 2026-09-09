@@ -1,7 +1,7 @@
 import type { TruSpecAssertion } from "../format/types";
 import { responseSchemaFor, type SpecOperation } from "../spec/openapi";
 import { validateAgainstSchema } from "../spec/validate-response";
-import { jsonpath } from "./jsonpath";
+import { explainJsonPathMiss, jsonpath } from "./jsonpath";
 
 /** Everything except the spec-aware `schema` assertion, which needs the OpenAPI document. */
 type ResponseAssertion = Exclude<TruSpecAssertion, { type: "schema" }>;
@@ -208,8 +208,15 @@ export function evaluateAssertion(a: ResponseAssertion, res: ResponseView): Asse
       const ok = all(checks);
       // Naming the value that was actually there is the difference between a log a human can act
       // on and one that only says something went wrong.
+      // "(no match)" alone sends the reader off to open the body by hand. Say which step of the
+      // path came up empty and what was there instead — a typo'd key names its siblings.
+      const miss = matches.length === 0 ? explainJsonPathMiss(res.json, a.path) : undefined;
       const actual =
-        matches.length === 0 ? "(no match)" : matches.length === 1 ? show(matches[0]) : show(matches);
+        matches.length === 0
+          ? `(no match${miss ? ` — ${miss}` : ""})`
+          : matches.length === 1
+            ? show(matches[0])
+            : show(matches);
       return { type: "jsonpath", ok, message: summarize(`jsonpath ${a.path} → ${actual}`, checks, ok) };
     }
     case "body": {

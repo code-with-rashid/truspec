@@ -4,6 +4,7 @@ import { parse } from "../format";
 import type { TruSpecAuth, TruSpecBody, TruSpecRequest } from "../format/types";
 import { discoverRequests } from "../workspace/discover";
 import { toPosixPath } from "../workspace/paths";
+import { assertionsToPostmanTest, capturesToPostmanTest } from "./postman-tests";
 
 export interface ExportResult {
   collection: Record<string, unknown>;
@@ -114,16 +115,25 @@ function convertBody(body: TruSpecBody | undefined): Record<string, unknown> | u
   }
 }
 
-function convertScript(script: TruSpecRequest["script"]): unknown[] | undefined {
-  if (!script?.pre && !script?.post) return undefined;
+/**
+ * Postman events for a request's scripts *and* its declarative assertions.
+ *
+ * Both land in the same `test` listener: Postman has one, and a reader expects to find everything
+ * that checks the response in it. Assertions come first, so a `script.post` that sets a variable
+ * from the body still runs after the response has been checked — the order TruSpec runs them in.
+ */
+function convertEvents(req: TruSpecRequest, warn: (message: string) => void): unknown[] | undefined {
   const events: unknown[] = [];
-  if (script.pre) {
-    events.push({ listen: "prerequest", script: { type: "text/javascript", exec: script.pre.split("\n") } });
+  if (req.script?.pre) {
+    events.push({ listen: "prerequest", script: { type: "text/javascript", exec: req.script.pre.split("\n") } });
   }
-  if (script.post) {
-    events.push({ listen: "test", script: { type: "text/javascript", exec: script.post.split("\n") } });
+  const test = [...assertionsToPostmanTest(req.assertions, req.name, warn)];
+  test.push(...capturesToPostmanTest(req.capture, req.name, warn));
+  if (req.script?.post) test.push(...req.script.post.split("\n"));
+  if (test.length > 0) {
+    events.push({ listen: "test", script: { type: "text/javascript", exec: test } });
   }
-  return events;
+  return events.length > 0 ? events : undefined;
 }
 
 function convertRequest(req: TruSpecRequest, warn: (message: string) => void): Record<string, unknown> {
@@ -145,8 +155,13 @@ function convertRequest(req: TruSpecRequest, warn: (message: string) => void): R
   if (req.options) {
     warn(`"${req.name}": transport options (timeout/retries/redirects) have no Postman equivalent`);
   }
+  if (req.spec) {
+    // The link to an OpenAPI operation is what drift and coverage run on; Postman has nowhere to
+    // put it, so it survives only in the .tspec.yaml this was exported from.
+    warn(`"${req.name}": the \`spec\` link has no Postman equivalent and is not in the export`);
+  }
   const item: Record<string, unknown> = { name: req.name, request };
-  const event = convertScript(req.script);
+  const event = convertEvents(req, warn);
   if (event) item.event = event;
   return item;
 }

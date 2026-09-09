@@ -94,9 +94,9 @@ describe("assertion messages", () => {
     expect(r.message).toBe("jsonpath $.id → 7 fails > 100");
   });
 
-  it("reports a missing path as (no match) rather than as undefined", () => {
+  it("reports a missing path as (no match), and says why", () => {
     const r = evaluate('{ type: jsonpath, path: "$.nope", exists: true }');
-    expect(r.message).toBe("jsonpath $.nope → (no match) fails exists");
+    expect(r.message).toMatch(/^jsonpath \$\.nope → \(no match — \$ has no "nope"; keys: .*\) fails exists$/);
   });
 
   it("lists every condition when the assertion passes", () => {

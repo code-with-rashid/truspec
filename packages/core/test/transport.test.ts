@@ -1,3 +1,4 @@
+import { createServer } from "node:http";
 import { describe, expect, it } from "vitest";
 import { parse } from "../src/format";
 import { runRequest, send } from "../src/runner";
@@ -242,5 +243,65 @@ assertions:
     );
     await runRequest(off, { fetch: fetchWithSignal, timeoutMs: 30_000 });
     expect(seenTimeouts).toEqual([undefined]);
+  });
+});
+
+describe("why the redirect chain stopped", () => {
+  it("reports the limit when the cap ended it, and not when the server did", async () => {
+    // The distinction the report needs: a 302 that is the server's final answer, versus a 302 that
+    // is simply where we gave up. Both look identical in the status alone.
+    let hops = 0;
+    const server = createServer((_q, res) => {
+      hops += 1;
+      if (hops <= 2) {
+        res.writeHead(302, { location: `http://127.0.0.1:${port}/step${hops}` });
+        return res.end();
+      }
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end("{}");
+    });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
+    const port = (server.address() as { port: number }).port;
+    try {
+      hops = 0;
+      const complete = await send(
+        `http://127.0.0.1:${port}/start`,
+        { method: "GET", headers: {} },
+        { fetch, options: { followRedirects: true } },
+      );
+      expect(complete.response.status).toBe(200);
+      expect(complete.redirects).toHaveLength(2);
+      expect(complete.redirectLimitHit).toBe(false);
+
+      hops = 0;
+      const capped = await send(
+        `http://127.0.0.1:${port}/start`,
+        { method: "GET", headers: {} },
+        { fetch, options: { followRedirects: true, maxRedirects: 1 } },
+      );
+      expect(capped.response.status).toBe(302);
+      expect(capped.redirects).toHaveLength(1);
+      expect(capped.redirectLimitHit).toBe(true);
+    } finally {
+      await new Promise((r) => server.close(() => r(undefined)));
+    }
+  });
+
+  it("does not call a 302 a limit when following is off", async () => {
+    // maxRedirects is 0 in that case, but "we never follow" is not "we gave up".
+    const server = createServer((_q, res) => {
+      res.writeHead(302, { location: "http://example.invalid/next" });
+      res.end();
+    });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
+    const port = (server.address() as { port: number }).port;
+    try {
+      const r = await send(`http://127.0.0.1:${port}/x`, { method: "GET", headers: {} }, { fetch });
+      expect(r.response.status).toBe(302);
+      expect(r.redirects).toEqual([]);
+      expect(r.redirectLimitHit).toBe(false);
+    } finally {
+      await new Promise((r) => server.close(() => r(undefined)));
+    }
   });
 });
