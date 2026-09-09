@@ -1800,3 +1800,63 @@ processes.
 
 **Verification.** 923 unit tests, 101 e2e, coverage 95.77% lines / 87.57% branches / 96.23%
 functions, typecheck 8/8, dogfood gates clean.
+
+### 55 — the agent surface answered questions about places it never looked
+
+**What I looked for.** "Agent-native by design" is the strategy, and the MCP server is the whole of
+that surface — 23 tools, mostly untouched by this campaign. So I stopped reading it and used it:
+connected a real MCP client and called every tool the way an agent actually would, with arguments
+that are *plausible but wrong*. Not fuzzing — the mistakes a model makes: a mistyped directory, a
+spec path that doesn't exist, the wrong paragraph pasted into an importer.
+
+Two defects, one theme.
+
+**`truspec_import_curl` fabricated a request from prose.** Given the string `not a curl command`, it
+wrote a file:
+
+```yaml
+name: GET command
+method: GET
+url: command
+```
+
+No warning, no error, exit 0. The importer takes the first non-flag token after `curl` as the URL,
+so any sentence containing the word produces a request whose URL is the next word. That file
+validates against the schema, gets committed, and can never run — `fetch("command")` is not a
+request. The failure mode is precisely the one an agent hits: it is handed a paragraph of prose
+that mentions curl, and gets a plausible-looking artifact back instead of "that isn't a curl
+command".
+
+Fixed by requiring the URL to be capable of being one — a scheme, a `{{template}}`, an absolute
+path, or a host-shaped authority (a dot, a port, or `localhost`), which is the same set curl itself
+accepts. Anything else is skipped with a warning that names the token. The CLI now writes nothing
+and exits 1; before it wrote the file and exited 0.
+
+**Five tools reported a clean bill of health for directories that were not there.**
+
+```
+lint  {dir: "nope"} -> {"files":0,"findings":[],"errors":0,"warnings":0,"ok":true}
+docs  {dir: "nope"} -> {"count":0,"markdown":"# nope\n\n0 requests..."}
+list_collections    -> {"count":0,"requests":[]}
+environments        -> {"environments":[],"errors":[]}
+coverage / drift / contract -> reports about a collection that does not exist
+```
+
+`ok: true` is the dangerous one. An agent told to lint before committing reads that as permission,
+having checked nothing — the same shape as iteration 40, where `run --grep` selected zero requests
+on Windows and exited 0. The CLI already gets this right: `truspec lint no-such-dir` prints
+`Path not found` and exits 1. The agent surface, which has *less* ability to notice something looks
+off, was the lenient one.
+
+`requireDir` now refuses a missing path by name across all seven tools, and distinguishes
+`Not a directory: a.txt` from `Directory not found: nope`. Throwing rather than returning an error
+object, so it matches how `truspec_run_request` already reports a bad path and keeps every tool's
+return type honest.
+
+**Judgement call.** The same probe showed `truspec_run_request` will happily read a path outside the
+workspace (`../../../etc/hosts`), while every write tool confines. That is a real inconsistency, but
+it is a boundary change across seven call sites and deserves its own iteration rather than a
+footnote in this one.
+
+**Verification.** 932 unit tests (9 new), coverage 95.81% lines / 87.63% branches / 96.24%
+functions, typecheck 8/8, `lint examples --strict` clean, JSON Schema unchanged.

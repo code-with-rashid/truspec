@@ -167,6 +167,29 @@ describe("importCurl", () => {
     expect(r.warnings).toContain("No curl command found");
   });
 
+  it("refuses prose that merely contains the word curl", () => {
+    // The first non-flag token after `curl` becomes the URL, so "not a curl command" produced a
+    // request with `url: command` — one that validates, gets written to the repo, and can never
+    // run. An agent handed the wrong paragraph should be told, not handed a file.
+    const r = importCurl("not a curl command");
+    expect(r.files).toEqual([]);
+    expect(r.warnings).toContain("Skipped a curl command whose URL is not a URL: command");
+  });
+
+  it("still accepts the URL shapes curl itself accepts", () => {
+    for (const url of [
+      "https://x.test/a",
+      "x.test/a",
+      "localhost:3000/a",
+      "127.0.0.1:8080/a",
+      "{{baseUrl}}/a",
+      "[::1]:8080/a",
+    ]) {
+      const r = importCurl(`curl ${url}`);
+      expect(r.files.length, `${url}: ${r.warnings.join("; ")}`).toBe(1);
+    }
+  });
+
   it("always emits a file that round-trips through the schema", () => {
     const r = importCurl(`curl -X PATCH 'https://x.test/a?b=1' -H 'X: y' -d '{"z":true}'`);
     expect(r.files.length).toBe(1);

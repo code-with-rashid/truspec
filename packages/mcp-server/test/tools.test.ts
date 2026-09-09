@@ -291,3 +291,31 @@ describe("mcp tools", () => {
     }
   });
 });
+
+describe("a directory that is not there", () => {
+  // Every one of these used to answer as if it had looked: `truspec_lint` returned
+  // `files: 0, findings: [], ok: true` for a mistyped path, which an agent gating a commit on it
+  // reads as permission to commit. The CLI exits 1 on the same path.
+  const dir = mkdtempSync(join(tmpdir(), "truspec-mcp-missing-"));
+  const ctx = { cwd: dir };
+
+  it.each([
+    ["lint", () => lintTool(ctx, "nope")],
+    ["docs", () => docsTool(ctx, "nope")],
+    ["list_collections", () => listCollections(ctx, "nope")],
+    ["environments", () => environmentsTool(ctx, "nope")],
+    ["coverage", () => coverageTool(ctx, "nope", "spec.yaml")],
+  ])("%s refuses it by name", (_label, call) => {
+    expect(call).toThrow(/Directory not found: nope/);
+  });
+
+  it("drift and contract refuse it too", async () => {
+    await expect(driftTool(ctx, "nope", "spec.yaml")).rejects.toThrow(/Directory not found: nope/);
+    await expect(contractTool(ctx, "nope", "spec.yaml")).rejects.toThrow(/Directory not found: nope/);
+  });
+
+  it("says so specifically when the path is a file, not a directory", () => {
+    writeFileSync(join(dir, "a.txt"), "x");
+    expect(() => lintTool(ctx, "a.txt")).toThrow(/Not a directory: a.txt/);
+  });
+});
