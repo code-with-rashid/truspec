@@ -3081,3 +3081,41 @@ output renders in the response pane, one asserting a *pre* script's output rende
 response at all, which required putting the panel outside the `response` branch. Coverage 95.90%
 lines / 87.79% branches / 96.67% functions, typecheck 8/8, docs site builds, `docs/scripting.md`
 carries a worked section and `CLAUDE.md` the one-line rule.
+
+### 84 — the published surface, and the four places that had to agree by hand
+
+**Probed the thing a user does first.** Iterations 81–83 all came from crossing a seam no test
+crossed, so I crossed the biggest one: `npm pack` the core package, install the tarball into an
+empty directory *outside* the workspace, and import every subpath the way a consumer would.
+
+Good news, and worth recording because it is the kind of thing that is usually broken: all 13
+subpaths resolve, the `./schema/*` wildcard serves the JSON Schema files as JSON imports, and the
+generated `.d.ts` files typecheck cleanly under `moduleResolution: nodenext`. Nothing to fix there.
+
+**What was wrong was discoverability.** `docs/api.md` — the programmatic API page, the only place a
+consumer looks — listed **6 of the 13**. `exporters`, `codegen`, `lint`, `docs`, `jsonpath`, `http`
+and the schema files all shipped, worked, and were undiscoverable. And `src/index.ts` still opened
+with a comment saying `spec` and `importers` were "coming"; both shipped many iterations ago.
+
+**The durable half.** Adding an entry point means editing **four** things that nothing forced to
+agree:
+
+| Place | What breaks if it is missed |
+|---|---|
+| `package.json` `exports` | the import fails for every user |
+| `tsup.config.ts` `entry` | it is exported but never built — a 404 on import, only after publish |
+| `vitest.config.ts` aliases | tests silently resolve to a stale `dist` instead of `src` |
+| `docs/api.md` | it exists and nobody can find it — which was the actual state |
+
+So there is now a gate, in the shape of iteration 70's result contract: eight assertions driven off
+the `exports` map itself, checking each of those four and going the other way too — a subpath named
+in the docs that is not in `exports` fails as well. One more asserts the browser-safe entry never
+re-exports a Node-only module, which is a rule `CLAUDE.md` states and nothing enforced.
+
+**Checked that it bites**, rather than trusting it: a phantom `./ghost` export fails 4 assertions
+(source, build, alias, docs), a phantom documented subpath fails 1, and
+`export * as workspace from "./workspace"` in the browser entry fails 1. Not a vacuous gate.
+
+**Verification.** 1127 unit tests (8 new), coverage 95.90% lines / 87.79% branches / 96.67%
+functions, typecheck 8/8, docs site builds, and a packed-tarball install imports all 13 subpaths
+and typechecks against the shipped types.
