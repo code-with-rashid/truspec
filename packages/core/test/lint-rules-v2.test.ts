@@ -192,3 +192,45 @@ describe("inline-secret in environment files", () => {
     expect(parseErrors[0]?.severity).toBe("error");
   });
 });
+
+describe("folder configs are linted too", () => {
+  const fixture = (prefix: string, rest: string): string => prefix + rest;
+
+  it("flags a credential in a folder's auth, which applies to every request beneath it", () => {
+    // The most attractive place to paste a real token and the most damaging place for one to sit,
+    // and it was the last of the three file types the secret rule never read.
+    mkdirSync(join(dir, "sub"), { recursive: true });
+    writeFileSync(
+      join(dir, "sub", "folder.tspec.yaml"),
+      `tspec: "0.1"\nname: S\nheaders: { X-Api-Key: "${fixture("AKIA", "IOSFODNN7EXAMPLE")}" }\nauth: { type: bearer, token: "${fixture("sk", "_live_abcdefghijklmnopqrstuvwx")}" }\n`,
+    );
+    const found = lintWorkspace(dir).findings.filter((f) => f.rule === "inline-secret");
+    expect(found).toHaveLength(2);
+    expect(found.every((f) => f.path === "sub/folder.tspec.yaml")).toBe(true);
+    expect(found.map((f) => f.message).join(" ")).toContain("headers.X-Api-Key");
+    expect(found.map((f) => f.message).join(" ")).toContain("auth.token");
+    expect(found[0]?.message).toContain("every request beneath it");
+  });
+
+  it("reports a folder config that does not parse, which otherwise only surfaces at run time", () => {
+    mkdirSync(join(dir, "sub"), { recursive: true });
+    writeFileSync(join(dir, "sub", "folder.tspec.yaml"), 'tspec: "0.1"\nname: S\nheadrs: { A: b }\n');
+    const found = lintWorkspace(dir).findings.filter(
+      (f) => f.rule === "parse" && f.path === "sub/folder.tspec.yaml",
+    );
+    expect(found).toHaveLength(1);
+    expect(found[0]?.severity).toBe("error");
+    expect(found[0]?.message).toContain("headers");
+  });
+
+  it("says nothing about a folder config that is fine", () => {
+    mkdirSync(join(dir, "sub"), { recursive: true });
+    writeFileSync(
+      join(dir, "sub", "folder.tspec.yaml"),
+      'tspec: "0.1"\nname: S\nbaseUrl: "{{baseUrl}}"\nauth: { type: bearer, token: "{{token}}" }\n',
+    );
+    const rules = lintWorkspace(dir).findings.map((f) => f.rule);
+    expect(rules).not.toContain("inline-secret");
+    expect(rules).not.toContain("parse");
+  });
+});

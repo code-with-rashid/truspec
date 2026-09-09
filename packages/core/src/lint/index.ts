@@ -10,6 +10,7 @@ import { walkDirSafe } from "../workspace/walk";
 import { toPosixPath } from "../workspace/paths";
 import {
   credentialLiterals,
+  folderCredentialLiterals,
   isInsecureUrl,
   type LintFinding,
   looksLikeSecret,
@@ -212,6 +213,32 @@ export function lintWorkspace(dir: string, opts: LintOptions = {}): LintReport {
       "script-runs-unsandboxed",
       `script.${which.join(" and script.")} runs with the same access as the truspec process (no sandbox) — review it before running a collection you did not write.`,
     );
+  }
+
+  // Folder configs — the third file type the format defines, and the last one the secret rule
+  // never read. A broken one aborts a whole run, and a credential in one applies to every request
+  // beneath it, so both are worth catching before a push rather than at run time.
+  const folderConfigs: string[] = [];
+  walkDirSafe(dir, (full, name) => {
+    if (name === "folder.tspec.yaml") folderConfigs.push(full);
+  });
+  for (const abs of folderConfigs.sort()) {
+    const rel = toPosixPath(relative(dir, abs));
+    const parsed = parse.folderConfig.safeParse(readFileSync(abs, "utf8"));
+    if (!parsed.ok || !parsed.data) {
+      add(rel, "error", "parse", parsed.error ?? "does not parse as a folder config");
+      continue;
+    }
+    for (const { where, value } of folderCredentialLiterals(parsed.data)) {
+      const what = looksLikeSecret(value);
+      if (!what) continue;
+      add(
+        rel,
+        "error",
+        "inline-secret",
+        `${where} looks like ${what}. A folder's auth applies to every request beneath it — reference it as {{name}} and declare it under an environment's \`secrets\`.`,
+      );
+    }
   }
 
   // Environment files, which CLAUDE.md's hard rule names alongside requests: "Never inline secrets

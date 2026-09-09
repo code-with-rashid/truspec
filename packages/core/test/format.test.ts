@@ -1,8 +1,10 @@
-import { readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { buildJsonSchemas, parse } from "../src/format";
+import { loadFolderChain } from "../src/workspace/context";
 
 const here = fileURLToPath(new URL(".", import.meta.url));
 const petstore = join(here, "..", "..", "..", "examples", "petstore");
@@ -125,5 +127,22 @@ describe("format: json schema", () => {
       "environment.schema.json",
     ]);
     expect(JSON.stringify(schemas["request.schema.json"])).toMatch(/method/);
+  });
+});
+
+describe("a broken folder config names itself", () => {
+  it("puts the workspace-relative path in front of the schema error", () => {
+    // A workspace can hold many folder configs; the bare schema message names none of them, and
+    // the file to open is the single most useful thing to say.
+    const dir = mkdtempSync(join(tmpdir(), "truspec-fc-"));
+    try {
+      mkdirSync(join(dir, "v1"), { recursive: true });
+      writeFileSync(join(dir, "v1", "folder.tspec.yaml"), 'tspec: "0.1"\nname: V1\nheadrs: { A: b }\n');
+      expect(() => loadFolderChain(join(dir, "v1"), dir)).toThrow(/v1\/folder\.tspec\.yaml:/);
+      // And the suggestion the parser already produces is still there.
+      expect(() => loadFolderChain(join(dir, "v1"), dir)).toThrow(/did you mean 'headers'\?/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

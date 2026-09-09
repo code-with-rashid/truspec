@@ -538,7 +538,7 @@ truspec lint [<dir>] [--strict] [--json] [--disable <rule>] [--output <file>] [-
 | Rule | Severity | Catches |
 |---|---|---|
 | `parse` | error | The file does not parse against the schema. |
-| `inline-secret` | error | A literal that looks like a real credential is committed in a request **or an `environments/*.env.yaml`** — including one embedded in a larger value, such as `Bearer <key>`. |
+| `inline-secret` | error | A literal that looks like a real credential is committed in a request, a `folder.tspec.yaml` **or an `environments/*.env.yaml`** — including one embedded in a larger value, such as `Bearer <key>`. |
 | `bad-jsonpath` | error | A capture or assertion uses a JSONPath the engine cannot parse — it would silently never match. |
 | `no-assertions` | warning | The request asserts nothing, so a run can never fail on it. |
 | `duplicate-name` | warning | Two requests share a name, making reports ambiguous. |

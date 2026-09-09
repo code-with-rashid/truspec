@@ -68,6 +68,38 @@ export interface Located {
   value: string;
 }
 
+/** The auth fields that can hold a credential, shared by requests and folder configs. */
+function authLiterals(auth: TruSpecRequest["auth"], push: (where: string, value: unknown) => void): void {
+  if (auth?.type === "bearer") push("auth.token", auth.token);
+  if (auth?.type === "basic") push("auth.password", auth.password);
+  if (auth?.type === "apikey") push("auth.value", auth.value);
+  if (auth?.type === "oauth2") {
+    push("auth.clientSecret", auth.clientSecret);
+    push("auth.password", auth.password);
+    push("auth.refreshToken", auth.refreshToken);
+  }
+}
+
+/**
+ * Credential-bearing fields of a `folder.tspec.yaml`.
+ *
+ * A folder's `auth` applies to every request beneath it, which makes it the most attractive place
+ * to paste a real token and the most damaging place for one to sit committed — and it was the one
+ * file type the secret rule never read.
+ */
+export function folderCredentialLiterals(config: {
+  headers?: Record<string, string | number | boolean>;
+  auth?: TruSpecRequest["auth"];
+}): Located[] {
+  const out: Located[] = [];
+  const push = (where: string, value: unknown): void => {
+    if (typeof value === "string") out.push({ where, value });
+  };
+  for (const [k, v] of Object.entries(config.headers ?? {})) push(`headers.${k}`, v);
+  authLiterals(config.auth, push);
+  return out;
+}
+
 /** Walk a request's credential-bearing fields, yielding each string literal with its location. */
 export function credentialLiterals(req: TruSpecRequest): Located[] {
   const out: Located[] = [];
@@ -77,15 +109,7 @@ export function credentialLiterals(req: TruSpecRequest): Located[] {
   push("url", req.url);
   for (const [k, v] of Object.entries(req.headers ?? {})) push(`headers.${k}`, v);
   for (const [k, v] of Object.entries(req.query ?? {})) push(`query.${k}`, v);
-  const auth = req.auth;
-  if (auth?.type === "bearer") push("auth.token", auth.token);
-  if (auth?.type === "basic") push("auth.password", auth.password);
-  if (auth?.type === "apikey") push("auth.value", auth.value);
-  if (auth?.type === "oauth2") {
-    push("auth.clientSecret", auth.clientSecret);
-    push("auth.password", auth.password);
-    push("auth.refreshToken", auth.refreshToken);
-  }
+  authLiterals(req.auth, push);
   if (req.body?.type === "json") {
     const scan = (node: unknown, path: string): void => {
       if (typeof node === "string") return void push(`body${path}`, node);

@@ -1702,3 +1702,37 @@ server that redirects twice then succeeds), the following-disabled case, and thr
 — hop count, the `stopped at maxRedirects` suffix, and silence when no redirect was followed.
 912 unit tests, 101 e2e, coverage 95.72% lines / 87.45% branches / 96.19% functions, typecheck 8/8,
 dogfood gates clean.
+
+### 52 — the third file type nobody linted
+
+**Gap.** Probed folder inheritance across three nesting levels, and the semantics are exactly
+right: headers merge with deepest-wins-per-key, root headers survive three levels down, a folder's
+`auth` replaces at the nearest declaring level, and a request's own header and auth beat every
+folder. Verified against a real server by reading what each request actually sent. No change needed
+there.
+
+Two things around it were not right, and they are the same shape as iteration 50.
+
+**`lint` never read `folder.tspec.yaml` at all.** A folder config carrying an inlined AWS key in a
+header *and* a live Stripe key in `auth.token` linted completely clean, exit 0. This is the worst
+instance of the class rather than a third equal one: a folder's `auth` applies to **every request
+beneath it**, which makes it the most attractive place to paste a real token and the most damaging
+place for one to sit committed. The format defines three file types; the secret rule read one, then
+two after iteration 50, and now all three.
+
+**A broken folder config named no file.** `run` correctly aborts — a bad config silently dropping
+`baseUrl` and `auth` for everything beneath it would be far worse — and the message even carries
+iteration 27's `did you mean 'headers'?`. But it said only *"Invalid TruSpec folder config"*, and a
+workspace has many. It now leads with the path: `v1/folder.tspec.yaml: Invalid TruSpec folder
+config: …`. `lint` reports the same thing before a push rather than at run time.
+
+**Change.** Folder configs are linted for parse errors and inlined credentials, and the runtime
+error names the file. The auth-field walk is now shared between requests and folder configs instead
+of duplicated, since it is the same list of credential-bearing fields.
+
+**Verification.** 4 tests: both credentials found with the right path and the "every request
+beneath it" wording, an unparseable folder config reported as a `parse` error, a well-formed one
+staying silent (templates are not literals), and the runtime error asserting both the path prefix
+and that the existing suggestion survives. 916 unit tests, 101 e2e, coverage 95.73% lines / 87.47%
+branches / 96.22% functions, typecheck 8/8. The examples still pass `lint --strict` — again the
+gate that matters, since this adds an error-severity path over files never linted before.
