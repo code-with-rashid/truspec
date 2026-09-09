@@ -2290,3 +2290,47 @@ Neither of these was caused by the campaign's changes — and neither is a reaso
 
 **Verification.** 976 unit tests, watcher suite 11/11 with the polling wait, all three workflow
 files re-parsed as YAML.
+
+### 66 — "(no match)", and the ten minutes that follow it
+
+**What I looked for.** A failing assertion is the moment the tool is judged. I pointed a request at
+a server that returns a realistic body and deliberately failed one assertion of every type, to read
+what a person actually gets.
+
+Most of it is good — the value that was there, truncated sensibly, next to the value expected. One
+line was not:
+
+```
+✗ jsonpath $.missing.deep → (no match) fails exists
+```
+
+True, and useless. It does not say whether `deep` is missing, `missing` is missing, the body was
+not JSON at all, or an index ran off the end of an array. Every one of those has a different fix,
+so the next step is always the same: go and open the body by hand. That is the single most common
+few minutes of an API testing session, and the tool had the answer in memory the whole time.
+
+**Now it says which step came up empty, and what was there instead:**
+
+```
+$.missing.deep  → (no match — $ has no "missing"; keys: id, name, tags, owner, description)
+$.items[5]      → (no match — $.items has 2 item(s))
+$.name.first    → (no match — $.name is a string, not an object)
+$.tags.id       → (no match — $.tags is an array — index it with [n] or [*])
+$.meta.anything → (no match — $.meta has no "anything"; it has no keys)
+$.items[*].nope → (no match — no element of $.items[*] has "nope")
+$.id (text/plain) → (no match — the response body is not JSON)
+```
+
+The key list is what makes a typo self-correcting: `$.ownr` prints `owner` two words later. It is
+capped at five keys with a `…4 more`, because the point is a hint, not a dump of the object.
+
+**How it is built.** `explainJsonPathMiss` walks the same steps evaluation walks — the stepping
+logic is now one shared function, so the explanation cannot describe a different traversal from the
+one that failed — and reports the first step that produced nothing. After a wildcard it declines to
+name a specific element, because which one was meant is a guess. A path that does not parse gets no
+explanation rather than an invented one.
+
+**Verification.** 993 unit tests (17 new covering every shape, including the ones where it stays
+quiet), coverage 96.00% lines / 87.75% branches / 96.47% functions, typecheck 8/8. One existing test
+asserted the old bare `(no match)` message and was updated — deliberately, since that message is
+the thing this iteration changed.
