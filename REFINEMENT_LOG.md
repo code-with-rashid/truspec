@@ -2065,3 +2065,47 @@ know whether you have the right token cached until you know what you would have 
 (confirmed by reverting only the source: 3 failed, 20 passed) and passes with it, plus a fourth
 holding the line that the cache still *works* — five identical resolutions, one token request.
 953 unit tests, coverage 95.83% lines / 87.64% branches / 96.3% functions, typecheck 8/8.
+
+### 61 — the session cookie the jar kept and never sent
+
+**What I looked for.** The cookie jar has never been probed in this campaign, and cookie scoping is
+where careful-looking code is usually wrong in one specific way. I ran eight scenarios through it
+rather than reading it.
+
+**The one that bites.** A `Secure` cookie set over `http://localhost` was stored and then never
+sent:
+
+```
+Secure cookie set on http://localhost -> stored: ["sid"]
+  sent back to http://localhost:        undefined
+  127.0.0.1 variant:                    undefined
+```
+
+`http://localhost` is what a TruSpec collection points at all day, and Rails, Django and most
+Express setups put `Secure` on the session cookie by default. So: log in, get a 200, and every
+request after it is a 401 — with the cookie sitting in the jar, and nothing in the collection to
+explain it. Browsers have treated loopback as a secure origin since 2020; the jar was checking
+`protocol === "https:"`.
+
+**Two more, from the same probe.**
+
+`Domain=com` was accepted, storing a cookie against the whole `.com` suffix and sending it to
+`api.com` afterwards. A run that talks to an auth server and an API is exactly the shape where one
+host's cookie ends up on another's request. A single-label domain is now refused — the attribute
+is dropped, not the cookie, so it stays host-only, which is what was meant.
+
+`__Host-sid=1; Domain=test` was stored *and widened*, which is precisely what the name promises
+cannot happen. The `__Host-` and `__Secure-` prefixes are now enforced (Secure required, `Domain`
+forbidden, `Path=/` required): storing a cookie that breaks its own name is worse than ignoring
+prefixes altogether.
+
+**Not done: a public suffix list.** `Domain=co.uk` still slips through the single-label rule.
+Closing that properly needs the PSL — a dependency that has to be shipped, updated and kept in
+sync, for a case that requires an API testing run to hit two unrelated `.co.uk` hosts. The cheap
+rule catches the realistic cases; the expensive one can wait for a reason.
+
+**Verification.** Three of the five new tests fail against the old jar (confirmed by reverting only
+the source: 3 failed, 20 passed) and the other two hold the lines that must not move — a Secure
+cookie still withheld from plain http off-loopback, and widening to a real registrable domain still
+allowed. 958 unit tests, coverage 95.86% lines / 87.73% branches / 96.31% functions, typecheck 8/8,
+docs updated and building.

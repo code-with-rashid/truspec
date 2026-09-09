@@ -197,6 +197,12 @@ disk: a CI run must not inherit state from a previous one, and a session cookie 
 with no business in a repository. A request that sets its own `Cookie` header wins over the jar.
 `--no-cookies` turns it off entirely.
 
+The jar scopes cookies the way a browser does: loopback (`localhost`, `127.0.0.1`) counts as a
+secure origin, so a dev server's `Secure` session cookie is sent back over plain http; a `Domain`
+attribute with no dot in it (`Domain=com`) is refused rather than scoping the cookie to an entire
+suffix; and the `__Host-` / `__Secure-` name prefixes are enforced, so a cookie whose name promises
+host-only scoping is not stored with a `Domain`.
+
 `--grep` and `--tag` combine as an **AND** (`--grep login --tag smoke` runs requests that match
 both); repeated `--tag` flags combine as an **OR**. A selection that matches nothing exits `1`
 with a message naming the filter — a filtered run that quietly passes because it ran zero requests

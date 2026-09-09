@@ -58,7 +58,7 @@ export class CookieJar {
       return [];
     }
     const host = target.hostname.toLowerCase();
-    const isSecure = target.protocol === "https:";
+    const isSecure = isSecureOrigin(target);
     const out: Cookie[] = [];
     for (const [key, cookie] of this.store) {
       if (cookie.expires !== undefined && cookie.expires <= now) {
@@ -81,6 +81,21 @@ export class CookieJar {
   clear(): void {
     this.store.clear();
   }
+}
+
+/**
+ * Whether an origin counts as secure for cookie purposes.
+ *
+ * Loopback is secure, as every browser has treated it since 2020. It matters here more than
+ * anywhere: `http://localhost` is what a TruSpec collection points at all day, and a dev server
+ * that sets `Secure` on its session cookie (the default in Rails, Django and most Express setups)
+ * had that cookie stored and then never sent — the login returns 200, the next request 401, and
+ * nothing in the collection explains it.
+ */
+export function isSecureOrigin(url: URL): boolean {
+  if (url.protocol === "https:" || url.protocol === "wss:") return true;
+  const host = url.hostname.toLowerCase();
+  return host === "localhost" || host.endsWith(".localhost") || host === "127.0.0.1" || host === "[::1]" || host === "::1";
 }
 
 /** RFC 6265 §5.1.3: exact host match, or a suffix match on a non-host-only cookie. */
@@ -135,6 +150,11 @@ function parseSetCookie(header: string, origin: URL): Cookie | undefined {
         // A cookie may only widen to a domain the response's host belongs to; anything else is a
         // cross-site set attempt and is dropped rather than stored.
         if (!domain || !(host === domain || host.endsWith(`.${domain}`))) break;
+        // A single-label domain — `com`, `test`, `internal` — scopes the cookie to an entire
+        // suffix, so one host's cookie rides along on requests to every other host under it. A
+        // run that talks to an auth server and an API is exactly where that bites. Browsers
+        // refuse it; so does this. (The cookie stays host-only, which is what was meant anyway.)
+        if (!domain.includes(".")) break;
         cookie.domain = domain;
         cookie.hostOnly = false;
         break;
@@ -166,6 +186,14 @@ function parseSetCookie(header: string, origin: URL): Cookie | undefined {
       default:
         break;
     }
+  }
+
+  // RFC 6265bis §4.1.3. A `__Host-`/`__Secure-` name is a promise about how the cookie is scoped,
+  // and storing one that breaks the promise is worse than ignoring prefixes altogether: the name
+  // says host-only while the jar hands it to every sibling host.
+  if (name.startsWith("__Secure-") && !cookie.secure) return undefined;
+  if (name.startsWith("__Host-") && (!cookie.secure || !cookie.hostOnly || cookie.path !== "/")) {
+    return undefined;
   }
   return cookie;
 }
