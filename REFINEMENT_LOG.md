@@ -2250,3 +2250,43 @@ pins that: add one request and the old copy is back, run-all enabled.
 
 **Verification.** 976 unit tests, 112 e2e (4 new, driving a server over a genuinely empty temp
 directory rather than the shared fixture), typecheck 8/8.
+
+### 65 — CI went red, and it was not the diff
+
+**What happened.** Five consecutive heads on the PR came back with `e2e` and `build (ubuntu-22.04)`
+failing, while every gate passed locally. The logs said why:
+
+```
+Get:29 https://dl.google.com/linux/chrome-stable/deb stable/main amd64 Packages [1405 B]
+Err:29 https://dl.google.com/linux/chrome-stable/deb stable/main amd64 Packages
+  Hash Sum mismatch
+E: Some index files failed to download.
+Failed to install browsers
+Error: Installation process exited with code: 100
+```
+
+Google's apt CDN was serving a `Packages.gz` whose hash did not match its own `Release` file. The
+hosted runner image ships that repository, `playwright install --with-deps` and the Tauri job's
+`apt-get install` both run `apt-get update`, and `apt-get` exits 100 when *any* configured
+repository fails — including one nothing in the job installs from.
+
+**The fix is to stop depending on it.** Every job now drops the Google and Microsoft apt lists
+before installing anything; the packages these jobs need all come from Ubuntu's own archives. Three
+workflows, one step each. Not a retry, not a re-run: the dependency itself was the bug.
+
+**A second, unrelated red.** `portability (macos-latest)` failed on
+`watch.test.ts` — `expected 0 to be greater than or equal to 1`. The test writes a file and sleeps
+250ms for the real `fs.watch` to fire. That is a race everywhere and a lost bet on macOS, where
+the watcher is backed by FSEvents and coalesces events over most of a second.
+
+Fixed by waiting for the condition instead of for the clock — poll to a 5s ceiling, and fail with
+`condition not met within 5000ms` rather than an arithmetic riddle. Also `realpath` the temp
+directory: macOS hands out `/var/folders/…`, a symlink to `/private/var/folders/…`, and a recursive
+watch rooted at the link reports paths under the real one, so a watcher can miss its own events.
+Faster than the old sleep on Linux, and no longer a coin toss on macOS.
+
+Neither of these was caused by the campaign's changes — and neither is a reason to re-run and hope.
+"Flake" is a description, not a diagnosis; both had a cause, and both causes are now gone.
+
+**Verification.** 976 unit tests, watcher suite 11/11 with the polling wait, all three workflow
+files re-parsed as YAML.

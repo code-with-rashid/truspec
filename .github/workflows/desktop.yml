@@ -61,6 +61,14 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      # The hosted runner image ships Google's and Microsoft's apt repositories. Neither provides
+      # anything installed here, and when one of their CDNs serves an index whose hash does not
+      # match its own Release file, `apt-get update` exits 100 and takes the job with it — which is
+      # exactly what happened across five consecutive runs. Drop the lists we do not use.
+      - name: Drop unused third-party apt sources
+        if: runner.os == 'Linux'
+        run: sudo rm -f /etc/apt/sources.list.d/google-chrome.list /etc/apt/sources.list.d/microsoft-prod.list
+
       - name: Install Linux build dependencies (webkit2gtk, AppIndicator, etc.)
         if: runner.os == 'Linux'
         run: |

@@ -1,12 +1,24 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { isRelevantChange, watchWorkspace } from "../src/workspace";
 
+/** Poll until `ready()` holds, or fail loudly at the deadline rather than asserting on a sleep. */
+async function waitFor(ready: () => boolean, timeoutMs = 5000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!ready()) {
+    if (Date.now() > deadline) throw new Error(`condition not met within ${timeoutMs}ms`);
+    await new Promise((r) => setTimeout(r, 20));
+  }
+}
+
 let dir: string;
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), "truspec-watch-"));
+  // realpath, because macOS hands out /var/folders/… which is a symlink to /private/var/folders/…
+  // — and a recursive fs.watch on the symlinked path reports paths under the real one, so a
+  // watcher rooted at the link can miss its own events.
+  dir = realpathSync(mkdtempSync(join(tmpdir(), "truspec-watch-")));
   mkdirSync(join(dir, "api"), { recursive: true });
   mkdirSync(join(dir, "environments"), { recursive: true });
   writeFileSync(join(dir, "api", "a.tspec.yaml"), 'tspec: "0.1"\nname: A\nurl: "https://x.test"\n');
@@ -190,11 +202,15 @@ describe("watchWorkspace", () => {
       fired += 1;
     }, { debounceMs: 5 });
     writeFileSync(join(dir, "api", "b.tspec.yaml"), 'tspec: "0.1"\nname: B\nurl: "https://x.test"\n');
-    await new Promise((r) => setTimeout(r, 250));
+    // Wait for the event rather than for a fixed 250ms: fs.watch is backed by FSEvents on macOS,
+    // which coalesces and can take most of a second to deliver. A sleep long enough to be safe
+    // there would slow every run; polling is both faster and not a race.
+    await waitFor(() => fired >= 1);
     stop();
     expect(fired).toBeGreaterThanOrEqual(1);
 
-    // Nothing fires after teardown, which is what keeps a finished run from hanging.
+    // Nothing fires after teardown, which is what keeps a finished run from hanging. This one has
+    // to be a real wait — the assertion is that nothing arrives — but it is bounded and short.
     const after = fired;
     writeFileSync(join(dir, "api", "c.tspec.yaml"), 'tspec: "0.1"\nname: C\nurl: "https://x.test"\n');
     await new Promise((r) => setTimeout(r, 150));
