@@ -18,17 +18,24 @@
   --ink: #14161b;
   --panel: #181b21;
   --panel-2: #1e222a;
-  /* Decorative surfaces only (progress tracks, subtle fills) — never a direct background
-     for --dimmer text: at this lightness --dimmer no longer clears WCAG AA 4.5:1 on it. */
   --panel-3: #242932;
   --line: #2b303a;
   --line-2: #373d48;
   --text: #d5d9e0;
   --dim: #9499a3;
-  --dimmer: #868c96;
+  /* Raised from #868c96, which cleared AA on --panel (5.10) but only 4.31 on --panel-3. That used
+     to be handled by a comment telling future authors not to put muted text on --panel-3 — a rule
+     no one can enforce while writing a new component. #8a909a clears every panel surface (4.54 /
+     4.96 / 5.37), so the constraint simply no longer exists. */
+  --dimmer: #8a909a;
 
   --lime: #c2d96b;
   --on-lime: #181b21;
+  /* The accent used as TEXT (badges, the dirty bar, the response timing). The dark palette's
+     accents already clear WCAG AA wherever they are drawn; the light palette's do not, so text
+     and fill are separate roles rather than one variable doing both jobs. */
+  --lime-ink: var(--lime);
+  --amber-ink: var(--amber);
   --green: #84c98d;
   --red: #e57689;
   --amber: #e0b072;
@@ -51,9 +58,15 @@
   --line-2: #cbc6b6;
   --text: #1a1c20;
   --dim: #5d6157;
-  --dimmer: #6b6f63;
+  /* Raised from #6b6f63, which cleared AA on --panel (4.93) but only reached 4.36 on --panel-3 —
+     exactly the constraint the dark palette's comment warns about. #5f6357 clears both. */
+  --dimmer: #5f6357;
   --lime: #5f7a00;
   --on-lime: #fbfaf5;
+  /* Measured, not guessed: as text, #5f7a00 reaches only 3.85:1 on the badge tint and 4.49:1 on
+     the response panel, and #96650f only 3.94:1 on the dirty bar — all under AA. */
+  --lime-ink: #4c6100;
+  --amber-ink: #7d520b;
   /* Darkened from the previously-shipped values: those cleared WCAG AA only inside a bordered
      badge; used as plain text (status pills, footer segments, dashboard stat numbers — all new
      in this redesign) against --panel/--panel-2 they fell under 4.5:1. */
@@ -458,7 +471,7 @@ select:focus {
   padding: 2px;
 }
 .tree-search-clear:hover {
-  color: var(--fg);
+  color: var(--text);
 }
 .collection-block {
   position: sticky;
@@ -496,7 +509,7 @@ select:focus {
   min-width: 0;
   font-size: 13px;
   font-weight: 600;
-  color: var(--fg);
+  color: var(--text);
   text-transform: none;
   letter-spacing: 0;
   white-space: nowrap;
@@ -529,7 +542,7 @@ select:focus {
 }
 .folder-row:hover {
   background: var(--panel-3);
-  color: var(--fg);
+  color: var(--text);
 }
 .folder-row.dragging,
 .req.dragging {
@@ -539,7 +552,7 @@ select:focus {
   background: var(--panel-3);
   outline: 1px dashed var(--lime);
   outline-offset: -2px;
-  color: var(--fg);
+  color: var(--text);
 }
 .folder-chev {
   display: inline-block;
@@ -588,7 +601,7 @@ select:focus {
 }
 .row-action-btn:hover {
   background: var(--panel-2);
-  color: var(--fg);
+  color: var(--text);
 }
 .row-action-btn.danger:hover {
   color: var(--red);
@@ -913,22 +926,34 @@ select:focus {
 .tab-strip-item {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 10px;
   border-right: 1px solid var(--line);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+/* The selectable part is its own button now (see TabStrip.tsx); it carries the padding and the
+   colours the row used to, so the visual result is unchanged. */
+.tab-strip-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 4px 8px 10px;
+  border: 0;
+  background: transparent;
   cursor: pointer;
   white-space: nowrap;
   color: var(--dim);
+  font: inherit;
   font-size: 12px;
-  flex-shrink: 0;
 }
 .tab-strip-item:hover {
   background: var(--panel-3);
 }
 .tab-strip-item.active {
   background: var(--panel-2);
-  color: var(--fg);
   box-shadow: inset 0 -2px 0 var(--lime);
+}
+.tab-strip-item.active .tab-strip-main {
+  color: var(--text);
 }
 .tab-strip-name {
   max-width: 160px;
@@ -949,11 +974,12 @@ select:focus {
   cursor: pointer;
   font-size: 10px;
   padding: 2px;
+  margin-right: 8px;
   border-radius: 3px;
   flex-shrink: 0;
 }
 .tab-strip-close:hover {
-  color: var(--fg);
+  color: var(--text);
   background: var(--panel-2);
 }
 
@@ -1108,7 +1134,7 @@ select:focus {
   background: color-mix(in oklab, var(--amber) 10%, transparent);
   border-radius: 8px;
   font-size: 12px;
-  color: var(--amber);
+  color: var(--amber-ink);
 }
 .req-name {
   font-size: 15px;
@@ -1120,7 +1146,7 @@ select:focus {
   align-items: center;
   gap: 6px;
   font-size: 11px;
-  color: var(--lime);
+  color: var(--lime-ink);
   background: color-mix(in oklab, var(--lime) 10%, transparent);
   border: 1px solid color-mix(in oklab, var(--lime) 35%, transparent);
   border-radius: 20px;
@@ -1132,7 +1158,7 @@ select:focus {
 }
 .badge-stale {
   font-size: 10.5px;
-  color: var(--amber);
+  color: var(--amber-ink);
   border: 1px solid color-mix(in oklab, var(--amber) 40%, transparent);
   border-radius: 20px;
   padding: 3px 11px;
@@ -1486,7 +1512,7 @@ select:focus {
   color: var(--dim);
 }
 .time {
-  color: var(--lime);
+  color: var(--lime-ink);
   font-size: 12px;
 }
 .bytes {

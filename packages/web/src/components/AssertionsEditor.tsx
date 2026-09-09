@@ -97,6 +97,7 @@ function StatusFields({ a, onChange }: { a: Assertion; onChange: (a: Assertion) 
       {mode === "in" ? (
         <input
           className="kv-input assert-value"
+          aria-label="status codes"
           spellCheck={false}
           placeholder="200, 201, 204"
           value={Array.isArray(a.in) ? a.in.join(", ") : ""}
@@ -113,6 +114,7 @@ function StatusFields({ a, onChange }: { a: Assertion; onChange: (a: Assertion) 
       ) : (
         <input
           className="kv-input assert-value"
+          aria-label={`status ${mode}`}
           type="number"
           value={String(a[mode] ?? "")}
           onChange={(e) => onChange({ type: "status", [mode]: Number(e.target.value) })}
@@ -353,6 +355,7 @@ function DurationFields({ a, onChange }: { a: Assertion; onChange: (a: Assertion
   return (
     <input
       className="kv-input assert-value"
+      aria-label="duration limit in ms"
       type="number"
       placeholder="ltMs"
       value={String(a.ltMs ?? "")}

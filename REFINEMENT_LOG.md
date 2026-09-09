@@ -442,3 +442,41 @@ Two of those tests initially failed and the code was right: they asserted on `te
 the values live in an input's `value`. Worth recording, because "the test failed" is not the same
 as "the feature is broken".
 
+### 16 — Accessibility audit extended to every surface, and what it found
+
+**Gap.** The axe audit covered exactly three screens (main, editor, light theme). Every panel added
+since — and several older ones — had never been scanned. An audit with a fixed scope stops being an
+audit the moment the UI grows.
+
+Extending it to the code panel, response filter, every request tab (auth/body/assertions incl. the
+new OAuth2 and multipart editors), the import dialog, and the narrow layout surfaced **six real
+defects**:
+
+1. **`nested-interactive` on every open tab.** Each tab was a `role="button"` div wrapping the
+   close button, so a screen reader could not reach the close control — and, separately, the tab
+   was **keyboard-inert**: `tabIndex={0}` with no key handler looks focusable but does nothing on
+   Enter. Rebuilt as two sibling buttons in a non-interactive `<nav>`, which fixes both. Not a
+   `role="tablist"` on purpose: that requires every child to be a tab (close buttons are not) and
+   implies tabpanels this UI doesn't have; `aria-current="page"` is the honest marker for open
+   documents.
+2. **`--fg` was never defined**, yet five rules used `color: var(--fg)`. Every hover/active
+   emphasis they were written to produce silently did nothing. → `--text`.
+3–5. **Three contrast failures** on accent-as-text (`.badge-link` 3.85, `.dirty-bar` 3.94,
+   `.time` 4.49). Fixed by splitting the accent's two roles: `--lime`/`--amber` fill, and new
+   `--lime-ink`/`--amber-ink` for text, dark-theme-transparent and darkened for light.
+6. **An unlabeled file input** (the Bruno folder picker) and **three unlabeled assertion inputs**
+   (status value, status list, duration limit).
+
+Also removed a **latent palette trap in both themes**: `--dimmer` cleared AA on `--panel` but not
+on `--panel-3` (4.36 light / 4.31 dark). That had been handled by a *comment* telling future
+authors not to put muted text on `--panel-3` — a rule nobody can follow while writing a new
+component. Both values were raised so the constraint no longer exists.
+
+One "violation" was **not** a defect and is recorded as such: a modal fades in over 160ms, and an
+element mid-fade composites both its text and background against what's behind it, so axe measured
+a ratio no user ever sees. The suite now settles `getAnimations()` before scanning — the difference
+between auditing the UI and auditing a transition.
+
+**Verification.** 5 new a11y scans (9 total), all zero-violation. Full e2e 81/81, unit 611,
+typecheck 8/8, build 5/5.
+

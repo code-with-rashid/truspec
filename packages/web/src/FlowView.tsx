@@ -544,6 +544,7 @@ export function FlowView({ env, running, onRun, getResult, onImported }: FlowVie
                     }}
                     type="file"
                     multiple
+                    aria-label="bruno collection folder"
                     className="sr-only"
                     onChange={(e) => void onBrunoDir(e)}
                   />
