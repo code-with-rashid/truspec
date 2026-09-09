@@ -1773,3 +1773,30 @@ two boundary tests: the required query parameter is emitted and the optional one
 operation whose body is `required: false` still gets no body. The same end-to-end check that failed
 with exit 1 now reports `No drift — collection matches the spec.` 921 unit tests, 101 e2e, coverage
 95.75% lines / 87.47% branches / 96.23% functions, typecheck 8/8, dogfood gates clean.
+
+### 54 — the three-way check, and a probe that cleared
+
+**What I looked for.** Iteration 53 found `gen` and `drift` contradicting each other. That suggested
+a sharper question: three components read the same OpenAPI document — the **scaffolder** deciding
+what to send, the **mock's request validator** deciding what is acceptable, and the **runner** in
+between. Do all three agree?
+
+**They do.** `gen` → `mock --validate` → `run` comes back 2 passed, exit 0, and
+`gen` → `mock` → `contract` reports 3/3 operations conforming. No defect to fix; the probe cleared.
+
+**Why it is still worth an iteration.** This is the first thing a spec-first user does — scaffold
+from OpenAPI, point it at a mock, run — and until iteration 53 it did not work. Proven, not
+asserted: strip exactly the required query parameter and required body the scaffolder now emits,
+and the validating mock answers **400 to both**. That is the failure the previous iteration fixed,
+reproduced deliberately, which is what makes the passing case mean something.
+
+So the invariant is now committed rather than a one-off command I happened to run: two tests, the
+positive and the negative that proves the mock is really checking. Without the second, the first
+could pass against a mock that validates nothing — the same "test asserts the bug" trap iteration
+39 found in `mock.test.ts` and iteration 41 nearly walked into.
+
+Written against the library APIs rather than by spawning the CLI, so it costs 141ms and needs no
+processes.
+
+**Verification.** 923 unit tests, 101 e2e, coverage 95.77% lines / 87.57% branches / 96.23%
+functions, typecheck 8/8, dogfood gates clean.
