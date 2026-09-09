@@ -63,7 +63,17 @@ export interface ContractReport {
   conformed: string[];
   violations: ContractViolation[];
   /** Ran, but the spec declared no schema for the response status (not a failure). */
-  skipped: { op: string; message: string }[];
+  skipped: {
+    op: string;
+    message: string;
+    /**
+     * The request itself failed, so nothing was validated for a different reason than "the spec
+     * declares no schema for this status" — and with a different fix. Reporting both the same way
+     * let a run where every request 500'd read as "all operations conform".
+     */
+    requestFailed?: boolean;
+    status?: number;
+  }[];
   /** Spec operations no request exercises (informational — `coverage`/`drift` own this). */
   untested: string[];
   /** True when there are no violations. */
@@ -110,7 +120,7 @@ export async function contractReport(
 
   const conformed: string[] = [];
   const violations: ContractViolation[] = [];
-  const skipped: { op: string; message: string }[] = [];
+  const skipped: ContractReport["skipped"] = [];
   for (const r of run.results) {
     const op = r.filePath ? opByFile.get(r.filePath) : undefined;
     const schema = r.assertions.find((a) => a.type === "schema");
@@ -120,7 +130,13 @@ export async function contractReport(
     } else if (schema.message.includes("conforms")) {
       conformed.push(op);
     } else {
-      skipped.push({ op, message: schema.message }); // ok-but-not-validated (status undocumented)
+      // ok-but-not-validated: either the status is undocumented, or the request never succeeded.
+      skipped.push({
+        op,
+        message: schema.message,
+        ...(r.ok ? {} : { requestFailed: true }),
+        ...(r.response ? { status: r.response.status } : {}),
+      });
     }
   }
 

@@ -1427,3 +1427,44 @@ no Postman representation and says so in `warnings`.
 
 872 unit tests, 97 e2e, coverage 95.76% lines / 87.42% branches / 96.18% functions, typecheck 8/8,
 dogfood gates clean.
+
+### 45 — a contract report that contradicted itself
+
+**Gap.** `contract` is the deepest spec-sync feature, so I probed it the way I probed the mock:
+nine responses against a spec with a required-property schema. The validator itself is very good —
+`/name: missing required property 'name'`, `/id: expected integer, got string`, null and array
+mismatches, non-JSON bodies, all caught with precise, actionable messages.
+
+The **report** was not. Point it at an API returning 500 and it printed:
+
+    Contract: 0/1 tested operations conform to the spec
+
+    Skipped — spec declares no schema for the response status (1):
+      ~ GET /pets/{id}
+
+    All 1 tested operation(s) conform to the spec.
+
+The header says nothing conformed. The footer says everything did. Both in the same output, and the
+reassuring one is false — nothing was validated at all. A reader scanning CI sees the last line.
+
+**What I deliberately did not change.** `contract` exits non-zero only on a schema violation, and
+`docs/spec-sync.md` states that explicitly: untested and status-undocumented operations are
+reported but don't fail the gate, because that is `run`'s and `coverage`'s job. That is a
+defensible split and a documented promise, so changing the exit code would break existing
+pipelines. The bug is that the output lied about what the exit code meant.
+
+**Change.** The summary never claims conformance that was not established: nothing validated says
+so outright, a partial result reports as partial, and "all conform" is reserved for when they all
+did. The "Skipped" section became "Not validated", and each line now says *which* of the two
+reasons applies — because "the request failed (500) — see `truspec run`" and "the spec declares no
+schema for the response status" are different problems with different fixes, and reporting both as
+a bare skip hid the first one completely. The same distinction iteration 41 drew for `coverage`.
+
+**Verification.** 5 new tests over the summary logic, one per branch, plus the negative that
+matters: with nothing validated the output must not match `/All \d+ tested operation/` at all.
+Confirmed end to end against a live server for each case — conforming, schema violation, failed
+request, and a genuinely undocumented status where the request itself succeeded (that last one is
+what distinguishes the two skip reasons, and my first attempt at testing it was wrong: a 204
+against `status equals 200` is a *failed* request, not an undocumented-status skip). 877 unit
+tests, 97 e2e, coverage 95.70% lines / 87.41% branches / 96.18% functions, typecheck 8/8, dogfood
+gates clean.

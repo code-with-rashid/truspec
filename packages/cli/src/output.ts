@@ -87,18 +87,32 @@ export function formatContract(report: ContractReport): string {
     for (const v of report.violations) lines.push(`  ✗ ${v.op}  →  ${v.message}`);
   }
   if (report.skipped.length > 0) {
-    lines.push("", `Skipped — spec declares no schema for the response status (${report.skipped.length}):`);
-    for (const s of report.skipped) lines.push(`  ~ ${s.op}`);
+    lines.push("", `Not validated (${report.skipped.length}):`);
+    for (const s of report.skipped) {
+      // "the request failed" and "the spec documents no schema for this status" are different
+      // problems with different fixes; reporting both as a bare skip hid the first one entirely.
+      const why = s.requestFailed
+        ? `the request failed${s.status ? ` (${s.status})` : ""} — see \`truspec run\``
+        : "the spec declares no schema for the response status";
+      lines.push(`  ~ ${s.op}  — ${why}`);
+    }
   }
   if (report.untested.length > 0) {
     lines.push("", `Untested — no request exercises these (${report.untested.length}, see \`coverage\`):`);
     for (const k of report.untested) lines.push(`  – ${k}`);
   }
   lines.push("");
+  // Never claim conformance that was not established. With nothing validated this used to print
+  // "All 1 tested operation(s) conform to the spec." directly under a header saying 0/1 conform.
+  const n = report.conformed.length;
   lines.push(
-    report.ok
-      ? `All ${tested} tested operation(s) conform to the spec.`
-      : `Contract violations: ${report.violations.length}.`,
+    !report.ok
+      ? `Contract violations: ${report.violations.length}.`
+      : n === 0
+        ? `No operation was validated against the spec.`
+        : report.skipped.length > 0
+          ? `${n} operation(s) conform to the spec; ${report.skipped.length} could not be validated.`
+          : `All ${n} tested operation(s) conform to the spec.`,
   );
   return lines.join("\n");
 }

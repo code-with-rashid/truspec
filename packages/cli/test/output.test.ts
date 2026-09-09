@@ -1,6 +1,6 @@
 import type { WorkspaceRunResult } from "@truspec/core/workspace";
 import { describe, expect, it } from "vitest";
-import { formatCoverage, formatHuman, formatJunit } from "../src/output";
+import { formatContract, formatCoverage, formatHuman, formatJunit } from "../src/output";
 import { formatHtml } from "../src/report-html";
 
 function hasXmlForbiddenChar(s: string): boolean {
@@ -123,5 +123,58 @@ describe("formatCoverage explains an uncovered operation", () => {
     const text = formatCoverage({ total: 1, covered: [], uncovered: ["GET /x"], percent: 0, ok: false }, "/w");
     expect(text).toContain("✗ GET /x");
     expect(text).not.toContain("has no assertions");
+  });
+});
+
+describe("formatContract never claims conformance that did not happen", () => {
+  const base = { specOperations: 1, conformed: [], violations: [], skipped: [], untested: [], ok: true };
+
+  it("says nothing was validated, rather than 'all conform', when nothing was", () => {
+    // The old output printed "All 1 tested operation(s) conform to the spec." directly beneath a
+    // header saying 0/1 conform — two contradictory lines, the reassuring one being false.
+    const text = formatContract({
+      ...base,
+      skipped: [{ op: "GET /pets/{id}", message: "no schema", requestFailed: true, status: 500 }],
+    });
+    expect(text).toContain("No operation was validated against the spec.");
+    expect(text).not.toContain("conform to the spec.\n");
+    expect(text).not.toMatch(/All \d+ tested operation/);
+  });
+
+  it("distinguishes a failed request from an undocumented status", () => {
+    const failed = formatContract({
+      ...base,
+      skipped: [{ op: "GET /a", message: "m", requestFailed: true, status: 500 }],
+    });
+    expect(failed).toContain("the request failed (500)");
+    expect(failed).toContain("truspec run");
+
+    const undocumented = formatContract({ ...base, skipped: [{ op: "GET /a", message: "m" }] });
+    expect(undocumented).toContain("the spec declares no schema for the response status");
+    expect(undocumented).not.toContain("the request failed");
+  });
+
+  it("reports a partial result as partial", () => {
+    const text = formatContract({
+      ...base,
+      conformed: ["GET /a"],
+      skipped: [{ op: "GET /b", message: "m" }],
+    });
+    expect(text).toContain("1 operation(s) conform to the spec; 1 could not be validated.");
+  });
+
+  it("still says all conform when they all did", () => {
+    expect(formatContract({ ...base, conformed: ["GET /a", "GET /b"] })).toContain(
+      "All 2 tested operation(s) conform to the spec.",
+    );
+  });
+
+  it("leads with the violation count when there is one", () => {
+    const text = formatContract({
+      ...base,
+      ok: false,
+      violations: [{ op: "GET /a", status: 200, message: "schema: bad" }],
+    });
+    expect(text).toContain("Contract violations: 1.");
   });
 });

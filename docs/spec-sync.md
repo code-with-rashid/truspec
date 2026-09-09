@@ -182,6 +182,21 @@ Because it sends requests, `contract` takes the same knobs as [`run`](./cli.md#r
 untested and status-undocumented operations are reported but don't fail the gate (that's
 `coverage`/`drift`'s job).
 
+Because of that, `contract` is not a substitute for `run`. An operation it could not validate is
+listed under **Not validated**, with which of the two reasons applies:
+
+```
+Contract: 0/1 tested operations conform to the spec
+
+Not validated (1):
+  ~ GET /pets/{id}  — the request failed (500) — see `truspec run`
+
+No operation was validated against the spec.
+```
+
+The summary never claims conformance that wasn't established: with nothing validated it says so
+outright, and a partial result is reported as partial.
+
 This is **behavioral** drift — the kind the structural `drift` check can't catch. A handler
 that returns a string `id` where the spec promises an integer, drops a required field, or
 adds an undeclared status passes every existing `status`/`jsonpath` assertion but fails
