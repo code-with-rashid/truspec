@@ -9,6 +9,14 @@ export interface LintFinding {
   /** Stable machine-readable rule id, for suppression and for agents. */
   rule: string;
   message: string;
+  /**
+   * 1-based line in that file, when the finding can be traced to one.
+   *
+   * A finding that names `headers.X-Api-Key` and no line leaves the reader scrolling — in an
+   * editor, in a CI log, and worst of all in a review, where the finding and the code are in two
+   * different windows. Absent when a rule is about the file as a whole.
+   */
+  line?: number;
 }
 
 /** Every `{{name}}` referenced anywhere in a request's templated fields. */

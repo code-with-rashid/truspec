@@ -587,6 +587,20 @@ truspec lint ./api --strict     # CI gate: nothing at all may be wrong
 truspec lint ./api --json | jq '.findings[] | select(.severity=="error")'
 ```
 
+Findings are grouped by file and carry the **line** they are about, so a report points at the code
+rather than describing it:
+
+```
+api/things.tspec.yaml
+   4  ! warning insecure-url: http://api.example.com/things is plaintext http:// to a remote host.
+   7  ✗ error inline-secret: headers.X-Api-Key looks like an AWS access key id. Reference it as {{name}} and declare it under an environment's `secrets`.
+  11  ! warning literal-credential-field: body.password holds a literal value…
+```
+
+They print in file order, and the same number is on each finding as `line` in `--json`. A rule that
+is about the file as a whole rather than one field leaves the gutter blank and omits the field,
+rather than pointing somewhere invented.
+
 The `undeclared-var` rule understands the run's own ordering: a variable a request captures counts
 as declared for every request that runs **after** it, and names a pre-request script sets with
 `tr.set("name", …)` count for that request. Environments are found the way the runner finds them,

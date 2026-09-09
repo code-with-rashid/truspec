@@ -2879,3 +2879,60 @@ it (`` `token` events: at least 2 ``), and the docs carry the type table row plu
 **Verification.** 1086 unit tests (11 new for the assertion, 5 more for its description), coverage
 95.95% lines / 87.69% branches / 96.62% functions, typecheck 8/8, docs site builds, schema
 committed.
+
+### 80 — a lint finding that points at the line it is about
+
+**The gap, found by re-asking iteration 74's question.** *"For every line this tool prints, does it
+know something more specific it is withholding?"* `truspec lint` prints:
+
+```
+api/bad.tspec.yaml
+  ✗ error inline-secret: headers.X-Api-Key looks like an AWS access key id…
+```
+
+It knows the field. It parsed the file. It does not say **where** — so the reader scrolls, in an
+editor, in a CI log, and worst of all in a review, where the finding and the code are in two
+different windows. Every other linter a developer uses has printed a line number for thirty years.
+
+**Now:**
+
+```
+api/bad.tspec.yaml
+   4  ! warning literal-credential-field: url?api_key holds a literal value…
+   4  ! warning insecure-url: http://api.example.com/things?api_key=… is plaintext http://…
+   7  ✗ error inline-secret: headers.X-Api-Key looks like an AWS access key id…
+  11  ! warning literal-credential-field: body.password holds a literal value…
+  12  ! warning undeclared-var: {{missingVar}} is not declared in any environment…
+  14  ✗ error bad-jsonpath: capture.id: invalid path near index 1
+  14  ! warning capture-never-used: capture.id is referenced by no later request.
+```
+
+Findings now sort by line, so the report reads **down the file** instead of in rule-discovery order.
+The gutter shape is `eslint --format stylish`'s, because that is the one every reader of a lint log
+already knows how to scan. `line` is on each finding in `--json` too, so the MCP tool and any CI
+script get it for free.
+
+**How the line is found.** `yaml`'s `parseDocument` keeps CST ranges on every node, so a rule that
+already names a field — `headers.X-Api-Key`, `body.password`, `capture.id` — resolves to a real
+offset rather than a text search. Two decisions worth stating:
+
+- **The longest resolvable prefix wins.** `body.content.nope` is not in the document; `body.content`
+  is. Pointing at the nearest ancestor is both more useful and more honest than guessing at an exact
+  position — and it is what makes the fallback safe to apply everywhere.
+- **`undeclared-var` is located by its text, not by a path.** A `{{var}}` can appear in any field,
+  and the first use is the one to look at. That is a different question from "which field is this",
+  so it gets a different mechanism rather than a fake path.
+
+**Two mismatches the field paths exposed.** `credentialLiterals` reports a JSON body field as
+`body.password`, but the file writes it under `body.content.password` — the schema's wrapper. And a
+credential in a query string is reported as `url?api_key`, which is not a path at all. Both are now
+translated on the way to the locator, so the rule keeps the name a *reader* wants while the locator
+gets the path the *file* has.
+
+**Where it stays quiet.** A file that does not parse gets no line — there is no document to locate
+in, and the parse error already carries its own position. A rule about the request as a whole prints
+a blank gutter rather than an invented `1`.
+
+**Verification.** 1101 unit tests (13 new for the locator, 2 for the rendering), coverage 95.92%
+lines / 87.72% branches / 96.64% functions, typecheck 8/8, `lint examples --strict` clean, docs site
+builds.
