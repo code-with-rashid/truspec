@@ -2204,3 +2204,49 @@ block, so the round trip preserves the chain exactly — asserted as such: expor
 
 **Verification.** 976 unit tests (8 new, including the round trip), coverage 96.04% lines / 87.74%
 branches / 96.42% functions, typecheck 8/8, docs updated and building.
+
+### 64 — the first minute, which nobody had looked at
+
+**What I looked for.** Every UI iteration so far has assumed a workspace with requests in it. So I
+started the web UI on an empty directory — which is what happens the first time anyone runs
+`truspec serve` in a new project — and read the screen.
+
+```
+◢◤
+select a request, or run the whole collection.
+requests execute server-side via @truspec/core — no CORS, fully local.
+[ + new request ]
+```
+
+It names two things that do not exist. There is no request to select and no collection to run. The
+sidebar shows an empty tree with a filter box for filtering nothing, and **▶ run all** sits there
+enabled — a button whose only possible outcome is "0 passed, 0 failed, ok", which is the shape of
+every false green there is.
+
+**What it says now.**
+
+```
+no requests here yet.
+A request is one .tspec.yaml file in this directory. Create one, or import a
+Postman / Bruno / Insomnia collection you already have.
+[ + new request ]  [ import a collection ]  [ + environment ]
+No environment yet — that is where {{baseUrl}} and the rest of your variables live.
+```
+
+Three things changed, each for its own reason:
+
+- **Import is offered here.** For most people arriving from Postman, importing *is* the first
+  minute — and the import dialog lived in the Flow view, which a new user has no reason to open.
+  The button takes them there.
+- **The environment is named.** A new workspace has no environment, so `{{baseUrl}}` resolves to
+  nothing, and the first request fails for a reason the UI never mentioned. The offer only appears
+  when there genuinely isn't one.
+- **Run all is disabled with no requests**, and says why in its tooltip, rather than reporting a
+  pass for a run that executed nothing — the same principle as iterations 40 and 55, applied to
+  the button rather than to the exit code.
+
+The ordinary empty state (a workspace with requests, none selected) is untouched, and a test
+pins that: add one request and the old copy is back, run-all enabled.
+
+**Verification.** 976 unit tests, 112 e2e (4 new, driving a server over a genuinely empty temp
+directory rather than the shared fixture), typecheck 8/8.

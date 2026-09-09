@@ -1379,7 +1379,14 @@ export function App() {
           </button>
         )}
 
-        <button className="btn run" disabled={running} onClick={() => doRun(undefined)}>
+        <button
+          className="btn run"
+          // Running nothing and reporting "0 passed, 0 failed, ok" is the shape of every false
+          // green there is. With no requests there is nothing to run, and the button says so.
+          disabled={running || (state?.requests.length ?? 0) === 0}
+          title={(state?.requests.length ?? 0) === 0 ? "no requests in this workspace yet" : "run every request"}
+          onClick={() => doRun(undefined)}
+        >
           {running ? "running…" : "▶ run all"}
         </button>
         <button
@@ -1667,11 +1674,45 @@ export function App() {
           ) : (
             <div className="empty">
               <div className="empty-mark">◢◤</div>
-              <p>select a request, or run the whole collection.</p>
-              <p className="muted">requests execute server-side via @truspec/core — no CORS, fully local.</p>
-              <button className="btn small" onClick={() => setQuickNewPrefix("")}>
-                + new request
-              </button>
+              {(state?.requests.length ?? 0) === 0 ? (
+                // A workspace with nothing in it is somebody's first minute with the tool, and
+                // "select a request" names something that does not exist. Say what is true, and
+                // offer the two ways forward — write one, or bring an existing collection in.
+                <>
+                  <p>no requests here yet.</p>
+                  <p className="muted">
+                    A request is one <code>.tspec.yaml</code> file in this directory. Create one, or
+                    import a Postman / Bruno / Insomnia collection you already have.
+                  </p>
+                  <div className="empty-actions">
+                    <button className="btn small" onClick={() => setQuickNewPrefix("")}>
+                      + new request
+                    </button>
+                    <button className="btn small ghost" onClick={() => setView("flow")}>
+                      import a collection
+                    </button>
+                    {(state?.environments.length ?? 0) === 0 && (
+                      <button className="btn small ghost" onClick={() => setEnvModalOpen(true)}>
+                        + environment
+                      </button>
+                    )}
+                  </div>
+                  {(state?.environments.length ?? 0) === 0 && (
+                    <p className="muted">
+                      No environment yet — that is where <code>{"{{baseUrl}}"}</code> and the rest of
+                      your variables live.
+                    </p>
+                  )}
+                </>
+              ) : (
+                <>
+                  <p>select a request, or run the whole collection.</p>
+                  <p className="muted">requests execute server-side via @truspec/core — no CORS, fully local.</p>
+                  <button className="btn small" onClick={() => setQuickNewPrefix("")}>
+                    + new request
+                  </button>
+                </>
+              )}
             </div>
           )}
           </div>

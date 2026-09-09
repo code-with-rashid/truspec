@@ -3191,3 +3191,12 @@ select:focus {
   color: var(--text);
   font-size: 11.5px;
 }
+
+/* The empty-workspace state offers more than one way forward; keep them on one row. */
+.empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin: 4px 0 8px;
+}
