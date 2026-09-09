@@ -22,7 +22,7 @@ describe("truspec serve", () => {
     try {
       expect(code).toBe(0);
       expect(cap.out).toMatch(/TruSpec web UI on http:\/\/127\.0\.0\.1:\d+/);
-      expect(cap.out).toMatch(/examples\/petstore/);
+      expect(cap.out).toMatch(/examples[\\/]petstore/);
       expect(handle?.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
     } finally {
       await handle?.close();
@@ -91,7 +91,7 @@ describe("truspec serve", () => {
     });
     try {
       expect(code).toBe(0);
-      expect(cap.out).toMatch(/examples\/blog/);
+      expect(cap.out).toMatch(/examples[\\/]blog/);
     } finally {
       await handle?.close();
     }

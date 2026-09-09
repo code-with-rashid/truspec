@@ -7,6 +7,7 @@ import { loadDotenv } from "../workspace/context";
 import { discoverRequests } from "../workspace/discover";
 import { findWorkspaceRoot } from "../workspace/run";
 import { walkDirSafe } from "../workspace/walk";
+import { toPosixPath } from "../workspace/paths";
 import {
   credentialLiterals,
   isInsecureUrl,
@@ -72,7 +73,7 @@ export function lintWorkspace(dir: string, opts: LintOptions = {}): LintReport {
   const parsed: Array<{ path: string; req: TruSpecRequest }> = [];
 
   for (const file of files) {
-    const path = relative(dir, file);
+    const path = toPosixPath(relative(dir, file));
     let req: TruSpecRequest;
     try {
       req = parse.request.parse(readFileSync(file, "utf8"));

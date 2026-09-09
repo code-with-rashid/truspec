@@ -1224,3 +1224,38 @@ functions, typecheck 8/8, dogfood gates clean. Re-probed over real HTTP: HEAD's 
 (`cli.md`, `mocking.md`, `faq.md`) each stated the old "routes not in the spec return 404" rule —
 the FAQ entry was titled "The mock returns 404 for a path that's in my spec", which was describing
 this bug as if it were expected behaviour.
+
+### 40 — what the Windows job actually found
+
+**Gap.** Iteration 38's `portability` job ran for the first time and failed on `windows-latest`:
+9 tests across 5 files. macOS passed. Two of the nine were the test's fault; seven were the
+product's, and one of those is the most serious defect this campaign has found.
+
+**`truspec run --grep` selected nothing on Windows.** `--grep` matches a request's name *or its
+workspace-relative path*, which is how you select a folder: `--grep "^billing/"`. That path came
+from `relative()`, so on Windows it read `billing\Get-invoice.tspec.yaml` and the pattern matched
+zero requests. A run that selects nothing still exits 0 — so a Windows CI gate filtering by folder
+reported success having tested **nothing at all**. Silent, green, and completely vacuous.
+
+The other six were the same root cause with milder consequences: `initProject` returned
+`created`/`skipped` arrays of backslash paths (so `truspec init` printed `created api\health.tspec.yaml`
+against docs and its own "Next:" hints that all say `api/health.tspec.yaml`), the HTML report
+labelled each case with a backslash path, and lint findings, JUnit `classname` attributes and the
+Bruno importer's file keys all did the same. JUnit in particular is parsed by CI systems, so the
+same collection produced different test identities depending on the runner.
+
+**Change.** `toPosixPath` — added in 38 for the HTTP API and MCP — applied to the eight remaining
+sites that emit a collection-relative identifier. The audit in 38 reasoned about which boundaries
+mattered and got two of ten; running it on the actual platform found the rest.
+
+**The two test-side failures.** `serve.test.ts` asserted `/examples\/petstore/` against output that
+prints the **absolute** directory being served. A native separator is right there — it is a
+filesystem location for a human to paste into Explorer, not a collection identifier — so the
+assertion was platform-specific, not the product. Now `[\\/]`, verified against both a
+`D:\a\truspec\examples\petstore` and a `/home/x/examples/petstore` string, and against a
+non-matching one so it hasn't been loosened into always passing.
+
+**Verification.** 830 unit tests, 97 e2e, coverage 95.72% lines / 87.79% branches / 96.62%
+functions, typecheck 8/8, dogfood gates clean, and `truspec init` re-checked end to end. On Linux
+every one of these changes is an identity function, which is exactly why none of it was visible
+until the job existed — the Windows run is the verification, and it is still pending.

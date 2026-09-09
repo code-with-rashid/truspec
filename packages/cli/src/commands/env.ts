@@ -8,6 +8,7 @@ import {
 } from "@truspec/core/workspace";
 import { type CommandDeps, emit, resolveDeps } from "./deps";
 import { argError } from "../args";
+import { toPosixPath } from "@truspec/core/workspace";
 
 const USAGE =
   "Usage: truspec env [<name>] [--dir <collection>] [--json]\n       truspec env --diff <a> <b> [--json]\n";
@@ -71,7 +72,7 @@ export async function envCommand(argv: string[], deps: Partial<CommandDeps> = {}
   }
 
   if (report.environments.length === 0 && report.errors.length === 0) {
-    d.stderr(`No environments found under ${relative(d.cwd, report.root) || "."}/environments.\n`);
+    d.stderr(`No environments found under ${toPosixPath(relative(d.cwd, report.root)) || "."}/environments.\n`);
     return 1;
   }
   emit(d, values.json ? JSON.stringify(report, null, 2) : formatList(report.environments), values.output);

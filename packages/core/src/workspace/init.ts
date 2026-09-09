@@ -3,6 +3,7 @@ import { dirname, join, relative } from "node:path";
 import { parse } from "../format";
 import { SCHEMA_VERSION } from "../format/schema";
 import { scaffoldFromSpec } from "../spec/scaffold";
+import { toPosixPath } from "./paths";
 
 export interface InitOptions {
   /**
@@ -50,12 +51,12 @@ export function initProject(root: string, opts: InitOptions = {}): InitResult {
   const write = (relPath: string, content: string): void => {
     const abs = join(root, relPath);
     if (existsSync(abs) && !opts.force) {
-      skipped.push(relPath);
+      skipped.push(toPosixPath(relPath));
       return;
     }
     mkdirSync(dirname(abs), { recursive: true });
     writeFileSync(abs, content);
-    created.push(relPath);
+    created.push(toPosixPath(relPath));
   };
 
   // Serialize through the schema rather than emitting hand-written YAML, so a scaffold can never
@@ -159,7 +160,7 @@ export interface NextStepsOptions {
 export function initNextSteps(result: InitResult, opts: NextStepsOptions = {}): string[] {
   const requestsDir = opts.requestsDir ?? "api";
   const envName = opts.envName ?? "local";
-  const where = relative(opts.cwd ?? process.cwd(), result.root) || ".";
+  const where = toPosixPath(relative(opts.cwd ?? process.cwd(), result.root)) || ".";
   const steps = where === "." ? [] : [`cd ${where}`];
   if (opts.specPath) {
     steps.push(

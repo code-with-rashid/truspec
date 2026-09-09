@@ -4,6 +4,7 @@ import { parseArgs } from "node:util";
 import { LINT_RULES, type LintReport, lintWorkspace } from "@truspec/core/lint";
 import { type CommandDeps, emit, resolveDeps } from "./deps";
 import { argError } from "../args";
+import { toPosixPath } from "@truspec/core/workspace";
 
 const USAGE =
   "Usage: truspec lint [<dir>] [--strict] [--json] [--disable <rule>] [--output <file>] [--list-rules]\n";
@@ -83,7 +84,7 @@ export function formatLint(report: LintReport, cwd: string): string {
     }
     lines.push("");
   }
-  const where = relative(cwd, report.dir) || ".";
+  const where = toPosixPath(relative(cwd, report.dir)) || ".";
   lines.push(
     report.findings.length === 0
       ? `Linted ${report.files} request(s) in ${where} — no findings.`

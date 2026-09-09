@@ -11,6 +11,7 @@ import { confinePath } from "./confine";
 import { type DataRow, parseDataText } from "./data";
 import { buildVars, loadDotenv, loadEnvironment, loadFolderChain } from "./context";
 import { discoverRequests, findUp } from "./discover";
+import { toPosixPath } from "./paths";
 
 /** Default per-request timeout so a stuck server can't hang a run forever. Pass `timeoutMs: 0` to disable. */
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -286,7 +287,10 @@ function buildSelector(
   }
   if (!re && wantTags.length === 0) return undefined;
   return (req, file) => {
-    if (re && !(re.test(req.name) || re.test(relative(root, file)))) return false;
+    // Normalised: `--grep "^billing/"` must select the same requests on every platform.
+    // Matching a native path meant such a pattern selected nothing at all on Windows —
+    // and a run that selects nothing still exits 0, so a CI gate passed having tested nothing.
+    if (re && !(re.test(req.name) || re.test(toPosixPath(relative(root, file))))) return false;
     if (wantTags.length > 0 && !(req.tags ?? []).some((t) => wantTags.includes(t))) return false;
     return true;
   };

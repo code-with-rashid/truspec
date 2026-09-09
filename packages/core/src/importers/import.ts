@@ -7,6 +7,7 @@ import { type HarImportOptions, importHar } from "./har";
 import { importInsomnia } from "./insomnia";
 import { importPostman } from "./postman";
 import type { ImportedFile, ImportResult } from "./types";
+import { toPosixPath } from "../workspace/paths";
 
 export function importPostmanFile(file: string): ImportResult {
   let json: unknown;
@@ -74,7 +75,7 @@ export function importBrunoFiles(files: ImportedFile[]): ImportResult {
 
 export function importBrunoDir(dir: string): ImportResult {
   return importBrunoFiles(
-    findBruFiles(dir).map((file) => ({ path: relative(dir, file), content: readFileSync(file, "utf8") })),
+    findBruFiles(dir).map((file) => ({ path: toPosixPath(relative(dir, file)), content: readFileSync(file, "utf8") })),
   );
 }
 

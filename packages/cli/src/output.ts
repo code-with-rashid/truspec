@@ -1,6 +1,7 @@
 import { relative } from "node:path";
 import type { ContractReport, CoverageReport, DriftReport } from "@truspec/core/spec";
 import type { WorkspaceRunResult } from "@truspec/core/workspace";
+import { toPosixPath } from "@truspec/core/workspace";
 
 export function formatJson(result: WorkspaceRunResult): string {
   return JSON.stringify(result, null, 2);
@@ -10,7 +11,7 @@ export function formatJson(result: WorkspaceRunResult): string {
 export function formatHuman(result: WorkspaceRunResult, cwd: string): string {
   const lines: string[] = [];
   for (const r of result.results) {
-    const where = r.filePath ? relative(cwd, r.filePath) : r.name;
+    const where = r.filePath ? toPosixPath(relative(cwd, r.filePath)) : r.name;
     const meta = r.response ? `  ${r.response.status} ${r.response.durationMs}ms` : "";
     // Without the iteration number, a data-driven run's log is N identical-looking lines and a
     // failure cannot be traced back to the row that caused it.
@@ -24,7 +25,7 @@ export function formatHuman(result: WorkspaceRunResult, cwd: string): string {
   // Before the summary, and never silently: a file that did not parse ran no request at all, so it
   // appears in no other line of this report.
   for (const e of result.parseErrors ?? []) {
-    lines.push(`✗ ERROR  could not parse  (${relative(cwd, e.file)})`);
+    lines.push(`✗ ERROR  could not parse  (${toPosixPath(relative(cwd, e.file))})`);
     for (const line of e.error.split("\n")) lines.push(`      ${line.trim()}`);
   }
   lines.push("");
@@ -136,7 +137,7 @@ export function formatJunit(result: WorkspaceRunResult, cwd: string): string {
     // A JUnit reporter keys on name+classname; without the iteration, N rows collapse into one
     // testcase and a reporter silently shows only the last outcome.
     const name = escapeXml(r.iteration !== undefined ? `${r.name} [${r.iteration}]` : r.name);
-    const classname = escapeXml(r.filePath ? relative(cwd, r.filePath) : r.name);
+    const classname = escapeXml(r.filePath ? toPosixPath(relative(cwd, r.filePath)) : r.name);
     const time = ((r.response?.durationMs ?? 0) / 1000).toFixed(3);
     if (r.ok) return `    <testcase name="${name}" classname="${classname}" time="${time}"/>`;
     const reasons = [
@@ -148,7 +149,7 @@ export function formatJunit(result: WorkspaceRunResult, cwd: string): string {
   // A file that did not parse has to appear as a failing case: a CI report that simply omits it
   // reads as clean, which is the one outcome a gate must never produce.
   const parseCases = (result.parseErrors ?? []).map((e) => {
-    const classname = escapeXml(relative(cwd, e.file));
+    const classname = escapeXml(toPosixPath(relative(cwd, e.file)));
     return `    <testcase name="${classname}" classname="${classname}" time="0.000">\n      <failure message="${escapeXml(e.error)}"/>\n    </testcase>`;
   });
   const total = result.results.length + parseCases.length;

@@ -1,5 +1,6 @@
 import { relative } from "node:path";
 import type { WorkspaceRunResult } from "@truspec/core/workspace";
+import { toPosixPath } from "@truspec/core/workspace";
 
 /**
  * A single self-contained HTML page for a run.
@@ -23,14 +24,14 @@ export function formatHtml(result: WorkspaceRunResult, cwd: string, now = new Da
       <header>
         <span class="badge">ERROR</span>
         <h2>could not parse</h2>
-        <code class="where">${esc(relative(cwd, e.file))}</code>
+        <code class="where">${esc(toPosixPath(relative(cwd, e.file)))}</code>
       </header>
       <pre>${esc(e.error)}</pre>
     </article>`,
   );
 
   const cards = result.results.map((r) => {
-    const where = esc(r.filePath ? relative(cwd, r.filePath) : r.name);
+    const where = esc(r.filePath ? toPosixPath(relative(cwd, r.filePath)) : r.name);
     const failed = r.assertions.filter((a) => !a.ok);
     const passed = r.assertions.filter((a) => a.ok);
     return `
