@@ -10,6 +10,8 @@ import {
 import {
   coverage as apiCoverage,
   createFolder,
+  type EnvListReport,
+  getEnvironments,
   deletePath,
   drift as apiDrift,
   duplicatePath,
@@ -224,6 +226,12 @@ export function App() {
   const [spec, setSpec] = useState("");
   const [running, setRunning] = useState(false);
   const [lastRun, setLastRun] = useState<{ missingSecrets: string[] } | null>(null);
+  const [envReport, setEnvReport] = useState<EnvListReport | null>(null);
+  const refreshEnvReport = useCallback((): void => {
+    void getEnvironments()
+      .then(setEnvReport)
+      .catch(() => setEnvReport(null));
+  }, []);
   const [ranResults, setRanResults] = useState<Map<string, RunResult>>(new Map());
   const [history, setHistory] = useState<HistoryEntry[]>(loadHistory);
   const [driftRep, setDriftRep] = useState<DriftReport | null>(null);
@@ -314,7 +322,8 @@ export function App() {
     apiMockStatus()
       .then(setMock)
       .catch(() => {});
-  }, []);
+    refreshEnvReport();
+  }, [refreshEnvReport]);
 
   // Fetch content for any tab that doesn't have it yet (freshly opened). A ref-tracked in-flight
   // set (rather than relying purely on `detail === null`) stops a second fetch from firing for the
@@ -1213,6 +1222,12 @@ export function App() {
     return all.filter((c) => !q || c.label.toLowerCase().includes(q));
   }, [paletteQ]);
 
+  /** Declared secrets with no value on the *selected* environment. */
+  const unresolvedForEnv = useMemo(
+    () => (env ? (envReport?.environments.find((e) => e.name === env)?.unresolved ?? []) : []),
+    [env, envReport],
+  );
+
   const toggleRail = useCallback((): void => {
     setRailHidden((v) => {
       const next = !v;
@@ -1311,6 +1326,17 @@ export function App() {
             ))}
           </select>
         </label>
+        {unresolvedForEnv.length > 0 && (
+          // Proactive, not post-mortem: this used to surface only in the status bar AFTER a run
+          // had already failed on it.
+          <button
+            className="badge-stale env-warn"
+            title={`no value for: ${unresolvedForEnv.join(", ")} — set them, or open environments to see where they resolve from`}
+            onClick={() => setEnvModalOpen(true)}
+          >
+            ⚠ {unresolvedForEnv.length} unset
+          </button>
+        )}
         <button className="btn ghost" onClick={() => setEnvModalOpen(true)} title="manage environments" aria-label="manage environments">
           ⚙
         </button>
@@ -1895,7 +1921,10 @@ export function App() {
           environments={state?.environments ?? []}
           onClose={() => setEnvModalOpen(false)}
           onDelete={deleteEnvironment}
-          onChanged={() => void onEnvironmentsChanged()}
+          onChanged={() => {
+            refreshEnvReport();
+            void onEnvironmentsChanged();
+          }}
         />
       )}
 

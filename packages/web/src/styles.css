@@ -2973,3 +2973,23 @@ select:focus {
 .shortcut-what {
   color: var(--dim);
 }
+
+/* --- secret resolution status (environments) --- */
+.secret-status {
+  font-size: 10.5px;
+  color: var(--dim);
+  margin-left: 6px;
+}
+.captured-chip.unset {
+  border-color: color-mix(in oklab, var(--amber) 45%, transparent);
+}
+.captured-chip.unset .secret-status {
+  color: var(--amber-ink);
+}
+.env-warn {
+  cursor: pointer;
+  background: none;
+}
+.env-list-row .badge-stale {
+  margin-left: auto;
+}

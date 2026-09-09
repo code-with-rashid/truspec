@@ -226,6 +226,26 @@ export interface ImportApiResult {
   files?: string[];
 }
 
+export interface EnvSecretStatus {
+  name: string;
+  resolved: boolean;
+  source?: "env" | "dotenv";
+}
+
+export interface EnvironmentReport {
+  name: string;
+  path: string;
+  variables: Record<string, string>;
+  secrets: EnvSecretStatus[];
+  unresolved: string[];
+}
+
+export interface EnvListReport {
+  root: string;
+  environments: EnvironmentReport[];
+  errors: Array<{ path: string; error: string }>;
+}
+
 export interface CodegenTargetInfo {
   id: string;
   label: string;
@@ -253,6 +273,7 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const getState = () => api<WorkspaceState>("/api/state");
 export const getFlow = () => api<FlowState>("/api/flow");
+export const getEnvironments = () => api<EnvListReport>("/api/environments");
 export const importPostman = (json: unknown, targetDir?: string) =>
   api<ImportApiResult>("/api/import/postman", { method: "POST", body: JSON.stringify({ json, targetDir }) });
 export const importBruno = (files: Array<{ path: string; content: string }>, targetDir?: string) =>

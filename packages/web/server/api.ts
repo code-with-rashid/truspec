@@ -23,6 +23,7 @@ import {
   findWorkspaceRoot,
   loadDotenv,
   loadEnvironment,
+  listEnvironments as environmentReport,
   loadFolderChain,
   runPath,
   walkDirSafe,
@@ -586,6 +587,11 @@ export async function handleApi(
       status: 200,
       json: await runPath(target, { env: b.env || undefined, cwd: ctx.dir, spec: b.spec || undefined }),
     };
+  }
+  if (method === "GET" && pathname === "/api/environments") {
+    // Names and resolution status only — never a secret's value. The UI needs to say "token is not
+    // set", which is actionable; showing the token would be a different and worse problem.
+    return { status: 200, json: environmentReport(ctx.dir, process.env) };
   }
   if (method === "GET" && pathname === "/api/codegen/targets") {
     return {

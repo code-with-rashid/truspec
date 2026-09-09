@@ -35,6 +35,34 @@ describe("web server api", () => {
     }
   });
 
+  it("reports each environment's secret resolution status, and never a secret's value", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "truspec-web-env-"));
+    try {
+      mkdirSync(join(dir, "environments"), { recursive: true });
+      writeFileSync(
+        join(dir, "environments", "local.env.yaml"),
+        'tspec: "0.1"\nname: local\nvariables: { baseUrl: "http://localhost:4000" }\nsecrets: [webApiTestToken, webApiTestMissing]\n',
+      );
+      writeFileSync(join(dir, ".env"), "webApiTestToken=do-not-leak-me\n");
+      const r = await handleApi("GET", "/api/environments", noQuery, undefined, { dir });
+      expect(r.status).toBe(200);
+      const out = r.json as {
+        environments: { name: string; secrets: { name: string; resolved: boolean; source?: string }[]; unresolved: string[] }[];
+      };
+      const env = out.environments[0]!;
+      expect(env.name).toBe("local");
+      expect(env.secrets).toEqual([
+        { name: "webApiTestToken", resolved: true, source: "dotenv" },
+        { name: "webApiTestMissing", resolved: false },
+      ]);
+      expect(env.unresolved).toEqual(["webApiTestMissing"]);
+      // The whole point of the status-only shape: this response reaches a browser.
+      expect(JSON.stringify(out)).not.toContain("do-not-leak-me");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("imports a pasted curl command into the workspace", async () => {
     const dir = mkdtempSync(join(tmpdir(), "truspec-web-curl-"));
     try {

@@ -26,7 +26,7 @@ export const test = base.extend<{ app: App }>({
 
     const dir = mkdtempSync(join(tmpdir(), "tspec-e2e-"));
     mkdirSync(join(dir, "environments"), { recursive: true });
-    writeFileSync(join(dir, "environments", "local.env.yaml"), `tspec: "0.1"\nname: local\nvariables: { baseUrl: "http://127.0.0.1:${mockPort}" }\n`);
+    writeFileSync(join(dir, "environments", "local.env.yaml"), `tspec: "0.1"\nname: local\nvariables: { baseUrl: "http://127.0.0.1:${mockPort}" }\nsecrets: [tspecE2eToken]\n`);
     writeFileSync(join(dir, "get.tspec.yaml"), 'tspec: "0.1"\nname: Get pet\nmethod: GET\nurl: "{{baseUrl}}/pets/1"\nspec: { operation: "GET /pets/{id}" }\nassertions: [ { type: status, equals: 200 } ]\n');
     // XSS probe: a request name that WOULD execute if the UI didn't escape it.
     writeFileSync(join(dir, "evil.tspec.yaml"), 'tspec: "0.1"\nname: "<img src=x onerror=\\"window.__xss=true\\">"\nmethod: GET\nurl: "{{baseUrl}}/x"\nassertions: []\n');

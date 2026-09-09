@@ -690,3 +690,34 @@ Two decisions carry the design:
 files, subdirectory lookup, stable ordering, every diff case), 10 CLI, 2 MCP. 731 tests, coverage
 held at 95.39% lines / 96.64% functions, typecheck 8/8, build 5/5.
 
+
+### 25 — an unresolved secret is visible before the run, not after it
+
+**Gap.** Iteration 24 made secret resolution inspectable from the terminal, but the web UI still
+told you nothing until a run had already failed. The sequence was: pick an environment, build a
+request, send it, read a 401, then go hunting for which of the declared secrets has no value. Every
+part of that is knowable before the first byte goes out.
+
+**Change.** `GET /api/environments` returns the same status-only report the CLI prints, and the UI
+consumes it in two places:
+
+- A `⚠ N unset` badge sits next to the environment picker whenever the selected environment has
+  unresolved secrets. It is a button — clicking it opens the environment manager at the problem
+  rather than making you find it.
+- Inside the manager, every declared secret carries a `✓ set` / `not set` chip, with a tooltip
+  naming where the value came from (OS environment or project `.env`), and each environment row in
+  the list shows its own unset count.
+
+The report is refreshed on load and on every environment change, so the badge tracks the
+environment you are actually about to run against.
+
+**The constraint that shaped it.** The response crosses into a browser, so it carries names and
+resolution status and nothing else — never a value, from either source. That is asserted in the API
+test directly (`JSON.stringify(response)` must not contain the fixture's value) and again in the
+browser, because "the modal shows status" and "the modal shows the secret" are one CSS change
+apart.
+
+**Verification.** 3 e2e tests (badge present before any run; the badge opens the manager; the modal
+shows status and never a value) and 1 API test. The shared e2e fixture now declares an unresolved
+secret, so the whole browser suite exercises the new state: 89 e2e passing, 734 unit tests,
+coverage 95.39% lines / 87.14% branches / 96.39% functions — all above the gate — typecheck 8/8.
