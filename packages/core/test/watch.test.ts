@@ -181,4 +181,37 @@ describe("watchWorkspace", () => {
     await Promise.resolve();
     expect(runs).toBe(2);
   });
+
+  it("uses the real filesystem watcher by default and tears it down cleanly", async () => {
+    // The default `watchDir` (recursive fs.watch, with a flat fallback) is otherwise never
+    // exercised — and a leaked watcher keeps the process alive after a run finishes.
+    let fired = 0;
+    const stop = watchWorkspace(join(dir, "api"), () => {
+      fired += 1;
+    }, { debounceMs: 5 });
+    writeFileSync(join(dir, "api", "b.tspec.yaml"), 'tspec: "0.1"\nname: B\nurl: "https://x.test"\n');
+    await new Promise((r) => setTimeout(r, 250));
+    stop();
+    expect(fired).toBeGreaterThanOrEqual(1);
+
+    // Nothing fires after teardown, which is what keeps a finished run from hanging.
+    const after = fired;
+    writeFileSync(join(dir, "api", "c.tspec.yaml"), 'tspec: "0.1"\nname: C\nurl: "https://x.test"\n');
+    await new Promise((r) => setTimeout(r, 150));
+    expect(fired).toBe(after);
+  });
+
+  it("resolves a relative target against an explicit cwd", () => {
+    const h = harness();
+    const stop = watchWorkspace("api", () => {}, { ...h.options, cwd: dir });
+    expect(h.watched).toContain(join(dir, "api"));
+    stop();
+  });
+
+  it("watches the containing directory when the target is a single request file", () => {
+    const h = harness();
+    const stop = watchWorkspace(join(dir, "api", "a.tspec.yaml"), () => {}, h.options);
+    expect(h.watched).toContain(join(dir, "api"));
+    stop();
+  });
 });

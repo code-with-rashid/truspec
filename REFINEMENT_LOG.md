@@ -585,3 +585,34 @@ with no date and no absolute path anywhere, one pinning the double-base-URL regr
 that documents this repository's own `examples/blog` end to end. 644 tests, typecheck 8/8,
 build 5/5.
 
+### 21 — Pay back the coverage debt, and raise the gate that let it accrue
+
+**Re-analysis with fresh eyes.** Twenty iterations added roughly 3,000 lines. Running
+`pnpm test:coverage` showed the bill: **functions had fallen from 98.3% to 89.94% — below the
+project's own 90% threshold** — and lines from 95.18% to 91.88%. New code had shipped with tests
+for its *behavior* but not for its edges.
+
+**Change.** Tests for the least-covered modules, which turned up three more real bugs:
+
+1. **`exportPostman` silently dropped `multipart` bodies and `oauth2` auth.** Both were added in
+   earlier iterations and the exporter was never updated; the switch simply fell through and the
+   request exported with no body / no auth. Now converted (Postman's `formdata` with `type: file`,
+   and its `oauth2` key/value block), with warnings for the fields Postman genuinely cannot
+   represent (`audience`, `extra`, transport `options`) rather than losing them quietly.
+2. **Watch mode watched a single-file target as a file, not its directory** — so a *sibling
+   request added later* was never noticed, which is the change a watcher is most useful for.
+3. `web/src/tree.ts` — the sidebar's whole tree/filter model — had **0% coverage**. It now has 16
+   tests, including the "folder with no requests yet is still visible" case.
+
+Also added: a `web/src/api.ts` client suite that pins the wire contract against the server routes
+(a renamed route would previously have gone unnoticed until someone clicked the button), plus CLI
+coverage for `docs`, the HAR/curl `import` paths, and the new MCP tools.
+
+**The durable fix is the threshold.** 90/85/90/90 sat far enough below the real numbers that all
+of that could land before anything complained. Raised to **95 lines / 87 branches / 96 functions /
+95 statements**, just under the current figures, so a regression trips on the commit that causes
+it rather than twenty commits later.
+
+**Verification.** Coverage now 95.43% lines, 87.78% branches, 97.01% functions — above where the
+campaign started. 687 tests (was 644), typecheck 8/8, build 5/5.
+

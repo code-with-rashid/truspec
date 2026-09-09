@@ -34,7 +34,35 @@ function convertAuth(auth: TruSpecAuth | undefined): Record<string, unknown> | u
           { key: "in", value: auth.in, type: "string" },
         ],
       };
+    case "oauth2":
+      // Postman's oauth2 block is a flat key/value list. Only the fields Postman understands are
+      // emitted; anything provider-specific (`audience`, `extra`) has no home there and is
+      // reported by the caller rather than silently vanishing.
+      return {
+        type: "oauth2",
+        oauth2: [
+          { key: "grant_type", value: postmanGrant(auth.grant), type: "string" },
+          { key: "accessTokenUrl", value: auth.tokenUrl, type: "string" },
+          ...(auth.clientId ? [{ key: "clientId", value: auth.clientId, type: "string" }] : []),
+          ...(auth.clientSecret ? [{ key: "clientSecret", value: auth.clientSecret, type: "string" }] : []),
+          ...(auth.scope ? [{ key: "scope", value: auth.scope, type: "string" }] : []),
+          ...(auth.username ? [{ key: "username", value: auth.username, type: "string" }] : []),
+          ...(auth.password ? [{ key: "password", value: auth.password, type: "string" }] : []),
+          {
+            key: "client_authentication",
+            value: auth.clientAuth === "basic" ? "header" : "body",
+            type: "string",
+          },
+        ],
+      };
   }
+}
+
+/** Postman's own spelling of the grant types. */
+function postmanGrant(grant: string): string {
+  if (grant === "client_credentials") return "client_credentials";
+  if (grant === "refresh_token") return "refresh_token";
+  return "password_credentials";
 }
 
 type KeyValue = Record<string, string | number | boolean>;
@@ -69,6 +97,19 @@ function convertBody(body: TruSpecBody | undefined): Record<string, unknown> | u
         mode: "graphql",
         graphql: { query: body.query, variables: body.variables ? JSON.stringify(body.variables, null, 2) : "" },
       };
+    case "multipart":
+      // Postman's `formdata` mode distinguishes a text field from a file by `type`, and carries the
+      // file's path in `src` — the closest thing to TruSpec's `{ file }` part that Postman has.
+      return {
+        mode: "formdata",
+        formdata: Object.entries(body.fields).map(([key, field]) => {
+          if (typeof field === "object" && field !== null && "file" in field) {
+            return { key, type: "file", src: field.file };
+          }
+          const value = typeof field === "object" && field !== null ? field.text : String(field);
+          return { key, type: "text", value };
+        }),
+      };
   }
 }
 
@@ -84,7 +125,7 @@ function convertScript(script: TruSpecRequest["script"]): unknown[] | undefined 
   return events;
 }
 
-function convertRequest(req: TruSpecRequest): Record<string, unknown> {
+function convertRequest(req: TruSpecRequest, warn: (message: string) => void): Record<string, unknown> {
   const request: Record<string, unknown> = {
     method: req.method,
     header: convertHeaders(req.headers) ?? [],
@@ -92,9 +133,17 @@ function convertRequest(req: TruSpecRequest): Record<string, unknown> {
   };
   const auth = convertAuth(req.auth);
   if (auth) request.auth = auth;
+  if (req.auth?.type === "oauth2" && (req.auth.audience || req.auth.extra)) {
+    // Postman's oauth2 block has no slot for these, and a credential that silently loses a
+    // required parameter fails at the token endpoint with a message that blames the wrong thing.
+    warn(`"${req.name}": OAuth2 audience/extra parameters have no Postman equivalent and were dropped`);
+  }
   const body = convertBody(req.body);
   if (body) request.body = body;
 
+  if (req.options) {
+    warn(`"${req.name}": transport options (timeout/retries/redirects) have no Postman equivalent`);
+  }
   const item: Record<string, unknown> = { name: req.name, request };
   const event = convertScript(req.script);
   if (event) item.event = event;
@@ -141,7 +190,7 @@ export function exportPostman(dir: string, collectionName?: string): ExportResul
       continue;
     }
     stats.requests++;
-    node.requests.push(convertRequest(result.data));
+    node.requests.push(convertRequest(result.data, (m) => warnings.push(m)));
   }
 
   const renderNode = (node: ExportNode): unknown[] => {

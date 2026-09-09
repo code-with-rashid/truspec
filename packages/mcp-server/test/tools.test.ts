@@ -5,7 +5,10 @@ import { describe, expect, it } from "vitest";
 import {
   codegenTargetsTool,
   codegenTool,
+  docsTool,
   importCurlTool,
+  importHarTool,
+  lintTool,
   contractTool,
   coverageTool,
   createRequest,
@@ -179,5 +182,63 @@ describe("mcp tools", () => {
       "examples/petstore/get-pet.tspec.yaml",
     );
     expect(result.results.length).toBe(1);
+  });
+
+  it("renders documentation for a collection", () => {
+    const r = docsTool({ cwd: repoRoot }, "examples/blog", "curl", "Blog") as {
+      count: number;
+      markdown: string;
+    };
+    expect(r.count).toBe(3);
+    expect(r.markdown.startsWith("# Blog")).toBe(true);
+  });
+
+  it("lints a collection and reports findings with stable rule ids", () => {
+    const r = lintTool({ cwd: repoRoot }, "examples") as { ok: boolean; findings: unknown[] };
+    expect(r.ok).toBe(true);
+    expect(r.findings).toEqual([]);
+  });
+
+  it("honors a disabled rule", () => {
+    const dir = mkdtempSync(join(tmpdir(), "truspec-mcp-lint-"));
+    try {
+      writeFileSync(join(dir, "x.tspec.yaml"), 'tspec: "0.1"\nname: X\nurl: "https://x.test/a"\n');
+      expect((lintTool({ cwd: dir }, ".") as { findings: unknown[] }).findings.length).toBe(1);
+      expect((lintTool({ cwd: dir }, ".", ["no-assertions"]) as { findings: unknown[] }).findings).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("imports a HAR file into request files", () => {
+    const dir = mkdtempSync(join(tmpdir(), "truspec-mcp-har-"));
+    try {
+      writeFileSync(
+        join(dir, "s.har"),
+        JSON.stringify({
+          log: { entries: [{ request: { method: "GET", url: "https://api.test/pets", headers: [] }, response: { status: 200 } }] },
+        }),
+      );
+      const r = importHarTool({ cwd: dir }, "s.har", "api", undefined, "baseUrl") as {
+        created: number;
+        files: string[];
+      };
+      expect(r.created).toBe(1);
+      expect(readFileSync(join(dir, r.files[0]!), "utf8")).toContain("{{baseUrl}}/pets");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("reports a HAR with nothing importable rather than writing files", () => {
+    const dir = mkdtempSync(join(tmpdir(), "truspec-mcp-har-empty-"));
+    try {
+      writeFileSync(join(dir, "s.har"), JSON.stringify({ log: { entries: [] } }));
+      const r = importHarTool({ cwd: dir }, "s.har") as { created: number; warnings: string[] };
+      expect(r.created).toBe(0);
+      expect(r.warnings.join(" ")).toMatch(/No importable entries/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

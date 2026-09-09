@@ -1,4 +1,4 @@
-import { existsSync, watch as fsWatch } from "node:fs";
+import { existsSync, statSync, watch as fsWatch } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { findWorkspaceRoot } from "./run";
 
@@ -54,11 +54,15 @@ export function watchWorkspace(
   opts: WatchOptions = {},
 ): Unwatch {
   const abs = resolve(opts.cwd ?? process.cwd(), target);
-  const root = findWorkspaceRoot(existsSync(abs) ? abs : dirname(abs));
+  // A target that is a FILE must be watched by its directory, not by itself: watching the file
+  // catches edits to it but never a sibling request being added, which is exactly the change a
+  // watcher is most useful for.
+  const targetDir = existsSync(abs) && statSync(abs).isDirectory() ? abs : dirname(abs);
+  const root = findWorkspaceRoot(targetDir);
   const dirs = new Set<string>([root]);
   // The collection may sit outside the workspace root (`truspec run ../other/api`), and the
   // environments directory may sit above it; watch both rather than assuming one contains the other.
-  dirs.add(existsSync(abs) ? abs : dirname(abs));
+  dirs.add(targetDir);
   const envDir = join(root, "environments");
   if (existsSync(envDir)) dirs.add(envDir);
 
