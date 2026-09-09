@@ -132,6 +132,13 @@ Both are visible in the report rather than silent: a timeout names the limit tha
 request's own `timeoutMs`, `--timeout` or the 30s default applied; and a response that arrived only
 after a re-send is annotated `↻ re-sent 2 time(s) before this response`.
 
+**Streaming responses.** A `text/event-stream` response is parsed into its events rather than left
+as one long string: `response.events` carries `{ event?, data, id? }` per event, and the human
+report says `↯ 7 server-sent event(s)`. A stream that never ends — the ordinary shape of an LLM
+API — is closed after 200 events, or by the request timeout, and **what arrived is still
+reported**: before, such a request timed out having thrown away everything the server sent.
+`streamTruncated` says the stream was cut short rather than finished by the server.
+
 **Redirects are not followed by default.** TruSpec reports the *actual* response a URL returns, so
 a `301` stays assertable and [`contract`](./cli.md#contract) can validate a redirect operation the
 spec declares. Turn `followRedirects` on for a request where the hop is incidental.

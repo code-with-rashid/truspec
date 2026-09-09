@@ -25,7 +25,7 @@ UI/UX polish, and stabilization. Each iteration is a self-contained, tested, com
 | **Run selection (`--grep` / tags / `--bail`)** | ✓ | ✓ | ✗ | ✗ | **✗** |
 | **Proxy / TLS / client certs** | ✓ | ✓ | ✓ | ✗ | **✗** |
 | **Retries / redirect policy** | ✓ | ✓ | ✓ | ✓ | **✗** |
-| **SSE / streaming** | ✓ | ✓ | ✓ | ✓ | **✗** |
+| **SSE / streaming** | ✓ | ✓ | ✓ | ✓ | **✗** → ✓ (iteration 77) |
 
 Gaps above drive the roadmap below. TruSpec's differentiators (spec-sync, offline, agent-native)
 stay first-class; parity work must not compromise them.
@@ -2749,3 +2749,56 @@ compares byte-for-byte — the gate that already existed for exactly this kind o
 
 **Verification.** 1063 unit tests (16 new) and 115 e2e, coverage 96.00% lines / 87.60% branches /
 96.59% functions, typecheck 8/8, `git diff --exit-code examples` clean after regeneration.
+
+### 77 — the last ✗ in the competitive table
+
+**Where this came from.** Seventy-six iterations in, I went back to the research table this log
+opens with and checked which gaps are still open. One row: **SSE / streaming**, which Postman,
+Bruno, Insomnia and Hoppscotch all have. It is also the row that has aged into the most important
+one — every LLM API streams, and "does my endpoint emit the right events" is a question people now
+ask daily.
+
+**What happened before.** A stream that *ends* worked by accident: the runner buffered the whole
+body, so `body contains "chunk 3"` could match. A stream that does not end — the ordinary shape of
+a chat completion — did this:
+
+```
+### SSE that never ends (timeout 1500ms)  exit=1
+   status: undefined  bytes: undefined  bodyText: undefined
+   error: Timed out waiting for 127.0.0.1:43503 after 1500ms
+```
+
+Everything the server had already sent was discarded to report a timeout. For a streaming endpoint
+that *is* the response, thrown away in favour of an error message.
+
+**Now:**
+
+```
+✓ PASS  Stream  (api/stream.tspec.yaml)  200 412ms
+      ↯ 7 server-sent event(s) — stream closed at the limit, not by the server
+```
+
+- `text/event-stream` bodies are parsed into `response.events` — `{ event?, data, id? }` — with
+  `bodyText` still carrying the raw stream, so nothing is hidden.
+- A stream that never ends is closed after **200 events** rather than waiting for the request
+  timeout, so a flooding endpoint returns in its own time (361ms in the probe, against an 8-second
+  timeout).
+- When the timeout *does* close a stream, what arrived is reported as a successful response with
+  `streamTruncated: true`, rather than an error with nothing in it.
+
+**The line I drew.** Only a *stream* is salvaged from a timeout. Half a JSON document is not a
+response, and reporting a 200 for a request that did not complete would be a lie — that case still
+errors, and a test pins it, using a server that writes `{"half":` and then stops. Likewise a stream
+that timed out before sending anything has nothing to report and still fails.
+
+**The parser follows the WHATWG format** rather than approximating it: multi-line `data:` joins
+with a newline, exactly one leading space is stripped from a value, `:` comment lines (which is
+what most keep-alives are) are dropped, CRLF and bare CR are accepted, and a block with no `data:`
+is not an event. Six tests, one per rule.
+
+**Iteration 70's gate did its job on the way through**: adding `events` and `streamTruncated`
+failed the contract test until both were documented in `docs/api.md` and `docs/cli.md`.
+
+**Verification.** 1075 unit tests (12 new), coverage 96.00% lines / 87.68% branches / 96.62%
+functions, typecheck 8/8, docs updated in three places, and the competitive table at the top of
+this log now has no open ✗.

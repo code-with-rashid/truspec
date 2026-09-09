@@ -32,6 +32,12 @@ export function formatHuman(result: WorkspaceRunResult, cwd: string): string {
     // result reads as a clean 200 while the server answered 503 twice. The count was recorded and
     // simply never printed.
     if (r.retries) lines.push(`      ↻ re-sent ${r.retries} time(s) before this response`);
+    // A stream's events are the response; saying "200, 4KB" about one says nothing about what
+    // arrived, and a stream cut short at the cap must not read as one the server finished.
+    if (r.response?.events) {
+      const cut = r.response.streamTruncated ? " — stream closed at the limit, not by the server" : "";
+      lines.push(`      ↯ ${r.response.events.length} server-sent event(s)${cut}`);
+    }
     // A capture that matched nothing is reported on the request that *should have produced* the
     // value. Without it the only sign is a failure several files later that names the consumer
     // ("Unresolved variables: {{token}}") and says nothing about which request went wrong.

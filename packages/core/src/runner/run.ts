@@ -14,6 +14,7 @@ import { type OAuth2Auth, resolveOAuthToken, type TokenCache } from "./oauth";
 import { type ResolvedPart, resolveRequest } from "./resolve";
 import { runPostScript, runPreScript } from "./script";
 import { send } from "./transport";
+import { countEventBlocks, isEventStream, MAX_STREAM_EVENTS, parseEventStream, type SseEvent } from "./sse";
 import { describeTransportError } from "./transport-error";
 
 export interface RunContext {
@@ -77,6 +78,16 @@ export interface RunResult {
      * which produces a file that is not the one the server sent.
      */
     bodyBase64?: string;
+    /**
+     * Server-sent events, when the response is a `text/event-stream`.
+     *
+     * A streaming endpoint is the ordinary shape of an LLM API, and the runner used to buffer the
+     * whole stream as one string — or, for a stream that never ends, time out and report nothing
+     * at all, discarding everything the server had already sent.
+     */
+    events?: SseEvent[];
+    /** The stream was closed at the event cap or by the timeout, not by the server. */
+    streamTruncated?: boolean;
   };
   assertions: AssertionResult[];
   captured?: Record<string, VarValue>;
@@ -166,11 +177,26 @@ interface ReadBody {
   bytes: number;
   binary: boolean;
   base64?: string;
+  /** Parsed server-sent events, when the response is an event stream. */
+  events?: SseEvent[];
+  /** The stream was closed at the event cap rather than by the server. */
+  truncated?: boolean;
 }
 
 /** Package a buffer as the runner's view of a body: decoded text, plus the bytes if it is binary. */
-function describeBody(buf: Buffer, contentType: string): ReadBody {
+function describeBody(buf: Buffer, contentType: string, truncated = false): ReadBody {
   const text = decodeResponseBody(buf, contentType);
+  if (isEventStream(contentType)) {
+    // An event stream is text by construction, and its events are the thing worth asserting on —
+    // `bodyText` keeps the raw stream so nothing is hidden.
+    return {
+      text,
+      bytes: buf.byteLength,
+      binary: false,
+      events: parseEventStream(text),
+      ...(truncated ? { truncated: true } : {}),
+    };
+  }
   if (!looksBinary(text)) return { text, bytes: buf.byteLength, binary: false };
   return {
     text,
@@ -180,16 +206,40 @@ function describeBody(buf: Buffer, contentType: string): ReadBody {
   };
 }
 
-async function readResponseText(response: Response, maxBytes: number): Promise<ReadBody> {
+async function readResponseText(response: Response, maxBytes: number, maxEvents?: number): Promise<ReadBody> {
   const contentType = response.headers.get("content-type") ?? "";
   const body = response.body;
   if (!body) return describeBody(Buffer.from(await response.arrayBuffer()), contentType);
   const reader = body.getReader();
+  const stream = isEventStream(contentType);
+  const eventCap = maxEvents ?? MAX_STREAM_EVENTS;
   const chunks: Uint8Array[] = [];
   let size = 0;
+  let truncated = false;
+  const collected = (): Buffer => {
+    const buf = Buffer.allocUnsafe(size);
+    let offset = 0;
+    for (const c of chunks) {
+      buf.set(c, offset);
+      offset += c.byteLength;
+    }
+    return buf;
+  };
   for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
+    let chunk: Awaited<ReturnType<typeof reader.read>>;
+    try {
+      chunk = await reader.read();
+    } catch (e) {
+      // A stream that is still open when the request's timeout fires: everything the server sent
+      // is right here, and throwing it away to report "timed out" is the least useful of the two
+      // answers. An ordinary body cannot be salvaged this way — half a JSON document is not a
+      // response — so only a stream returns what it has.
+      if (!stream || size === 0) throw e;
+      truncated = true;
+      break;
+    }
+    if (chunk.done) break;
+    const value = chunk.value;
     if (!value) continue;
     size += value.byteLength;
     if (size > maxBytes) {
@@ -197,14 +247,15 @@ async function readResponseText(response: Response, maxBytes: number): Promise<R
       throw new ResponseTooLargeError(`Response body exceeded ${maxBytes} bytes`);
     }
     chunks.push(value);
+    // A stream that never ends is the normal case for SSE, so stop at a bound of our own rather
+    // than waiting for the request timeout to kill it and report nothing.
+    if (stream && countEventBlocks(collected().toString("utf8")) >= eventCap) {
+      await reader.cancel().catch(() => {});
+      truncated = true;
+      break;
+    }
   }
-  const buf = Buffer.allocUnsafe(size);
-  let offset = 0;
-  for (const c of chunks) {
-    buf.set(c, offset);
-    offset += c.byteLength;
-  }
-  return describeBody(buf, contentType);
+  return describeBody(collected(), contentType, truncated);
 }
 
 /**
@@ -430,6 +481,8 @@ export async function runRequest(req: TruSpecRequest, ctx: RunContext = {}): Pro
       bytes: body.bytes,
       ...(body.binary ? { binary: true } : {}),
       ...(body.base64 !== undefined ? { bodyBase64: body.base64 } : {}),
+      ...(body.events !== undefined ? { events: body.events } : {}),
+      ...(body.truncated ? { streamTruncated: true } : {}),
     },
     assertions,
     ...(scriptError ? { error: `Script error: ${scriptError}` } : {}),

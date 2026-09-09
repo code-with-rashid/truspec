@@ -300,6 +300,7 @@ it applies:
 | `iteration` | 1-based row index under `--data` / `--repeat` |
 | `response.bytes` | body size as it arrived (not `bodyText.length`, which counts characters) |
 | `response.binary`, `response.bodyBase64` | the body is not text; its real bytes, base64-encoded |
+| `response.events`, `response.streamTruncated` | a `text/event-stream`'s parsed events, and whether the stream was cut short rather than finished by the server |
 | `parseErrors` (top level) | files that did not parse, with the reason |
 | `iterations`, `skipped`, `deselected` (top level) | data/repeat count, bailed, filtered out |
 

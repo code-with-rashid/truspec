@@ -177,6 +177,8 @@ all read, so treat it as a contract: a field is added, never repurposed.
 | `bytes` | `number?` | size as it arrived, which is not `bodyText.length` |
 | `binary` | `boolean?` | the body is not text; `bodyText` is a lossy decode of it |
 | `bodyBase64` | `string?` | the real bytes of a binary body, when small enough to carry |
+| `events` | `SseEvent[]?` | parsed `text/event-stream` events (`{ event?, data, id? }`) |
+| `streamTruncated` | `boolean?` | the stream was closed at the event cap or by the timeout, not by the server |
 
 ### Lower-level building blocks
 
