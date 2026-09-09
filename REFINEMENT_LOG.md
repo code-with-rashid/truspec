@@ -2029,3 +2029,39 @@ saw before, so nothing silently changes meaning for an existing collection.
 Blob the save button builds and asserts it is byte-for-byte the PNG the server sent, and reads
 `naturalWidth`/`naturalHeight` off the rendered preview — the browser decoding the image is proof
 the bytes survived. Coverage 95.83% lines / 87.64% branches / 96.29% functions, typecheck 8/8.
+
+### 60 — one user's token, handed to another
+
+**What I looked for.** OAuth2 is the auth type most likely to be subtly wrong and the one that
+blocks anyone testing a real API. The token cache added for rate-limit and cost reasons — twenty
+requests under one folder block should fetch one token — is exactly the kind of optimisation that
+is right until the key is wrong.
+
+**The key was a hand-picked subset:** grant, token URL, clientId, username, scope, audience. Two
+fields that decide which token comes back were missing.
+
+```
+A: refreshToken "user-a"        -> Bearer token-for-user-a   (cached: false)
+B: refreshToken "user-b"        -> Bearer token-for-user-a   (cached: true)   token endpoint hits: 1
+
+A: extra.resource "api-one"     -> Bearer token-for-api-one  (cached: false)
+B: extra.resource "api-two"     -> Bearer token-for-api-one  (cached: true)   token endpoint hits: 1
+```
+
+Request B never asked for its own token. A per-user refresh token is the ordinary way to test a
+multi-tenant API, and `extra` is where Azure AD's `resource` and every provider's tenant parameter
+live. The visible symptom is a 401 with nothing in the collection to explain it. The invisible one
+is worse: a request that asserts 200, gets it, and tested the wrong identity — a green CI gate
+proving something about a user it wasn't asked about.
+
+**The fix.** Key on the whole resolved token request — endpoint, client auth mode, client id and
+secret, and every form field, sorted so two equivalent blocks agree. Hashed with sha256, because a
+key built from the client secret and the password is a key that must never be printed.
+
+Building the form moved above the cache lookup, which is also the more honest order: you cannot
+know whether you have the right token cached until you know what you would have asked for.
+
+**Verification.** Each of the three new cache-splitting tests fails against the previous key
+(confirmed by reverting only the source: 3 failed, 20 passed) and passes with it, plus a fourth
+holding the line that the cache still *works* — five identical resolutions, one token request.
+953 unit tests, coverage 95.83% lines / 87.64% branches / 96.3% functions, typecheck 8/8.
