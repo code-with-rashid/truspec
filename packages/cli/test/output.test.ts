@@ -1,6 +1,6 @@
 import type { WorkspaceRunResult } from "@truspec/core/workspace";
 import { describe, expect, it } from "vitest";
-import { formatHuman, formatJunit } from "../src/output";
+import { formatCoverage, formatHuman, formatJunit } from "../src/output";
 import { formatHtml } from "../src/report-html";
 
 function hasXmlForbiddenChar(s: string): boolean {
@@ -99,5 +99,29 @@ describe("reporting a file that did not parse", () => {
     expect(html).toContain("broken.tspec.yaml");
     expect(html).toContain("<b>1</b><span>unparseable</span>");
     expect(html).toContain('<body class="fail">');
+  });
+});
+
+describe("formatCoverage explains an uncovered operation", () => {
+  it("annotates the one that has a request but no assertions, and leaves the other bare", () => {
+    const text = formatCoverage(
+      {
+        total: 2,
+        covered: [],
+        uncovered: ["GET /health", "GET /pets/{id}"],
+        unasserted: [{ op: "GET /health", request: "Health", filePath: "/w/api/health.tspec.yaml" }],
+        percent: 0,
+        ok: false,
+      },
+      "/w",
+    );
+    expect(text).toContain('✗ GET /health  — "Health" (api/health.tspec.yaml) has no assertions');
+    expect(text).toMatch(/✗ GET \/pets\/\{id\}$/m);
+  });
+
+  it("still renders a report from an older version, which has no `unasserted`", () => {
+    const text = formatCoverage({ total: 1, covered: [], uncovered: ["GET /x"], percent: 0, ok: false }, "/w");
+    expect(text).toContain("✗ GET /x");
+    expect(text).not.toContain("has no assertions");
   });
 });

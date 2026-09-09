@@ -103,12 +103,23 @@ export function formatContract(report: ContractReport): string {
   return lines.join("\n");
 }
 
-export function formatCoverage(report: CoverageReport): string {
+export function formatCoverage(report: CoverageReport, cwd = process.cwd()): string {
   const lines: string[] = [];
   lines.push(`Coverage: ${report.percent}% (${report.covered.length}/${report.total} operations tested)`);
+  // An operation a request points at but never asserts on is uncovered for a different reason
+  // than one nothing points at — and needs a different fix. Say which, and where.
+  const silent = new Map(report.unasserted?.map((u) => [u.op, u]) ?? []);
   if (report.uncovered.length > 0) {
     lines.push("", `Uncovered (${report.uncovered.length}):`);
-    for (const k of report.uncovered) lines.push(`  ✗ ${k}`);
+    for (const k of report.uncovered) {
+      const u = silent.get(k);
+      if (!u) {
+        lines.push(`  ✗ ${k}`);
+        continue;
+      }
+      const where = u.filePath ? ` (${toPosixPath(relative(cwd, u.filePath))})` : "";
+      lines.push(`  ✗ ${k}  — "${u.request}"${where} has no assertions; a request that asserts nothing tests nothing`);
+    }
   }
   return lines.join("\n");
 }

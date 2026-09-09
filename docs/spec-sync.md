@@ -103,6 +103,11 @@ bound each probe.
 also has assertions** — a request with no assertions doesn't count, because it asserts
 nothing about the contract.
 
+That rule is easy to trip over, so the report says which case each uncovered operation is: an
+operation nothing points at needs a request written, while one a request *does* point at but
+never asserts on needs an assertion added to a file you already have. The second is named, with
+its request and file, rather than left looking identical to the first.
+
 ```bash
 truspec coverage --spec openapi.yaml ./api
 ```
@@ -112,6 +117,15 @@ Coverage: 75% (3/4 operations tested)
 
 Uncovered (1):
   ✗ GET /users/{id}
+```
+
+An operation whose request exists but asserts nothing is called out in place:
+
+```
+Coverage: 50% (1/2 operations tested)
+
+Uncovered (1):
+  ✗ GET /health  — "Health" (api/health.tspec.yaml) has no assertions; a request that asserts nothing tests nothing
 ```
 
 Gate on a minimum with `--min`:

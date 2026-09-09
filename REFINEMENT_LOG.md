@@ -1259,3 +1259,48 @@ non-matching one so it hasn't been loosened into always passing.
 functions, typecheck 8/8, dogfood gates clean, and `truspec init` re-checked end to end. On Linux
 every one of these changes is an identity function, which is exactly why none of it was visible
 until the job existed — the Windows run is the verification, and it is still pending.
+
+## Iterations 41+ (post-merge)
+
+Iterations 1-40 were merged to `main` as PR #37, green on ubuntu, windows and macos. The campaign
+continues from a branch restarted on the merged `main`.
+
+### 41 — "0% covered" with a request for every operation
+
+**Gap.** `coverage` is half of what makes this product spec-*synced*, so I probed it the way I
+probed the mock. A collection where every operation had a linked request reported **0%**, and
+listed every operation as uncovered with no further explanation.
+
+My first read was that this was a bug, and it is worth recording that it was not. `computeCoverage`
+requires `hasAssertions`, deliberately and by its own doc comment: a request that asserts nothing
+proves nothing about the contract, so counting it would make the number a lie. The rule is right.
+
+The reporting is what fails. Two entirely different situations print the same line:
+
+- nothing in the collection points at this operation — **write a request**
+- a request points at it but asserts nothing — **add an assertion to a file you already have**
+
+Someone who has diligently written a request per operation sees 0% and a list that reads as "you
+have done none of this", with nothing to suggest they are one assertion away per line. `--min` in
+CI turns that into a failing gate with a misleading explanation.
+
+**Change.** `CoverageReport` gains `unasserted` — the subset of `uncovered` that a request does
+point at, each with the request's name and file. The CLI annotates those lines in place
+(`✗ GET /health — "Health" (api/health.tspec.yaml) has no assertions; a request that asserts
+nothing tests nothing`) and leaves a genuinely absent operation bare. The VS Code coverage panel
+draws them amber-with-reason instead of red, and the web client's type carries the field.
+
+The field is **optional**, on purpose: `CoverageReport` is public API for the web client, the VS
+Code extension and MCP, so a required field would break every external constructor — and an older
+`--json` report deserialized against the new type still satisfies it.
+
+**Verification.** 9 new tests. The one that matters most asserts the number did not move: an
+operation with both an asserting and a silent request is still 100% covered and raises no
+complaint, in either array order — this is a better explanation of the same figure, not a new
+figure. Plus a stable sort (the report is diffable), a missing-`filePath` case, and a CLI test
+feeding it a report with no `unasserted` at all. 837 unit tests, 97 e2e, 19 VS Code tests, coverage
+95.72% lines / 87.77% branches / 96.62% functions, typecheck 8/8, dogfood gates clean.
+
+**Also probed and cleared.** Drift correctly reports a renamed path parameter (`{id}` -> `{petId}`)
+as one stale and one untracked operation. Noisy for a rename, but not wrong — they are genuinely
+different operation keys, and silently pairing them up would hide a real spec change.

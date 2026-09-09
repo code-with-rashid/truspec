@@ -64,6 +64,8 @@ export interface CoverageReport {
   total: number;
   covered: string[];
   uncovered: string[];
+  /** The subset of `uncovered` a request points at but never asserts on — a different fix. */
+  unasserted?: Array<{ op: string; request: string; filePath?: string }>;
   percent: number;
   ok: boolean;
 }

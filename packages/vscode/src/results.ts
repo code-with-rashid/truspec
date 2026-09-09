@@ -87,7 +87,17 @@ export function renderDrift(report: DriftReport, spec: string): string {
 }
 
 export function renderCoverage(report: CoverageReport, spec: string): string {
-  const uncovered = report.uncovered.map((o) => `<div class="op red">✗ ${esc(o)}</div>`).join("");
+  // An operation a request points at but never asserts on needs an assertion added, not a request
+  // written. Without saying which, a collection with a request per operation still reads as 0%.
+  const silent = new Map((report.unasserted ?? []).map((u) => [u.op, u]));
+  const uncovered = report.uncovered
+    .map((o) => {
+      const u = silent.get(o);
+      return u
+        ? `<div class="op amber">! ${esc(o)} — “${esc(u.request)}” has no assertions</div>`
+        : `<div class="op red">✗ ${esc(o)}</div>`;
+    })
+    .join("");
   const body =
     `<div class="lbl">spec</div><div class="op">${esc(spec)}</div>` +
     `<div class="lbl">coverage · ${report.percent}%</div>` +
