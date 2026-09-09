@@ -666,3 +666,27 @@ normalization, every auth and body shape, the browser-grant refusal, filename de
 stable ordering, malformed input), 2 web API, 1 MCP, 1 CLI. Coverage held at 95.39% lines /
 96.56% functions. 705 tests, e2e 86/86, typecheck 8/8, build 5/5.
 
+### 24 — `truspec env`: inspect and diff environments
+
+**Gap.** Environments are central to the format, and there was no way to see one without opening
+the file — let alone compare two.
+
+**Change.** `truspec env` lists every environment with its variable/secret counts and an
+unresolved-secret warning; `truspec env <name>` shows one; `truspec env --diff a b` compares two.
+Also a `truspec_environments` MCP tool.
+
+Two decisions carry the design:
+
+- **Secret values are never printed or returned** — only whether each resolves, and from where (OS
+  environment vs project `.env`). This output goes into terminals and gets pasted into issues; a
+  tool that prints a token to help you debug a *missing* token has caused a worse problem than the
+  one it solved. There is a test asserting no value leaks through either source.
+- **`--diff` exists for one boring failure**: staging declares a variable production does not, so
+  the collection runs green everywhere except where it matters. A name present on only one side is
+  reported as prominently as a changed value, and a name that is a plain variable on one side and
+  a *secret* on the other is flagged as the real difference in kind that it is.
+
+**Verification.** 25 tests — 13 core (resolution precedence, the no-leak assertion, unparseable
+files, subdirectory lookup, stable ordering, every diff case), 10 CLI, 2 MCP. 731 tests, coverage
+held at 95.39% lines / 96.64% functions, typecheck 8/8, build 5/5.
+

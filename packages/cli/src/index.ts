@@ -3,6 +3,7 @@ import { contractCommand } from "./commands/contract";
 import { coverageCommand } from "./commands/coverage";
 import { driftCommand } from "./commands/drift";
 import { docsCommand } from "./commands/docs";
+import { envCommand } from "./commands/env";
 import { genCommand } from "./commands/gen";
 import { importCommand } from "./commands/import";
 import { initCommand } from "./commands/init";
@@ -25,6 +26,7 @@ Usage:
   truspec coverage --spec <openapi> [<dir>] [--min <percent>] [--json]
   truspec contract --spec <openapi> [<dir>] [--env <name>] [--json]
   truspec gen --spec <openapi> --out <dir> [--base-url-var <name>]
+  truspec env [<name>] [--diff <a> <b>] [--json]
   truspec docs [<dir>] [--out <file>] [--lang <target>]
   truspec lint [<dir>] [--strict] [--json] [--disable <rule>] [--list-rules]
   truspec codegen <request> [--lang <target>] [--env <name>] [--list]
@@ -41,6 +43,7 @@ Commands:
   coverage   Report which spec operations have a tested request (--min to gate).
   contract   Run the collection and validate each response against the spec; non-zero exit on violation.
   gen        Scaffold a request stub per operation from an OpenAPI spec.
+  env        List, inspect, or diff the workspace's environments (never prints secret values).
   docs       Render a collection as committable Markdown documentation.
   lint       Static checks over a collection (inline secrets, dead assertions, undeclared vars).
   codegen    Render a request as a runnable snippet (curl, Python, Go, …); --list for targets.
@@ -80,6 +83,8 @@ export async function main(argv: string[]): Promise<number> {
       return lintCommand(rest);
     case "docs":
       return docsCommand(rest);
+    case "env":
+      return envCommand(rest);
     case "import":
       return importCommand(rest);
     case "mock":

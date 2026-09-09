@@ -174,6 +174,24 @@ export function createServer(ctx: ServerContext = {}): McpServer {
   );
 
   server.registerTool(
+    "truspec_environments",
+    {
+      title: "List or diff environments",
+      description:
+        "Describe the workspace's environments — variables, declared secrets, and whether each secret resolves — or diff two of them. Secret VALUES are never returned.",
+      inputSchema: {
+        dir: z.string().default(".").describe("Collection directory."),
+        diff: z
+          .array(z.string())
+          .length(2)
+          .optional()
+          .describe("Two environment names to compare instead of listing."),
+      },
+    },
+    async ({ dir, diff }) => json(tools.environmentsTool(c, dir, diff as [string, string] | undefined)),
+  );
+
+  server.registerTool(
     "truspec_docs",
     {
       title: "Document a collection",

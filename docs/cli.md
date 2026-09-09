@@ -24,6 +24,7 @@ truspec --version
 | [`codegen`](#codegen) | Render a request as a runnable snippet in another client or language. |
 | [`lint`](#lint) | Static checks over a collection; non-zero exit on an error. |
 | [`docs`](#docs) | Render a collection as committable Markdown documentation. |
+| [`env`](#env) | List, inspect, or diff the workspace's environments. |
 | [`import`](#import) | Convert a Postman/Bruno/Insomnia collection, curl command, or HAR. |
 | [`mock`](#mock) | Serve generated responses from a spec (offline). |
 | [`serve`](#serve) | Open the local web UI for a collection. |
@@ -433,6 +434,33 @@ Operations with an unsupported method are skipped and reported on stderr.
 truspec gen --spec openapi.yaml --out ./api
 # Generated 4 request(s) in ./api
 ```
+
+---
+
+## `env`
+
+Inspect the workspace's environments without opening the files.
+
+```
+truspec env [<name>] [--dir <collection>] [--json]
+truspec env --diff <a> <b> [--json]
+```
+
+```bash
+truspec env                      # every environment, with unresolved-secret warnings
+truspec env prod                 # one environment's variables and secret status
+truspec env --diff staging prod  # what differs
+```
+
+**Secret values are never printed** — only whether each resolves, and from where (the OS
+environment or the project `.env`). This output goes into terminals and gets pasted into issues; a
+tool that prints a token to help you debug a missing token has caused a worse problem than the one
+it solved.
+
+`--diff` exists for one boring failure in particular: staging declares a variable production does
+not, so the collection runs green everywhere except where it matters. A name present on only one
+side is reported as prominently as a changed value, and a name that is a plain variable on one side
+and a secret on the other is flagged as the real difference in kind that it is.
 
 ---
 

@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -6,6 +6,7 @@ import {
   codegenTargetsTool,
   codegenTool,
   docsTool,
+  environmentsTool,
   importCurlTool,
   importHarTool,
   importInsomniaTool,
@@ -183,6 +184,33 @@ describe("mcp tools", () => {
       "examples/petstore/get-pet.tspec.yaml",
     );
     expect(result.results.length).toBe(1);
+  });
+
+  it("describes environments without ever returning a secret's value", () => {
+    const r = environmentsTool({ cwd: resolve(repoRoot, "examples/petstore") }) as {
+      environments: Array<{ name: string; secrets: Array<{ name: string; resolved: boolean }> }>;
+    };
+    expect(r.environments.map((e) => e.name)).toEqual(["local"]);
+    expect(r.environments[0]!.secrets[0]!.name).toBe("token");
+    expect(JSON.stringify(r)).not.toMatch(/"value"/);
+  });
+
+  it("diffs two environments and names the ones it knows when asked for a missing one", () => {
+    const dir = mkdtempSync(join(tmpdir(), "truspec-mcp-env-"));
+    try {
+      mkdirSync(join(dir, "environments"), { recursive: true });
+      writeFileSync(join(dir, "environments", "a.env.yaml"), 'tspec: "0.1"\nname: a\nvariables: { x: "1", only: "a" }\n');
+      writeFileSync(join(dir, "environments", "b.env.yaml"), 'tspec: "0.1"\nname: b\nvariables: { x: "2" }\n');
+      const d = environmentsTool({ cwd: dir }, ".", ["a", "b"]) as { onlyInA: string[]; changed: unknown[] };
+      expect(d.onlyInA).toEqual(["only"]);
+      expect(d.changed).toEqual([{ name: "x", a: "1", b: "2" }]);
+
+      const missing = environmentsTool({ cwd: dir }, ".", ["a", "nope"]) as { error: string; known: string[] };
+      expect(missing.error).toMatch(/Environment not found: nope/);
+      expect(missing.known).toEqual(["a", "b"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("renders documentation for a collection", () => {

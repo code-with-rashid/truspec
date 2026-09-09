@@ -13,7 +13,14 @@ import {
 } from "@truspec/core/spec";
 import { importCurl, importHarFile, importInsomniaFile, writeImport } from "@truspec/core/importers";
 import { lintWorkspace } from "@truspec/core/lint";
-import { confinePath, discoverRequests, prepareRequest, runPath } from "@truspec/core/workspace";
+import {
+  confinePath,
+  diffEnvironments,
+  discoverRequests,
+  listEnvironments,
+  prepareRequest,
+  runPath,
+} from "@truspec/core/workspace";
 
 export interface ToolContext {
   cwd: string;
@@ -215,4 +222,22 @@ export function importInsomniaTool(ctx: ToolContext, path: string, outDir = ".")
     files: written.map((f) => relative(ctx.cwd, f)),
     ...(result.warnings.length > 0 ? { warnings: result.warnings } : {}),
   };
+}
+
+/**
+ * Describe the workspace's environments, or diff two of them.
+ *
+ * Secret **values are never returned** — only whether each resolves. An agent debugging a failing
+ * run needs to know that `token` is unset; handing it the token would be a different problem.
+ */
+export function environmentsTool(ctx: ToolContext, dir = ".", diff?: [string, string]) {
+  const report = listEnvironments(confinePath(ctx.cwd, dir));
+  if (!diff) return { ...report, root: relative(ctx.cwd, report.root) || "." };
+  const [aName, bName] = diff;
+  const a = report.environments.find((e) => e.name === aName);
+  const b = report.environments.find((e) => e.name === bName);
+  if (!a || !b) {
+    return { error: `Environment not found: ${!a ? aName : bName}`, known: report.environments.map((e) => e.name) };
+  }
+  return diffEnvironments(a, b);
 }
