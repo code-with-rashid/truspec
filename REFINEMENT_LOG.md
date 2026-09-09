@@ -948,3 +948,35 @@ convergence assertion that shutdown returns as soon as the socket falls idle ins
 the whole grace (which is what a single sweep did: 1007ms → 132ms). Both original repros now
 terminate. 800 unit tests, 95 e2e, coverage 95.59% lines / 87.64% branches / 96.56% functions,
 typecheck 8/8, dogfood lint + deterministic-docs + schema gates clean.
+
+### 32 — two modules that no code search could see
+
+**Gap.** Grepping the runner for `timeoutMs` returned, among normal results, the line
+`grep: packages/core/src/runner/oauth.ts: binary file matches` — no line number, no content. The
+file holds a single raw NUL byte. `cookies.ts` holds four.
+
+The NUL itself is the right idea: both modules build a compound key out of user-controlled parts
+(`grant|tokenUrl|clientId|…` for the OAuth token cache, `domain|path|name` for the cookie jar) and
+separate them with a character that cannot occur in any part, so two different tuples can never
+collide into one key. The bug is the *encoding*: the separator was written as a literal byte
+instead of the escape `\u0000`. That makes `file` classify the source as binary, and grep and
+ripgrep then skip it in silence — no error, no match, just absence.
+
+So the token cache and the cookie jar, the two most security-sensitive modules in the runner, were
+invisible to every code search in the repository. An agent following this repo's own CLAUDE.md and
+grepping for a symbol would be told, truthfully and uselessly, that it does not appear. Two of the
+NULs were inside a doc comment (`Keyed by domain<NUL>path<NUL>name`), where they were never a value
+at all — only unreadable documentation.
+
+**Change.** Five raw bytes replaced by `\u0000` in code and by a readable `\0` in the comment. The
+runtime values are identical; the files are now plain text and searchable.
+
+**Change (guard).** A test that walks every tracked source file (via `git ls-files`, so build
+output can't skew it), reads it as latin1 so a stray byte is never smoothed into U+FFFD, and fails
+naming file and line if any control character other than tab, LF or CR appears. Verified both ways:
+green on the fixed tree, and on reintroducing the original byte it reports
+`packages/core/src/runner/oauth.ts:84 contains U+0000`.
+
+**Verification.** 801 unit tests (the existing oauth and cookie suites cover the key-building paths
+and are unchanged), coverage 95.59% lines / 87.64% branches / 96.56% functions, typecheck 8/8,
+dogfood lint + deterministic-docs + schema gates clean.
