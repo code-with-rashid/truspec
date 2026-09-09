@@ -12,7 +12,7 @@ import { type CookieJar, setCookiesOf } from "./cookies";
 import type { VarValue, Vars } from "./interpolate";
 import { type OAuth2Auth, resolveOAuthToken, type TokenCache } from "./oauth";
 import { type ResolvedPart, resolveRequest } from "./resolve";
-import { runPostScript, runPreScript } from "./script";
+import { type ScriptLog, runPostScript, runPreScript } from "./script";
 import { send } from "./transport";
 import { countEventBlocks, isEventStream, MAX_STREAM_EVENTS, parseEventStream, type SseEvent } from "./sse";
 import { describeTransportError } from "./transport-error";
@@ -103,6 +103,14 @@ export interface RunResult {
   redirectLimitHit?: boolean;
   /** How many times the request had to be re-sent, when `options.retries` is set. */
   retries?: number;
+  /**
+   * Lines the request's `script.pre` / `script.post` printed with `console.*`.
+   *
+   * Collected rather than written to a stream: the MCP server speaks JSON-RPC over stdout, and the
+   * browser client has no stdout at all. Present on a failure result too — a script that threw is
+   * exactly when its output matters.
+   */
+  scriptLogs?: ScriptLog[];
   /** 1-based iteration this result belongs to, when the run was data-driven or repeated. */
   iteration?: number;
 }
@@ -308,8 +316,12 @@ export async function runRequest(req: TruSpecRequest, ctx: RunContext = {}): Pro
 
   // Pre-request script runs first; the vars it sets feed the request's interpolation.
   let vars: Vars = ctx.vars ?? {};
+  // What the scripts printed. A failing script's output is the most valuable output there is, so
+  // it travels on the failure result too, not only on success.
+  const scriptLogs: ScriptLog[] = [];
   if (req.script?.pre) {
     const pre = runPreScript(req.script.pre, vars);
+    scriptLogs.push(...pre.logs);
     if (pre.error) {
       return {
         name: req.name,
@@ -317,6 +329,7 @@ export async function runRequest(req: TruSpecRequest, ctx: RunContext = {}): Pro
         ok: false,
         error: `Pre-request script error: ${pre.error}`,
         assertions: [],
+        ...(scriptLogs.length > 0 ? { scriptLogs } : {}),
       };
     }
     vars = { ...vars, ...pre.vars };
@@ -466,6 +479,7 @@ export async function runRequest(req: TruSpecRequest, ctx: RunContext = {}): Pro
   let scriptError: string | undefined;
   if (req.script?.post) {
     const scripted = runPostScript(req.script.post, view, { ...vars, ...captured });
+    scriptLogs.push(...scripted.logs);
     assertions.push(...scripted.assertions);
     Object.assign(captured, scripted.captured);
     scriptError = scripted.error;
@@ -495,5 +509,6 @@ export async function runRequest(req: TruSpecRequest, ctx: RunContext = {}): Pro
     ...(scriptError ? { error: `Script error: ${scriptError}` } : {}),
     ...(Object.keys(captured).length > 0 ? { captured } : {}),
     ...(capture.missed.length > 0 ? { missedCaptures: capture.missed } : {}),
+    ...(scriptLogs.length > 0 ? { scriptLogs } : {}),
   };
 }

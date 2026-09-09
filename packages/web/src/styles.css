@@ -3228,3 +3228,40 @@ select:focus {
 .capture-missed {
   color: var(--amber);
 }
+
+/* Script output. A `console.log` in a script used to go nowhere at all; it now travels in the run
+   result, so it renders here — above the response, because a pre-request script that threw has no
+   response and its output is the only explanation there is. */
+.script-logs {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  background: var(--panel);
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+}
+.script-logs-title {
+  display: block;
+  font-size: 10.5px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--dim);
+  margin-bottom: 7px;
+}
+.script-log {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text);
+}
+.script-log.warn {
+  color: var(--amber);
+}
+.script-log.error {
+  color: var(--red);
+}
+.script-log.debug {
+  color: var(--dim);
+}

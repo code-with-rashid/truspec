@@ -50,6 +50,12 @@ export interface RunResult {
   missedCaptures?: Array<{ name: string; source: string; reason?: string }>;
   /** Re-sends performed under `options.retries`: a 200 that took three tries is not a clean 200. */
   retries?: number;
+  /**
+   * What a `script` printed with `console.*`. Carried in the result rather than written to a
+   * stream, which is the only thing that can work in a browser — and is present on a failure
+   * result too, since a script that threw is exactly when its output matters.
+   */
+  scriptLogs?: Array<{ level: "log" | "info" | "warn" | "error" | "debug"; message: string }>;
 }
 
 export interface WorkspaceRunResult {

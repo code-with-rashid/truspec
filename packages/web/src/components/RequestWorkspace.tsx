@@ -490,6 +490,19 @@ export function RequestWorkspace({
         </div>
 
         <div className="response-scroll">
+          {/* Outside the `response` branch on purpose: a pre-request script that threw produced no
+              response at all, and its output is exactly what explains why. */}
+          {(result?.scriptLogs?.length ?? 0) > 0 && (
+            <div className="script-logs" role="log">
+              <span className="script-logs-title">script output</span>
+              {result?.scriptLogs?.map((l, i) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: log lines are positional and may repeat.
+                <pre key={i} className={`script-log ${l.level}`}>
+                  {l.message}
+                </pre>
+              ))}
+            </div>
+          )}
           {result?.response ? (
             <>
               <div className="tabs">

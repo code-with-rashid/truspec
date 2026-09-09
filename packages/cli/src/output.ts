@@ -44,6 +44,12 @@ export function formatHuman(result: WorkspaceRunResult, cwd: string): string {
     for (const m of r.missedCaptures ?? []) {
       lines.push(`      ! capture ${m.name} ← ${m.source} matched nothing${m.reason ? ` — ${m.reason}` : ""}`);
     }
+    // A script's `console.log` used to go nowhere at all. It is the one thing an author reaches
+    // for when a signature or a token is wrong, so it prints under the request that produced it.
+    for (const l of r.scriptLogs ?? []) {
+      const mark = l.level === "error" ? "✗" : l.level === "warn" ? "!" : "›";
+      for (const line of l.message.split("\n")) lines.push(`      ${mark} ${line}`);
+    }
   }
   // Before the summary, and never silently: a file that did not parse ran no request at all, so it
   // appears in no other line of this report.

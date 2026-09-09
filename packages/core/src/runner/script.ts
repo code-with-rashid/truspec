@@ -1,18 +1,64 @@
 import { createHmac, randomUUID } from "node:crypto";
+import { inspect } from "node:util";
 import { createContext, runInContext } from "node:vm";
 import type { AssertionResult, ResponseView } from "./assertions";
 import type { VarValue, Vars } from "./interpolate";
 
+/** One line a script printed, and which method printed it. */
+export interface ScriptLog {
+  level: "log" | "info" | "warn" | "error" | "debug";
+  message: string;
+}
+
 export interface ScriptResult {
   captured: Record<string, VarValue>;
   assertions: AssertionResult[];
+  logs: ScriptLog[];
   error?: string;
 }
 
 export interface PreScriptResult {
   /** Variables the script set via `tr.set`, merged into the run before the request resolves. */
   vars: Record<string, VarValue>;
+  logs: ScriptLog[];
   error?: string;
+}
+
+/**
+ * How many lines one script may print before the rest are dropped, and how long each may be.
+ *
+ * A script that logs inside a loop should not be able to turn a run report into a memory problem
+ * or an unreadable wall — but silently keeping the *first* N with no notice would misreport what
+ * happened, so the cap announces itself as a final line.
+ */
+const MAX_LOGS = 100;
+const MAX_LOG_CHARS = 2_000;
+
+/**
+ * A `console` for the vm context that collects what a script prints.
+ *
+ * Node injects a `console` into every new vm context, so `console.log` in a script has always been
+ * *defined* — and has always written nowhere at all. Not an error the author could see, not a line
+ * anywhere: the single most common thing anyone does to debug a script was a silent no-op.
+ *
+ * Collected rather than written to a stream, which is the only option that works everywhere this
+ * engine runs: the MCP server speaks JSON-RPC over stdout, where one stray line corrupts the
+ * protocol, and the browser client has no stdout at all. The lines travel in the result, and each
+ * surface renders them.
+ */
+function collectingConsole(logs: ScriptLog[]): Record<string, (...args: unknown[]) => void> {
+  const write = (level: ScriptLog["level"]) => (...args: unknown[]): void => {
+    if (logs.length > MAX_LOGS) return;
+    if (logs.length === MAX_LOGS) {
+      logs.push({ level: "warn", message: `… further output suppressed after ${MAX_LOGS} lines.` });
+      return;
+    }
+    // `inspect` is what Node's own console uses, so an object logs the way an author expects
+    // rather than as "[object Object]".
+    const message = args.map((a) => (typeof a === "string" ? a : inspect(a, { depth: 4 }))).join(" ");
+    logs.push({ level, message: message.length > MAX_LOG_CHARS ? `${message.slice(0, MAX_LOG_CHARS)}…` : message });
+  };
+  return { log: write("log"), info: write("info"), warn: write("warn"), error: write("error"), debug: write("debug") };
 }
 
 /** Coerce a script value into a variable (objects/arrays become JSON so interpolation stays string-safe). */
@@ -48,12 +94,13 @@ export function runPreScript(source: string, vars: Vars): PreScriptResult {
     env: (name: string): string | undefined => process.env[name],
   };
 
+  const logs: ScriptLog[] = [];
   try {
-    runInContext(source, createContext({ tr }), { timeout: 1000 });
+    runInContext(source, createContext({ tr, console: collectingConsole(logs) }), { timeout: 1000 });
   } catch (e) {
-    return { vars: out, error: (e as Error).message };
+    return { vars: out, logs, error: (e as Error).message };
   }
-  return { vars: out };
+  return { vars: out, logs };
 }
 
 /**
@@ -82,10 +129,11 @@ export function runPostScript(source: string, res: ResponseView, vars: Vars): Sc
     },
   };
 
+  const logs: ScriptLog[] = [];
   try {
-    runInContext(source, createContext({ tr }), { timeout: 1000 });
+    runInContext(source, createContext({ tr, console: collectingConsole(logs) }), { timeout: 1000 });
   } catch (e) {
-    return { captured, assertions, error: (e as Error).message };
+    return { captured, assertions, logs, error: (e as Error).message };
   }
-  return { captured, assertions };
+  return { captured, assertions, logs };
 }

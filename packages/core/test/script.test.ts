@@ -114,3 +114,108 @@ describe("runRequest with a post script", () => {
     expect(result.captured).toEqual({ id: 7 });
   });
 });
+
+describe("script console output", () => {
+  it("collects what a pre script prints, instead of dropping it", () => {
+    const r = runPreScript('console.log("hello", 42)', {});
+    expect(r.logs).toEqual([{ level: "log", message: "hello 42" }]);
+  });
+
+  it("collects each level separately, so a surface can style them", () => {
+    const r = runPreScript('console.warn("w"); console.error("e"); console.debug("d"); console.info("i")', {});
+    expect(r.logs.map((l) => l.level)).toEqual(["warn", "error", "debug", "info"]);
+  });
+
+  it("formats an object the way Node's console does, not as [object Object]", () => {
+    const r = runPreScript('console.log({ a: 1, b: [1, 2] })', {});
+    expect(r.logs[0]!.message).toBe("{ a: 1, b: [ 1, 2 ] }");
+    expect(r.logs[0]!.message).not.toContain("[object Object]");
+  });
+
+  it("keeps the output a failing script produced before it threw", () => {
+    const r = runPreScript('console.log("got this far"); nope.boom()', {});
+    expect(r.error).toMatch(/nope is not defined/);
+    expect(r.logs).toEqual([{ level: "log", message: "got this far" }]);
+  });
+
+  it("collects from a post script too, alongside its assertions", () => {
+    const r = runPostScript(
+      'console.log("status is", tr.response.status); tr.expect(true, "ok")',
+      { status: 201, headers: {}, bodyText: "", durationMs: 5 },
+      {},
+    );
+    expect(r.logs).toEqual([{ level: "log", message: "status is 201" }]);
+    expect(r.assertions).toHaveLength(1);
+  });
+
+  it("caps a runaway loop, and says so rather than silently truncating", () => {
+    const r = runPreScript("for (let i = 0; i < 500; i++) console.log(i)", {});
+    expect(r.logs).toHaveLength(101);
+    expect(r.logs[100]).toEqual({ level: "warn", message: "… further output suppressed after 100 lines." });
+  });
+
+  it("caps a single enormous line", () => {
+    const r = runPreScript('console.log("x".repeat(50000))', {});
+    expect(r.logs[0]!.message).toHaveLength(2001);
+    expect(r.logs[0]!.message.endsWith("…")).toBe(true);
+  });
+
+  it("reports nothing when a script prints nothing", () => {
+    expect(runPreScript('tr.set("a", 1)', {}).logs).toEqual([]);
+  });
+
+  it("carries the lines out on the run result, from both phases", async () => {
+    const req = parse.request.parse(
+      `tspec: "0.1"
+name: Chatty
+url: "https://api.test/x"
+script:
+  pre: |
+    console.log("before")
+  post: |
+    console.log("after")
+assertions:
+  - { type: status, equals: 200 }
+`,
+    );
+    const result = await runRequest(req, {
+      fetch: (async () => new Response("{}", { status: 200 })) as unknown as typeof fetch,
+    });
+    expect(result.scriptLogs).toEqual([
+      { level: "log", message: "before" },
+      { level: "log", message: "after" },
+    ]);
+  });
+
+  it("carries them out even when the pre script threw and no request was sent", async () => {
+    const req = parse.request.parse(
+      `tspec: "0.1"
+name: Doomed
+url: "https://api.test/x"
+script:
+  pre: |
+    console.log("got this far")
+    nope.boom()
+assertions: []
+`,
+    );
+    let sent = false;
+    const result = await runRequest(req, {
+      fetch: (async () => {
+        sent = true;
+        return new Response("{}", { status: 200 });
+      }) as unknown as typeof fetch,
+    });
+    expect(sent).toBe(false);
+    expect(result.ok).toBe(false);
+    expect(result.scriptLogs).toEqual([{ level: "log", message: "got this far" }]);
+  });
+
+  it("omits the field entirely when nothing was printed", async () => {
+    const req = parse.request.parse('tspec: "0.1"\nname: Quiet\nurl: "https://api.test/x"\nassertions: []\n');
+    const result = await runRequest(req, {
+      fetch: (async () => new Response("{}", { status: 200 })) as unknown as typeof fetch,
+    });
+    expect(result.scriptLogs).toBeUndefined();
+  });
+});

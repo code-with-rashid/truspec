@@ -164,6 +164,7 @@ all read, so treat it as a contract: a field is added, never repurposed.
 | `redirects` | `string[]?` | hops followed, with `options.followRedirects` |
 | `redirectLimitHit` | `boolean?` | the chain stopped at `maxRedirects`, not at the server |
 | `retries` | `number?` | re-sends, with `options.retries` |
+| `scriptLogs` | `{ level, message }[]?` | lines `script.pre`/`script.post` printed with `console.*` — present on a failure result too |
 | `iteration` | `number?` | 1-based row/repeat index, for `--data` / `--repeat` |
 
 `response`:

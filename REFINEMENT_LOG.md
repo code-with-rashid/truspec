@@ -3030,3 +3030,54 @@ the honest picture: **executing one client proves one client.**
 functions, typecheck 8/8, `lint examples --strict` clean. A live comparison now shows the curl
 snippet and `truspec run` arriving at the same server with the same target, the same headers, and
 the same body.
+
+### 83 — `console.log` in a script wrote to nowhere at all
+
+**How it turned up.** I was probing the MCP server over real stdio (it works — `initialize` and all
+23 tools answer a spawned process correctly) and went looking for the classic failure of a stdio
+MCP server: something writing to stdout that is not JSON-RPC. Nothing in `core` or `mcp-server`
+does. But scripts run in a Node vm, and a *user's* `console.log` would — so I checked where it goes:
+
+```
+$ node -e 'runInContext("console.log(\"HI\")", createContext({tr:1}))' 1>out 2>err
+stdout: []
+stderr: []
+```
+
+**Node injects a `console` into every new vm context, and it writes nowhere.** So a script's
+`console.log` was not an error the author could see, and not a line anywhere. The single most
+common thing anyone does to debug a script — every competitor's scripting API has it, and it is the
+first thing a Postman user reaches for — was a **silent no-op**. Someone debugging an HMAC
+signature had no output channel at all: the script either worked or threw.
+
+**The design is forced by where this engine runs.** Writing to stdout is the obvious fix and is
+wrong: the MCP server speaks JSON-RPC there, and one stray line corrupts the protocol; the browser
+client has no stdout at all. So the lines are **collected into the run result** as `scriptLogs`,
+and each surface renders them:
+
+```
+✗ FAIL  Failing script  (b.tspec.yaml)
+      error: Pre-request script error: nope is not defined
+      › about to fail with { a: 1, b: [ 1, 2 ] }
+      ! careful
+      ✗ bad
+```
+
+Three decisions inside that:
+
+- **Output from a script that threw is kept**, and shown with the error. A script fails at the line
+  *after* the one you were trying to inspect more often than not, so the throw path is where the
+  output matters most — and is exactly where it would have been easiest to drop.
+- **Objects format the way Node's console formats them**, via `util.inspect`. `{ a: 1, b: [ 1, 2 ] }`,
+  not `[object Object]`.
+- **A runaway loop is capped** — 100 lines, 2,000 characters each — and the cap *announces itself*
+  as a final line. Keeping the first hundred silently would misreport what happened.
+
+**Iteration 70's contract gate fired again**, refusing the new result field until it was documented
+in both `docs/api.md` and `docs/cli.md`. Third time that gate has paid for itself.
+
+**Verification.** 1119 unit tests (11 new), 2 new Playwright tests — one asserting both phases'
+output renders in the response pane, one asserting a *pre* script's output renders when there is no
+response at all, which required putting the panel outside the `response` branch. Coverage 95.90%
+lines / 87.79% branches / 96.67% functions, typecheck 8/8, docs site builds, `docs/scripting.md`
+carries a worked section and `CLAUDE.md` the one-line rule.
