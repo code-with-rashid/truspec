@@ -576,6 +576,7 @@ truspec lint [<dir>] [--strict] [--json] [--disable <rule>] [--output <file>] [-
 | `content-type-conflict` | warning | An explicit `Content-Type` names a different format than `body.type`. The header wins, so the body is sent under the wrong label. (A *narrower* type of the same format — `application/vnd.api+json` for a JSON body — is fine and is not flagged.) |
 | `capture-never-used` | warning | A captured variable is referenced by no later request — usually a rename applied on only one side. |
 | `script-runs-unsandboxed` | warning | The request carries a `script`, which runs with the same access as the `truspec` process — review it before running a collection you did not write. See [Scripting](./scripting.md). |
+| `literal-credential-field` | warning | A field whose *name* says credential — `X-Api-Key`, `access_token`, `password`, `client_secret`, a query parameter of the same name written into the URL — holds a literal rather than a `{{variable}}`. `inline-secret` recognises a credential by its shape (a JWT, a Stripe key); this one recognises it by where it sits, which is the only clue an opaque token gives. Templates, values under 8 characters and obvious placeholders (`your-key-here`, `<token>`, `test`) are not flagged. |
 
 **Exit code:** `1` if any error was found (or with `--strict`, any warning); otherwise `0`.
 

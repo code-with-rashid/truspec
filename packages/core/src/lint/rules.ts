@@ -68,6 +68,54 @@ export interface Located {
   value: string;
 }
 
+/**
+ * Field names that hold a credential when they hold anything.
+ *
+ * The vendor patterns above catch a Stripe key or a JWT because their *shape* is recognisable. A
+ * plain 36-character hex string in a header called `X-Api-Key` has no shape at all — and is just
+ * as committed. What gives it away is the name, which is the one thing an opaque token cannot
+ * hide.
+ */
+const CREDENTIAL_NAME =
+  /(?:^|[._-])(?:api[_-]?keys?|apikey|access[_-]?tokens?|refresh[_-]?tokens?|id[_-]?token|tokens?|secrets?|client[_-]?secret|passwords?|passwd|pwd|authorization|auth[_-]?token|credentials?|private[_-]?key|session[_-]?id|sessionid|cookie|x[_-]?api[_-]?key)(?:[._-]|$)/i;
+
+/** Values that are obviously placeholders rather than a real credential someone committed. */
+const PLACEHOLDER = /^(?:<.*>|\{.*\}|x{3,}|\*{3,}|\.{3,}|(?:your|my|the)[_-].*|change[_-]?me|replace[_-]?me|example|test|dummy|fake|none|null|undefined|true|false)$/i;
+
+/**
+ * Whether a literal in a credential-named field should be reported.
+ *
+ * Deliberately conservative: a template is not a literal, something short is not a token, and an
+ * obvious placeholder is not a leak. What is left is a value that has no business being in a file
+ * that gets committed.
+ */
+export function isLiteralCredential(where: string, value: string): boolean {
+  // `headers.X-Api-Key`, `body.auth.token`, `url?api_key` — the last segment is the field's name.
+  const field = where.split(/[.[?]/).pop() ?? where;
+  if (!CREDENTIAL_NAME.test(field)) return false;
+  const v = value.trim();
+  if (v.length < 8 || v.includes("{{")) return false;
+  // `Bearer <token>` / `Basic <base64>`: the scheme is not the secret, the rest of it is.
+  const bare = v.replace(/^(?:Bearer|Basic|Token|ApiKey)\s+/i, "").trim();
+  if (bare.length < 8) return false;
+  return !PLACEHOLDER.test(bare);
+}
+
+/** Query parameters written directly into a URL, as locations that can be linted by name. */
+export function urlQueryLiterals(url: string): Located[] {
+  const q = url.indexOf("?");
+  if (q === -1) return [];
+  const out: Located[] = [];
+  for (const pair of url.slice(q + 1).split("&")) {
+    const eq = pair.indexOf("=");
+    if (eq <= 0) continue;
+    // Not decoded: a credential in a query string is linted for what is written in the file, and
+    // decodeURIComponent throws on a stray `%` that a URL may perfectly well contain.
+    out.push({ where: `url?${pair.slice(0, eq)}`, value: pair.slice(eq + 1) });
+  }
+  return out;
+}
+
 /** The auth fields that can hold a credential, shared by requests and folder configs. */
 function authLiterals(auth: TruSpecRequest["auth"], push: (where: string, value: unknown) => void): void {
   if (auth?.type === "bearer") push("auth.token", auth.token);

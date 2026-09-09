@@ -2661,3 +2661,46 @@ withholding?*
 **Verification.** 1030 unit tests (4 new: three at the core level including the two-files case and
 one asserting a clean report carries no `sources` at all, one over the CLI output), coverage 95.97%
 lines / 87.77% branches / 96.53% functions, typecheck 8/8, docs updated.
+
+### 75 — the credential the linter could not see
+
+**What I looked for.** "Never inline secrets" is one of this project's four hard rules, and `lint`
+is what enforces it. So I wrote the file a person actually writes when they are in a hurry, and
+linted it.
+
+```yaml
+headers:
+  Authorization: "Bearer eyJhbGciOi…"     ✗ error  inline-secret: looks like a JWT
+  X-Api-Key: "9f8e7d6c5b4a39281706abcdef1234567890"    (nothing)
+auth:
+  token: "ghp_A1b2C3d4…"                  ✗ error  inline-secret: looks like a GitHub token
+```
+
+```yaml
+url: "{{baseUrl}}/x?api_key=9f8e7d6c5b4a39281706abcdef1234567890&page=2"   (nothing)
+```
+
+The vendor patterns work — a JWT, a GitHub token, Stripe, AWS, Slack, Google, a PEM header all
+fire. But a **plain opaque token has no shape to recognise**, and most API keys in the world are
+exactly that: 32 hex characters, or a random base62 string, indistinguishable from an id. The
+linter had nothing to match, so it said nothing.
+
+What gives those away is the field they sit in. `X-Api-Key` announces its own contents; so does
+`access_token`, `client_secret`, `password`. That is the one clue an opaque token cannot hide.
+
+**`literal-credential-field`** (warning) fires when a credential-named field holds a literal:
+headers, query parameters, body fields, auth fields — and **query parameters written into the URL**,
+which the linter previously only ever saw as one long string. A credential in a query string is the
+worst case of all: it lands in every access log on the way.
+
+**Kept narrow on purpose**, because a noisy rule gets disabled and then catches nothing: a
+`{{template}}` is not a literal, anything under 8 characters is not a token, `Bearer `/`Basic ` is
+stripped before the length test, and obvious placeholders — `your-key-here`, `<token>`, `test`,
+`changeme`, `xxxx` — are left alone. It is a warning rather than an error because the name is
+strong evidence, not proof; `inline-secret` stays the error, since a matched vendor pattern *is*
+proof. Its own rule id means a team with fixtures that trip it can disable exactly this one.
+
+**Verification.** 1047 unit tests (17 new, half of them the false-positive table — the cases that
+must stay silent are what decides whether a rule like this survives contact with a real
+collection), coverage 95.98% lines / 87.77% branches / 96.55% functions, typecheck 8/8, and the
+project's own `lint examples --strict` is still clean.

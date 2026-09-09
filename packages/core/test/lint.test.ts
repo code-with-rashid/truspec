@@ -2,7 +2,15 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { LINT_RULES, type LintFinding, lintWorkspace, looksLikeSecret, referencedVars } from "../src/lint";
+import {
+  isLiteralCredential,
+  LINT_RULES,
+  type LintFinding,
+  lintWorkspace,
+  looksLikeSecret,
+  referencedVars,
+} from "../src/lint";
+import { urlQueryLiterals } from "../src/lint/rules";
 import { parse } from "../src/format";
 
 let dir: string;
@@ -237,5 +245,47 @@ describe("inline-secret finds a credential inside a larger value", () => {
 
   it("still treats a template as a template, not a literal", () => {
     expect(looksLikeSecret("Bearer {{token}}")).toBeUndefined();
+  });
+});
+
+describe("a credential with no recognisable shape", () => {
+  // The vendor patterns catch a Stripe key or a JWT because their shape gives them away. A plain
+  // 36-character hex string in a header called `X-Api-Key` has no shape at all — and is just as
+  // committed. The name is the one thing an opaque token cannot hide.
+  it.each([
+    ["headers.X-Api-Key", "9f8e7d6c5b4a39281706abcdef1234567890"],
+    ["query.access_token", "abc123def456"],
+    ["url?api_key", "9f8e7d6c5b4a39281706abcdef1234567890"],
+    ["body.password", "hunter2000"],
+    ["auth.clientSecret", "s3cr3t-value-here"],
+    ["headers.Authorization", "Bearer 9f8e7d6c5b4a3928"],
+  ])("flags %s", (where, value) => {
+    expect(isLiteralCredential(where, value)).toBe(true);
+  });
+
+  it.each([
+    ["headers.X-Api-Key", "{{apiKey}}"],
+    ["headers.Accept", "application/json"],
+    ["query.page", "2"],
+    ["body.note", "a long literal that is not a credential at all"],
+    ["body.password", "test"],
+    ["body.api_key", "your-key-here"],
+    ["body.token", "<token>"],
+    ["headers.Authorization", "Bearer {{token}}"],
+    ["headers.Authorization", "Basic xxx"],
+  ])("leaves %s alone", (where, value) => {
+    expect(isLiteralCredential(where, value)).toBe(false);
+  });
+
+  it("pulls query parameters out of a URL so they can be judged by name", () => {
+    expect(urlQueryLiterals("https://x.test/a?api_key=abc&page=2")).toEqual([
+      { where: "url?api_key", value: "abc" },
+      { where: "url?page", value: "2" },
+    ]);
+    expect(urlQueryLiterals("https://x.test/a")).toEqual([]);
+  });
+
+  it("does not decode, because a stray % in a URL is not an error", () => {
+    expect(urlQueryLiterals("https://x.test/a?q=100%")).toEqual([{ where: "url?q", value: "100%" }]);
   });
 });

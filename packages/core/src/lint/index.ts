@@ -12,14 +12,16 @@ import {
   credentialLiterals,
   folderCredentialLiterals,
   isInsecureUrl,
+  isLiteralCredential,
   type LintFinding,
   looksLikeSecret,
   referencedVars,
   type Severity,
+  urlQueryLiterals,
 } from "./rules";
 
 export type { LintFinding, Severity } from "./rules";
-export { looksLikeSecret, referencedVars } from "./rules";
+export { isLiteralCredential, looksLikeSecret, referencedVars } from "./rules";
 
 export interface LintOptions {
   /** Extra variable names to treat as declared (OS env, CI-injected `--var`). */
@@ -53,6 +55,7 @@ export const LINT_RULES: Array<{ id: string; severity: Severity; description: st
   { id: "content-type-conflict", severity: "warning", description: "An explicit Content-Type contradicts the body's declared type, so the bytes are sent under the wrong label." },
   { id: "capture-never-used", severity: "warning", description: "A captured variable is referenced by no later request." },
   { id: "script-runs-unsandboxed", severity: "warning", description: "The request carries a script, which runs with the same access as the truspec process itself." },
+  { id: "literal-credential-field", severity: "warning", description: "A field whose name says credential (api key, token, password) holds a literal value rather than a {{variable}}." },
 ];
 
 /**
@@ -88,7 +91,9 @@ export function lintWorkspace(dir: string, opts: LintOptions = {}): LintReport {
     if (req.assertions.length === 0) {
       add(path, "warning", "no-assertions", "No assertions — this request can never fail a run.");
     }
-    for (const { where, value } of credentialLiterals(req)) {
+    // Query parameters written into the URL are linted by name too: a credential in a query
+    // string is the worst place for one — it lands in every access log along the way.
+    for (const { where, value } of [...credentialLiterals(req), ...urlQueryLiterals(req.url)]) {
       const what = looksLikeSecret(value);
       if (what) {
         add(
@@ -96,6 +101,17 @@ export function lintWorkspace(dir: string, opts: LintOptions = {}): LintReport {
           "error",
           "inline-secret",
           `${where} looks like ${what}. Reference it as {{name}} and declare it under an environment's \`secrets\`.`,
+        );
+        continue;
+      }
+      // No recognisable vendor shape, but the field's *name* says what it holds. Reported as a
+      // warning rather than an error: the name is strong evidence, not proof.
+      if (isLiteralCredential(where, value)) {
+        add(
+          path,
+          "warning",
+          "literal-credential-field",
+          `${where} holds a literal value. If it is a credential, reference it as {{name}} and declare it under an environment's \`secrets\`.`,
         );
       }
     }
