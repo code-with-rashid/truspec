@@ -2502,3 +2502,49 @@ data-driven failure traceable to its row.
 
 **Verification.** 1014 unit tests (3 new, and the two contract tests fail against the docs as they
 stood), coverage 95.95% lines / 87.73% branches / 96.51% functions, typecheck 8/8, docs site builds.
+
+### 71 — what the transport did, and never mentioned
+
+**What I looked for.** `timeoutMs` and `retries` are the two settings people lean on in CI. I ran
+four cases against a server built to exercise them and read the reports.
+
+The behaviour is right — the timeout fires at the limit, retries stop at the count, a per-attempt
+timeout applies per attempt. The **reporting** hid two things.
+
+**A timeout that named no limit.**
+
+```
+error: Timed out waiting for 127.0.0.1:40021
+```
+
+Which limit? The request's own `options.timeoutMs`, the run's `--timeout`, or the 30-second
+default? Three different files to go and edit, and the message picks none of them. Now:
+
+```
+error: Timed out waiting for 127.0.0.1:40021 after 500ms
+error: Timed out waiting for 127.0.0.1:40021 after 400ms (3 attempts)
+```
+
+The attempt count only appears when there was more than one, because "(1 attempts)" on every
+ordinary timeout is noise.
+
+**A 200 that took three tries looked like a clean 200.**
+
+```
+✓ PASS  Flaky  (api/r.tspec.yaml)  200 59ms
+```
+
+The server answered 503 twice before that. `retries` was already on the result — recorded in
+iteration 19, never printed. A response that only arrived after a re-send is a fact about the API,
+and the whole reason someone sets `retries` is that they suspect it; hiding the count hides the
+evidence. Now `↻ re-sent 2 time(s) before this response`, in the human report, the HTML report,
+and as a `↻2` beside the timing in the web UI.
+
+**Same shape as three earlier iterations** — 51 made the redirect chain visible, 59 the real body
+size, 69 the missed capture. Each time the runner already knew and the report did not say. That
+pattern is worth naming: a field recorded on the result and never rendered is a fact the tool
+collected on the user's behalf and then kept to itself.
+
+**Verification.** 1021 unit tests (7 new: five over the message, two over the report), coverage
+95.95% lines / 87.72% branches / 96.51% functions, typecheck 8/8, docs updated in both the
+`options` reference and the `--json` field table.

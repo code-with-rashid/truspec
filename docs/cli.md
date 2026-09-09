@@ -296,7 +296,7 @@ it applies:
 | `error`, `missingVars` | the request could not be sent; `{{names}}` that resolved to nothing |
 | `missedCaptures` | a `capture` matched nothing — `{ name, source, reason? }` |
 | `redirects`, `redirectLimitHit` | hops followed, and whether `maxRedirects` stopped the chain |
-| `retries` | re-sends performed under `options.retries` |
+| `retries` | re-sends performed under `options.retries` — also printed in the human report (`↻ re-sent 2 time(s)`), because a 200 the server only gave on the third try is not a clean 200 |
 | `iteration` | 1-based row index under `--data` / `--repeat` |
 | `response.bytes` | body size as it arrived (not `bodyText.length`, which counts characters) |
 | `response.binary`, `response.bodyBase64` | the body is not text; its real bytes, base64-encoded |

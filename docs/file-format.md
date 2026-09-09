@@ -127,6 +127,11 @@ options:
   maxRedirects: 5
 ```
 
+Both are visible in the report rather than silent: a timeout names the limit that expired
+(`Timed out waiting for api.example.com:443 after 500ms (3 attempts)`), so it is clear whether the
+request's own `timeoutMs`, `--timeout` or the 30s default applied; and a response that arrived only
+after a re-send is annotated `↻ re-sent 2 time(s) before this response`.
+
 **Redirects are not followed by default.** TruSpec reports the *actual* response a URL returns, so
 a `301` stays assertable and [`contract`](./cli.md#contract) can validate a redirect operation the
 spec declares. Turn `followRedirects` on for a request where the hop is incidental.

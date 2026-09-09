@@ -48,6 +48,8 @@ export interface RunResult {
   captured?: Record<string, unknown>;
   /** Captures that matched nothing — the reason a later request fails on an unresolved variable. */
   missedCaptures?: Array<{ name: string; source: string; reason?: string }>;
+  /** Re-sends performed under `options.retries`: a 200 that took three tries is not a clean 200. */
+  retries?: number;
 }
 
 export interface WorkspaceRunResult {

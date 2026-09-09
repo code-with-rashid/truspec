@@ -469,6 +469,12 @@ export function RequestWorkspace({
               </span>
               <span className="time">{result.response.durationMs}ms</span>
               <span className="bytes">{result.response.bytes ?? result.response.bodyText.length}b</span>
+              {/* A 200 that took three attempts is a fact about the API, not a detail. */}
+              {result.retries ? (
+                <span className="retries" title={`re-sent ${result.retries} time(s) before this response`}>
+                  ↻{result.retries}
+                </span>
+              ) : null}
             </>
           ) : result?.error ? (
             <span className="err" style={{ margin: 0 }}>

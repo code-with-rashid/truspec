@@ -331,6 +331,12 @@ export async function runRequest(req: TruSpecRequest, ctx: RunContext = {}): Pro
   }
 
   const start = now();
+  // What was actually in force, so a failure can name the limit that expired and how many times
+  // it was tried. A thrown send has used every attempt: `send` retries until they run out.
+  const errorContext = {
+    ...(req.options?.timeoutMs ?? ctx.timeoutMs ? { timeoutMs: req.options?.timeoutMs ?? ctx.timeoutMs } : {}),
+    attempts: (req.options?.retries ?? 0) + 1,
+  };
   let sent: Awaited<ReturnType<typeof send>>;
   try {
     sent = await send(
@@ -360,7 +366,7 @@ export async function runRequest(req: TruSpecRequest, ctx: RunContext = {}): Pro
       },
     );
   } catch (e) {
-    return { ...head, ok: false, error: describeTransportError(e, eff.url), assertions: [] };
+    return { ...head, ok: false, error: describeTransportError(e, eff.url, errorContext), assertions: [] };
   }
   const response = sent.response;
 
@@ -370,7 +376,7 @@ export async function runRequest(req: TruSpecRequest, ctx: RunContext = {}): Pro
     body = await readResponseText(response, ctx.maxResponseBytes ?? MAX_RESPONSE_BYTES);
   } catch (e) {
     // The response started arriving and then stopped; name the same causes the send path does.
-    return { ...head, ok: false, error: describeTransportError(e, eff.url), assertions: [] };
+    return { ...head, ok: false, error: describeTransportError(e, eff.url, errorContext), assertions: [] };
   }
   const bodyText = body.text;
   const headers: Record<string, string> = {};

@@ -261,3 +261,56 @@ describe("formatHuman names a capture that produced nothing", () => {
     expect(text).toContain("✓ PASS  Login");
   });
 });
+
+describe("formatHuman shows that a response took more than one attempt", () => {
+  // A 200 the server only gave on the third try is a fact about the API, not a detail — the count
+  // was already recorded on the result and simply never printed.
+  const text = formatHuman(
+    {
+      results: [
+        {
+          name: "Flaky",
+          filePath: "/w/flaky.tspec.yaml",
+          request: { method: "GET", url: "http://a/flaky" },
+          ok: true,
+          response: { status: 200, statusText: "OK", durationMs: 55, bodyText: "{}", headers: {} },
+          assertions: [],
+          retries: 2,
+        },
+      ],
+      passed: 1,
+      failed: 0,
+      skipped: 0,
+      ok: true,
+      missingSecrets: [],
+    } as never,
+    "/w",
+  );
+
+  it("says how many re-sends there were", () => {
+    expect(text).toContain("↻ re-sent 2 time(s) before this response");
+  });
+
+  it("says nothing for a request that was sent once", () => {
+    const once = formatHuman(
+      {
+        results: [
+          {
+            name: "Fine",
+            request: { method: "GET", url: "http://a/x" },
+            ok: true,
+            response: { status: 200, statusText: "OK", durationMs: 5, bodyText: "", headers: {} },
+            assertions: [],
+          },
+        ],
+        passed: 1,
+        failed: 0,
+        skipped: 0,
+        ok: true,
+        missingSecrets: [],
+      } as never,
+      "/w",
+    );
+    expect(once).not.toContain("re-sent");
+  });
+});

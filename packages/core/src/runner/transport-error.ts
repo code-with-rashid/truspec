@@ -71,6 +71,14 @@ function targetOf(url: string): string {
   }
 }
 
+/** What the runner knows about the attempt that failed, for a message that names the limit. */
+export interface TransportErrorContext {
+  /** The timeout actually in force for this request, in ms. */
+  timeoutMs?: number;
+  /** How many times the request was sent (1 when there were no retries). */
+  attempts?: number;
+}
+
 /**
  * A human explanation of a failed send, including the fix where there is an obvious one.
  *
@@ -78,14 +86,19 @@ function targetOf(url: string): string {
  * that stop people dead against a staging box with a self-signed cert, and the flag exists exactly
  * for that case.
  */
-export function describeTransportError(e: unknown, url: string): string {
+export function describeTransportError(e: unknown, url: string, ctx: TransportErrorContext = {}): string {
   const nodes = chain(e);
   const code = codeOf(nodes);
   const where = targetOf(url);
   const name = nodes[0]?.name;
+  // Which limit expired, and how many times it was tried. "Timed out" alone leaves the reader
+  // guessing whether it was the request's own `options.timeoutMs`, `--timeout`, or the 30s
+  // default — three different files to go and edit.
+  const limit = ctx.timeoutMs ? ` after ${ctx.timeoutMs}ms` : "";
+  const tries = ctx.attempts && ctx.attempts > 1 ? ` (${ctx.attempts} attempts)` : "";
 
   // A timeout arrives as a DOMException, not as an errno, so match it by name first.
-  if (name === "TimeoutError") return `Timed out waiting for ${where}`;
+  if (name === "TimeoutError") return `Timed out waiting for ${where}${limit}${tries}`;
   if (name === "AbortError") return `Request to ${where} was aborted`;
 
   switch (code) {
@@ -107,7 +120,7 @@ export function describeTransportError(e: unknown, url: string): string {
       return `Not permitted to connect to ${where}`;
     case "ETIMEDOUT":
     case "UND_ERR_CONNECT_TIMEOUT":
-      return `Timed out connecting to ${where}`;
+      return `Timed out connecting to ${where}${limit}${tries}`;
     case "UND_ERR_HEADERS_TIMEOUT":
       return `${where} accepted the connection but sent no response headers in time`;
     case "UND_ERR_BODY_TIMEOUT":

@@ -28,6 +28,10 @@ export function formatHuman(result: WorkspaceRunResult, cwd: string): string {
     for (const a of r.assertions) {
       if (!a.ok) lines.push(`      ✗ ${a.message}`);
     }
+    // A request that only passed on the third attempt is a fact about the API, not a detail: the
+    // result reads as a clean 200 while the server answered 503 twice. The count was recorded and
+    // simply never printed.
+    if (r.retries) lines.push(`      ↻ re-sent ${r.retries} time(s) before this response`);
     // A capture that matched nothing is reported on the request that *should have produced* the
     // value. Without it the only sign is a failure several files later that names the consumer
     // ("Unresolved variables: {{token}}") and says nothing about which request went wrong.

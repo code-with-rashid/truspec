@@ -3210,3 +3210,10 @@ select:focus {
 .captured-chip.missed {
   border-color: color-mix(in oklab, var(--amber) 40%, var(--line));
 }
+
+/* Re-sends, beside the timing: a 200 that took three attempts is not a clean 200. */
+.response-head .retries {
+  color: var(--amber);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}

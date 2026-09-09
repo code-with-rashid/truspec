@@ -100,3 +100,36 @@ describe("describeTransportError", () => {
     expect(describeTransportError("not an error at all", url)).toBe("Could not reach api.example.com:8443");
   });
 });
+
+describe("a timeout says which limit expired", () => {
+  // "Timed out waiting for host:port" leaves the reader guessing whether it was the request's own
+  // options.timeoutMs, --timeout, or the 30s default — three different places to go and edit.
+  const timeout = (): Error => Object.assign(new Error("The operation was aborted due to timeout"), { name: "TimeoutError" });
+
+  it("names the limit in force", () => {
+    expect(describeTransportError(timeout(), url, { timeoutMs: 500 })).toBe(
+      "Timed out waiting for api.example.com:8443 after 500ms",
+    );
+  });
+
+  it("says how many times it was tried, when it was tried more than once", () => {
+    expect(describeTransportError(timeout(), url, { timeoutMs: 400, attempts: 3 })).toBe(
+      "Timed out waiting for api.example.com:8443 after 400ms (3 attempts)",
+    );
+  });
+
+  it("stays quiet about a single attempt, which is the ordinary case", () => {
+    expect(describeTransportError(timeout(), url, { timeoutMs: 400, attempts: 1 })).not.toContain("attempt");
+  });
+
+  it("falls back to the plain message when nothing is known about the attempt", () => {
+    expect(describeTransportError(timeout(), url)).toBe("Timed out waiting for api.example.com:8443");
+  });
+
+  it("names the limit on a connect timeout too", () => {
+    const connect = Object.assign(new TypeError("fetch failed"), {
+      cause: Object.assign(new Error("connect ETIMEDOUT"), { code: "UND_ERR_CONNECT_TIMEOUT" }),
+    });
+    expect(describeTransportError(connect, url, { timeoutMs: 250 })).toContain("after 250ms");
+  });
+});

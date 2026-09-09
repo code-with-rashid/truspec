@@ -42,6 +42,7 @@ export function formatHtml(result: WorkspaceRunResult, cwd: string, now = new Da
         <code class="where">${where}</code>
         <span class="grow"></span>
         ${r.response ? `<span class="status s${String(r.response.status)[0]}">${r.response.status}</span><span class="ms">${r.response.durationMs} ms</span>` : ""}
+        ${r.retries ? `<span class="ms" title="re-sent before this response">↻ ${r.retries}</span>` : ""}
       </header>
       <p class="req"><span class="method">${esc(r.request.method)}</span> <code>${esc(r.request.url)}</code></p>
       ${r.error ? `<p class="error">${esc(r.error)}</p>` : ""}
