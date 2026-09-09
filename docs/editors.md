@@ -36,9 +36,17 @@ offline.
 > it first with `pnpm --filter @truspec/web build`; otherwise `truspec serve` will tell you
 > it isn't available.
 
-The web UI is read-and-run focused today; in-UI request *editing* is on the roadmap. For
-authoring, edit the `.tspec.yaml` files directly (with [schema-backed
-autocomplete](./file-format.md#editor-integration)) or use the VS Code extension below.
+**Editing.** Every field of a request is editable in place — name, method, URL, headers, query,
+body, auth, assertions, `capture`, `order`, `tags`, transport `options`, description and scripts —
+and there is a raw-YAML editor for anything you would rather type. Saves go through the same schema
+validation as every other write, so the UI cannot produce a file the CLI would reject. You can also
+edit the `.tspec.yaml` files directly (with [schema-backed
+autocomplete](./file-format.md#editor-integration)) or use the VS Code extension below; the files
+are the source of truth either way.
+
+`tags` shown next to the request's name are the ones `truspec run --tag <name>` selects on, so the
+subset your CI runs is visible in the client you author in. Transport `options` (timeout, retries,
+retry delay, redirect following) sit below the description.
 
 ### Flow view
 

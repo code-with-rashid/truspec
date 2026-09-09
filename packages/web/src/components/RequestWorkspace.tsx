@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState, type PointerEvent as ReactPointerEvent } from "react";
 import type { RequestDetail, RunResult, SaveResult } from "../api";
+import { OptionsEditor } from "./OptionsEditor";
+import { TagsEditor } from "./TagsEditor";
 import { AssertionsEditor } from "./AssertionsEditor";
 import { AuthEditor } from "./AuthEditor";
 import { BodyEditor } from "./BodyEditor";
@@ -296,6 +298,7 @@ export function RequestWorkspace({
             + order
           </button>
         )}
+        <TagsEditor tags={effective.tags} onChange={(tags) => onFieldChange("tags", tags)} />
       </div>
       {effective.docs !== undefined ? (
         <div className="docs-edit">
@@ -319,6 +322,7 @@ export function RequestWorkspace({
           + add description
         </button>
       )}
+      <OptionsEditor options={effective.options} onChange={(options) => onFieldChange("options", options)} />
 
       {dirty && (
         <div className="dirty-bar">

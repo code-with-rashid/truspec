@@ -107,6 +107,15 @@ export type RequestAuth =
 
 export type CaptureSource = string | { jsonpath: string } | { header: string } | { status: true };
 
+/** Per-request transport settings; mirrors `RequestOptions` in the core schema. */
+export interface RequestOptions {
+  timeoutMs?: number;
+  retries?: number;
+  retryDelayMs?: number;
+  followRedirects?: boolean;
+  maxRedirects?: number;
+}
+
 export interface RequestDetail {
   name: string;
   method: string;
@@ -118,6 +127,10 @@ export interface RequestDetail {
   auth?: RequestAuth;
   capture?: Record<string, CaptureSource>;
   order?: number;
+  /** Labels for `truspec run --tag`. */
+  tags?: string[];
+  /** Per-request transport options. */
+  options?: RequestOptions;
   script?: { pre?: string; post?: string };
   docs?: string;
   spec?: { operation?: string; operationId?: string };

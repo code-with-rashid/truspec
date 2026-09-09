@@ -878,3 +878,36 @@ flagged (the false positive that would make the rule worth disabling), that `bod
 on a GET is fine, and that each rule is in the `--list-rules` registry and respects `--disable`.
 795 unit tests, coverage 95.57% lines / 87.65% branches / 96.55% functions, typecheck 8/8, and the
 project's own examples still pass `truspec lint --strict` against the larger rule set.
+
+### 30 — the fields the CLI runs on that the UI could not show
+
+**Gap.** `tags` and `options` are in the schema, and `truspec run --tag smoke` has shipped since
+the field existed. The web UI showed neither and could edit neither. Two consequences:
+
+- **The subset your CI runs was invisible in the client you author in.** No way to see which
+  requests carry `smoke`, and no way to add one without leaving for a text editor.
+- **A timeout was indistinguishable from a slow endpoint.** `options: { timeoutMs: 5000, retries: 2 }`
+  changed how the request was sent, and nothing on screen said so.
+
+I checked the save path first, because the dangerous version of this gap is silent data loss: if
+the UI wrote back only the fields it knew about, opening a tagged request and changing its URL
+would delete the tags. It doesn't — `const { raw, ...request } = draft` spreads everything — but
+**nothing asserted it**, and it is one "tidy up the type" change away from being true. There is now
+an e2e test that edits an unrelated field and asserts both survive.
+
+**Change.** A `TagsEditor` (removable chips beside the request name, `+ tag`, comma-separated input
+split into several because that is what people type) and an `OptionsEditor` (timeout, retries,
+retry delay, max redirects, follow-redirects) below the description. Both clear their key entirely
+rather than leaving `tags: []` or `options: {}` behind — an empty block is noise in a diff that
+means nothing.
+
+**Two things the tests caught.** The options button reused the `.order-add` class; the existing
+`order-editor` e2e then matched two buttons and failed on strict mode. Two unrelated controls
+sharing a selector is precisely how that happens, so it got its own class rather than a
+`.first()` in the test. And `docs/editors.md` still said *"the web UI is read-and-run focused
+today; in-UI request editing is on the roadmap"* — untrue for a long time, and now rewritten to
+list what is actually editable.
+
+**Verification.** 3 e2e tests (chips add/remove and round-trip to the file; options edited and
+cleared; the no-data-loss regression). 95 e2e passing including the full axe sweep, 795 unit tests,
+coverage 95.57% lines / 87.65% branches / 96.55% functions, typecheck 8/8, dogfood gates clean.

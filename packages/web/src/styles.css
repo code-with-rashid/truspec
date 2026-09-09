@@ -3031,3 +3031,124 @@ select:focus {
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+/* ---- Tags + transport options (request meta) ---- */
+.tags-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 4px 1px 7px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  background: var(--panel-3);
+  font-size: 11px;
+  color: var(--text);
+}
+.tag-chip button {
+  border: 0;
+  background: none;
+  color: var(--dimmer);
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+  padding: 2px 3px;
+  border-radius: 999px;
+}
+.tag-chip button:hover {
+  color: var(--red);
+}
+.tag-chip button:focus-visible,
+.tag-add:focus-visible,
+.tag-input:focus-visible {
+  outline: 2px solid var(--lime);
+  outline-offset: 1px;
+}
+.tag-add {
+  border: 1px dashed var(--line-2);
+  background: none;
+  color: var(--dimmer);
+  border-radius: 999px;
+  font-size: 11px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+.tag-add:hover {
+  color: var(--text);
+  border-color: var(--lime);
+}
+.tag-input {
+  width: 120px;
+  font-size: 11px;
+  padding: 2px 6px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+/* Its own class, not `.order-add`: two unrelated controls sharing a selector is how a locator
+   ends up matching both. */
+.options-add {
+  margin-top: 9px;
+  border: 1px dashed var(--line-2);
+  background: none;
+  color: var(--dimmer);
+  border-radius: 4px;
+  font-size: 12px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+.options-add:hover {
+  color: var(--text);
+  border-color: var(--lime);
+}
+.options-add:focus-visible {
+  outline: 2px solid var(--lime);
+  outline-offset: 2px;
+}
+
+.options-edit {
+  margin-top: 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-2);
+  padding: 8px 10px;
+}
+.options-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin-top: 6px;
+}
+.options-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--dimmer);
+}
+.options-grid label input[type="number"] {
+  width: 96px;
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 3px 6px;
+  border: 1px solid var(--line-2);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--text);
+}
+.options-grid .options-check {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-end;
+  padding-bottom: 4px;
+  color: var(--text);
+  font-size: 12px;
+}
