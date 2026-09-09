@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { type MockServerHandle, startMockServer } from "@truspec/core/mock";
 import { type CommandDeps, num, resolveDeps } from "./deps";
-import { argError } from "../args";
+import { argError, mainArg } from "../args";
 
 export interface MockDeps extends Partial<CommandDeps> {
   /** Called once the server is listening (used by tests to grab the handle). */
@@ -12,7 +12,9 @@ export interface MockDeps extends Partial<CommandDeps> {
   block?: boolean;
 }
 
-/** `truspec mock --spec <openapi> [--port <n>]` — serve generated responses from a spec. */
+const USAGE = "Usage: truspec mock <openapi> [--port <n>] [--delay <ms>] [--validate]\n";
+
+/** `truspec mock <openapi> [--port <n>]` — serve generated responses from a spec. */
 export async function mockCommand(argv: string[], deps: MockDeps = {}): Promise<number> {
   const d = resolveDeps(deps);
   const options = {
@@ -23,20 +25,31 @@ export async function mockCommand(argv: string[], deps: MockDeps = {}): Promise<
   } as const;
 
   let values: { spec?: string; port?: string; delay?: string; validate?: boolean };
+  let positionals: string[];
   try {
-    values = parseArgs({ args: argv, allowPositionals: true, options }).values;
+    const parsed = parseArgs({ args: argv, allowPositionals: true, options });
+    values = parsed.values;
+    positionals = parsed.positionals;
   } catch (e) {
     d.stderr(argError(e, "mock", options));
     return 2;
   }
-  if (!values.spec) {
-    d.stderr("Usage: truspec mock --spec <openapi> [--port <n>]\n");
+  // The spec is this command's only path argument, so `truspec mock openapi.yaml` is what anyone
+  // types. It used to be accepted by the parser and dropped, leaving only the usage line.
+  const arg = mainArg(positionals, values.spec, { what: "OpenAPI spec", flag: "--spec", usage: USAGE });
+  if (arg.error) {
+    d.stderr(arg.error);
+    return 2;
+  }
+  const spec = arg.value;
+  if (!spec) {
+    d.stderr(USAGE);
     return 2;
   }
 
-  const specPath = resolve(d.cwd, values.spec);
+  const specPath = resolve(d.cwd, spec);
   if (!existsSync(specPath)) {
-    d.stderr(`Spec not found: ${values.spec}\n`);
+    d.stderr(`Spec not found: ${spec}\n`);
     return 1;
   }
   let handle: MockServerHandle;

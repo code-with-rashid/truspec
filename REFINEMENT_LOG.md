@@ -3119,3 +3119,65 @@ re-exports a Node-only module, which is a rule `CLAUDE.md` states and nothing en
 **Verification.** 1127 unit tests (8 new), coverage 95.90% lines / 87.79% branches / 96.67%
 functions, typecheck 8/8, docs site builds, and a packed-tarball install imports all 13 subpaths
 and typechecks against the shipped types.
+
+### 85 — three commands accepted the argument you typed and threw it away
+
+**Turned to UI/UX, and the CLI is the UI most people meet first.** So I typed the obvious thing:
+
+```
+$ truspec serve examples --port 47391
+TruSpec web UI on http://127.0.0.1:47391  (serving /home/user/truspec)
+```
+
+**It served the wrong directory.** No error, no warning — `examples` was parsed as a positional and
+then never read, so the server came up on `.` instead, and the wrong collection was on screen with
+nothing anywhere to explain it.
+
+`serve` was the outlier: `run`, `lint`, `docs`, `drift`, `coverage`, `contract` and `init` all take
+the collection as `[<dir>]`. Positional is what anyone types.
+
+**Then I checked whether it was a class rather than an instance**, by asking which commands allow
+positionals and never read them:
+
+```
+gen:   allows positionals but never reads them
+mock:  allows positionals but never reads them
+serve: allows positionals but never reads them
+```
+
+Three of thirteen. `mock` and `gen` at least *failed* — but only with a usage line, which never says
+the path you typed was discarded.
+
+**What changed.** All three now take their main argument as a positional, with the flag still
+accepted because that is what the docs have always said. `truspec mock openapi.yaml` and
+`truspec gen openapi.yaml --out ./api` work, which is what anyone would type for a command whose
+only path argument is the spec. Giving both forms with *different* values is refused by name rather
+than resolved silently — the same reasoning as the format's `.strict()`:
+
+```
+Conflicting OpenAPI spec: "a.yaml" and --spec "b.yaml". Give one.
+```
+
+**And a second bug in the same command, found while testing the first.** `serve` never checked its
+directory existed:
+
+```
+$ truspec serve nope
+TruSpec web UI on ... (serving /cwd/nope)     ← a directory that is not there
+```
+
+The UI then showed its empty state — "no requests yet" — which reads as a fact about the collection
+rather than as the typo it is. It now refuses first, with `lint`'s wording, and refuses a file
+where a directory belongs.
+
+**The gate is for the class.** Beyond the fourteen behavioural tests, one asserts that **no**
+command module allows positionals without reading them. Removing `serve`'s handling again turns
+three tests red, so it is not vacuous.
+
+**Nineteen doc usages updated** across eight files to the positional form, including three flag
+tables.
+
+**Verification.** 1141 unit tests (14 new), coverage 95.90% lines / 87.86% branches / 96.67%
+functions, typecheck 8/8, docs site builds. Live: `serve examples` serves `examples`,
+`serve nope` refuses, `serve README.md` refuses, `mock <spec>` and `gen <spec>` both work
+positionally and by flag.

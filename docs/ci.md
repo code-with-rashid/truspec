@@ -36,7 +36,7 @@ jobs:
 
       # Start an offline mock from the spec so tests don't need a deployed API.
       - name: Start mock
-        run: npx truspec mock --spec openapi.yaml --port 4000 &
+        run: npx truspec mock openapi.yaml --port 4000 &
 
       - name: Run requests
         run: npx truspec run ./api --env ci --reporter junit --output truspec-junit.xml
@@ -138,7 +138,7 @@ The pattern is identical anywhere — these are just shell commands with exit co
 
 ```bash
 # GitLab CI, CircleCI, Jenkins, etc.
-npx truspec mock --spec openapi.yaml --port 4000 &
+npx truspec mock openapi.yaml --port 4000 &
 npx truspec run ./api --env ci --reporter junit --output report.xml
 npx truspec drift    --spec openapi.yaml ./api
 npx truspec coverage --spec openapi.yaml ./api --min 80

@@ -10,7 +10,7 @@ reachable.
 ## Quick start
 
 ```bash
-truspec mock --spec openapi.yaml
+truspec mock openapi.yaml
 # Mock server on http://127.0.0.1:4000 — 4 route(s). Press Ctrl+C to stop.
 ```
 
@@ -31,12 +31,12 @@ body), which specs rarely declare but clients routinely ask for.
 ## Options
 
 ```
-truspec mock --spec <openapi> [--port <n>] [--delay <ms>] [--validate]
+truspec mock <openapi> [--port <n>] [--delay <ms>] [--validate]
 ```
 
 | Flag | Alias | Default | Description |
 |---|---|---|---|
-| `--spec <openapi>` | `-s` | — | **Required.** Path to the OpenAPI document (YAML or JSON). |
+| `<openapi>` | | — | **Required.** Path to the OpenAPI document (YAML or JSON). Also accepted as `--spec` / `-s`. |
 | `--port <n>` | `-p` | `4000` | Port to listen on. |
 | `--delay <ms>` | | `0` | Artificial response latency, applied to every response. |
 | `--validate` | | off | Validate incoming requests against the spec; respond `400` on mismatch. |
@@ -51,7 +51,7 @@ The server binds to `127.0.0.1` and runs until you interrupt it (Ctrl+C).
 and [`duration` assertions](./file-format.md#assertions):
 
 ```bash
-truspec mock --spec openapi.yaml --delay 250
+truspec mock openapi.yaml --delay 250
 ```
 
 A request with `{ type: duration, ltMs: 200 }` will now fail against this mock, letting you
@@ -67,7 +67,7 @@ violate the spec (e.g. a missing required parameter) get a `400` instead of a ha
 response.
 
 ```bash
-truspec mock --spec openapi.yaml --validate
+truspec mock openapi.yaml --validate
 ```
 
 It checks three things: required query parameters are present, a required request body was
@@ -99,7 +99,7 @@ handles spec-compliant responses.
   environment:
 
   ```bash
-  truspec mock --spec openapi.yaml &
+  truspec mock openapi.yaml &
   truspec run ./api --env ci
   ```
 

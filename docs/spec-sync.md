@@ -261,7 +261,7 @@ enforced).
 brand-new spec to a fully drift-tracked collection.
 
 ```bash
-truspec gen --spec openapi.yaml --out ./api
+truspec gen openapi.yaml --out ./api
 ```
 
 Each generated file looks like:
@@ -302,10 +302,10 @@ Put the three together and your API contract becomes a build gate:
 
 ```bash
 # 1. Bootstrap a collection from the spec.
-truspec gen --spec openapi.yaml --out ./api
+truspec gen openapi.yaml --out ./api
 
 # 2. Fill in assertions / bodies, then run against a mock or a real API.
-truspec mock --spec openapi.yaml &
+truspec mock openapi.yaml &
 truspec run ./api --env local
 
 # 3. Gate CI on the contract.

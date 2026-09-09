@@ -45,3 +45,35 @@ export function argError(
   }
   return `${(e as Error).message}\n${usage}`;
 }
+
+/**
+ * Resolve a command's single main argument from a positional or its equivalent flag.
+ *
+ * Three commands used `parseArgs({ allowPositionals: true })` and then never read the positionals:
+ * `serve`, `mock` and `gen`. `truspec serve examples` was therefore *accepted and discarded* — the
+ * server came up on the current directory instead. `mock` and `gen` at least failed, but their
+ * usage line never said the path you typed had been thrown away.
+ *
+ * Both forms are accepted, because the flag is what these commands have always documented. Giving
+ * both with different values is a mistake rather than a preference to resolve silently — the same
+ * reasoning as the format's `.strict()`: surface it, don't guess.
+ *
+ * Returns `{ error }` for the caller to print, or `{ value }` — `undefined` when neither was given,
+ * so each command applies its own default or its own "required" message.
+ */
+export function mainArg(
+  positionals: string[],
+  flagValue: string | undefined,
+  opts: { what: string; flag: string; usage: string },
+): { value?: string; error?: string } {
+  if (positionals.length > 1) {
+    return { error: `Too many arguments: ${positionals.join(" ")}. Expected one ${opts.what}.\n${opts.usage}` };
+  }
+  const positional = positionals[0];
+  if (positional !== undefined && flagValue !== undefined && positional !== flagValue) {
+    return {
+      error: `Conflicting ${opts.what}: "${positional}" and ${opts.flag} "${flagValue}". Give one.\n${opts.usage}`,
+    };
+  }
+  return { value: positional ?? flagValue };
+}

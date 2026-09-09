@@ -71,7 +71,7 @@ the requests introduce:
 
 ```bash
 truspec init --spec openapi.yaml
-truspec mock --spec openapi.yaml --port 3000 &
+truspec mock openapi.yaml --port 3000 &
 truspec run api --env local     # passes
 ```
 
@@ -464,12 +464,12 @@ Scaffold a request stub for every operation in an OpenAPI spec. Each stub gets a
 collection starts at full drift-tracking with zero hand-wiring.
 
 ```
-truspec gen --spec <openapi> --out <dir> [--base-url-var <name>]
+truspec gen <openapi> --out <dir> [--base-url-var <name>]
 ```
 
 | Flag | Alias | Description |
 |---|---|---|
-| `--spec <openapi>` | `-s` | **Required.** Path to the OpenAPI document. |
+| `<openapi>` | | **Required.** Path to the OpenAPI document (YAML or JSON). Also accepted as `--spec` / `-s`. |
 | `--out <dir>` | `-o` | **Required.** Directory to write the stubs into. |
 | `--base-url-var <name>` | | Variable used for the base URL in generated URLs. Default `baseUrl`. |
 
@@ -477,7 +477,7 @@ Path parameters become template variables (`/pets/{id}` → `{{baseUrl}}/pets/{{
 Operations with an unsupported method are skipped and reported on stderr.
 
 ```bash
-truspec gen --spec openapi.yaml --out ./api
+truspec gen openapi.yaml --out ./api
 # Generated 4 request(s) in ./api
 ```
 
@@ -696,12 +696,12 @@ Start a local HTTP mock server that serves generated responses from an OpenAPI s
 fully offline, no cloud. See the [Mock server guide](./mocking.md).
 
 ```
-truspec mock --spec <openapi> [--port <n>] [--delay <ms>] [--validate]
+truspec mock <openapi> [--port <n>] [--delay <ms>] [--validate]
 ```
 
 | Flag | Alias | Description |
 |---|---|---|
-| `--spec <openapi>` | `-s` | **Required.** Path to the OpenAPI document. |
+| `<openapi>` | | **Required.** Path to the OpenAPI document (YAML or JSON). Also accepted as `--spec` / `-s`. |
 | `--port <n>` | `-p` | Port to listen on. Default `4000`. |
 | `--delay <ms>` | | Artificial response latency, in milliseconds. |
 | `--validate` | | Validate incoming requests against the spec (responds `400` on mismatch). |
@@ -712,8 +712,8 @@ methods that are defined. `HEAD` is served from the matching `GET` operation —
 headers, no body — so you don't have to declare it in the spec.
 
 ```bash
-truspec mock --spec openapi.yaml                  # http://127.0.0.1:4000
-truspec mock --spec openapi.yaml --port 5000 --delay 150 --validate
+truspec mock openapi.yaml                        # http://127.0.0.1:4000
+truspec mock openapi.yaml --port 5000 --delay 150 --validate
 ```
 
 ---
@@ -725,14 +725,14 @@ engine (no CORS), and the UI is served from `@truspec/web`. See
 [Editors](./editors.md#web-ui).
 
 ```
-truspec serve [--dir <collection>] [--port <n>]
+truspec serve [<dir>] [--port <n>]
              [--insecure] [--proxy <url>] [--no-proxy <list>] [--ca <file>]
              [--client-cert <file>] [--client-key <file>] [--client-key-passphrase <s>]
 ```
 
 | Flag | Alias | Description |
 |---|---|---|
-| `--dir <collection>` | `-d` | Collection directory to serve. Default `.`. |
+| `<dir>` | | Collection directory to serve. Default `.`. Also accepted as `--dir` / `-d`. |
 | `--port <n>` | `-p` | Port. Default `4100`. |
 
 It also accepts every [transport flag](#transport-flags) `run` takes, and reads the same
@@ -741,8 +741,8 @@ this, a collection that passes in CI against a self-signed staging box would fai
 browser client, with nothing on screen to explain the difference.
 
 ```bash
-truspec serve --dir ./api       # opens http://localhost:4100
-truspec serve --dir ./api --ca ./corp-root.pem
+truspec serve ./api            # opens http://localhost:4100
+truspec serve ./api --ca ./corp-root.pem
 ```
 
 > Requires the web UI to be built. If you installed `truspec` from npm it's bundled; from

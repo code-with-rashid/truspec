@@ -14,7 +14,7 @@ through `@truspec/core`, so there are no browser CORS limits — the UI is just 
 over the same engine the CLI uses.
 
 ```bash
-truspec serve --dir ./api      # opens http://localhost:4100
+truspec serve ./api           # opens http://localhost:4100
 ```
 
 | Flag | Alias | Default | Description |
