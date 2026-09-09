@@ -3,6 +3,7 @@ import { basename } from "node:path";
 import { dirname, join, relative, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { parse } from "../format";
+import type { TruSpecRequest } from "../format/types";
 import { CookieJar, type RunResult, runRequest, type TokenCache, type Vars } from "../runner";
 import { refMatchesOp } from "../spec/drift";
 import { parseOpenApi, type SpecOperation } from "../spec/openapi";
@@ -93,6 +94,14 @@ export interface WorkspaceRunResult {
   missingSecrets: string[];
   /** Requests filtered out by `grep`/`tags` before the run started. */
   deselected?: number;
+  /**
+   * Files that did not parse, with their absolute path.
+   *
+   * A single typo used to abort the whole run with a message that named no file. The other
+   * requests still run; the run is still `ok: false`, because a request that could not even be
+   * read is not a request that passed.
+   */
+  parseErrors?: Array<{ file: string; error: string }>;
 }
 
 /** Load the dataset a data-driven run iterates over, or `undefined` for a single pass. */
@@ -168,10 +177,20 @@ export async function runPath(target: string, opts: WorkspaceRunOptions = {}): P
     specDoc = (parseYaml(specText) as Record<string, unknown>) ?? {};
   }
 
-  // Parse, then run in `order` (then path) so captured values chain forward.
-  const parsed = files
-    .map((file) => ({ file, req: parse.request.parse(readFileSync(file, "utf8")) }))
-    .sort((a, b) => (a.req.order ?? 0) - (b.req.order ?? 0) || a.file.localeCompare(b.file));
+  // Parse, then run in `order` (then path) so captured values chain forward. One unparseable file
+  // must not take the rest of the run with it — and must be reported *by name*, which throwing
+  // from inside a `.map` could not do.
+  const parseErrors: Array<{ file: string; error: string }> = [];
+  const parsed: Array<{ file: string; req: TruSpecRequest }> = [];
+  for (const file of files) {
+    try {
+      parsed.push({ file, req: parse.request.parse(readFileSync(file, "utf8")) });
+    } catch (e) {
+      parseErrors.push({ file, error: (e as Error).message });
+    }
+  }
+  parsed.sort((a, b) => (a.req.order ?? 0) - (b.req.order ?? 0) || a.file.localeCompare(b.file));
+  parseErrors.sort((a, b) => a.file.localeCompare(b.file));
 
   const selector = buildSelector(opts, root);
   const requests = selector ? parsed.filter(({ file, req }) => selector(req, file)) : parsed;
@@ -237,9 +256,11 @@ export async function runPath(target: string, opts: WorkspaceRunOptions = {}): P
     passed,
     failed: results.length - passed,
     skipped: requests.length * iterations - executed,
-    ok: results.every((r) => r.ok),
+    // A file that could not be read is not a file that passed: the run is red either way.
+    ok: results.every((r) => r.ok) && parseErrors.length === 0,
     missingSecrets: built.missingSecrets,
     ...(deselected > 0 ? { deselected } : {}),
+    ...(parseErrors.length > 0 ? { parseErrors } : {}),
   };
 }
 

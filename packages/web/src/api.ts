@@ -11,6 +11,8 @@ export interface RequestSummary {
 export interface WorkspaceState {
   dir: string;
   requests: RequestSummary[];
+  /** Files under the collection that did not parse. They appear in no other list. */
+  errors: Array<{ path: string; error: string }>;
   /** Relative paths of folders that have a `folder.tspec.yaml`, including empty ones (no requests yet). */
   folders: string[];
   environments: string[];

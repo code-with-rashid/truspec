@@ -1457,6 +1457,21 @@ export function App() {
                   handleFolderDrop("");
                 }}
               >
+                {(state?.errors?.length ?? 0) > 0 && (
+                  // A file that does not parse belongs to no folder and appears in no row, so
+                  // without this it is simply missing from the sidebar with nothing to click.
+                  <div className="tree-errors" role="alert">
+                    <div className="tree-errors-head">
+                      {state!.errors.length} file{state!.errors.length === 1 ? "" : "s"} could not be read
+                    </div>
+                    {state!.errors.map((e) => (
+                      <details key={e.path} className="tree-error">
+                        <summary>{e.path}</summary>
+                        <pre>{e.error}</pre>
+                      </details>
+                    ))}
+                  </div>
+                )}
                 {treeNoMatches ? (
                   <div className="muted pad">no requests match "{treeQuery.trim()}".</div>
                 ) : (

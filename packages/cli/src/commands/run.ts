@@ -152,7 +152,9 @@ export async function runCommand(argv: string[], deps: Partial<CommandDeps> = {}
     // worst kind of false-positive for a gate. (`[].every()` is `true`, so `result.ok` alone says
     // "pass" here.) Industry test runners (jest, pytest, go test) fail on "no tests found" too.
     const noRequests = result.results.length === 0;
-    if (noRequests) {
+    // "No requests found" would be a lie when the files are right there and simply do not parse;
+    // the report already names each one, so say nothing extra here.
+    if (noRequests && !result.parseErrors?.length) {
       // Distinguish "nothing here" from "your filter matched nothing" — the fix differs, and a
       // silently-empty filtered run is exactly the false-positive this gate exists to prevent.
       d.stderr(

@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -31,6 +31,48 @@ const okFetch = (body: unknown, status = 200): typeof fetch =>
       status,
       headers: { "content-type": "application/json" },
     })) as typeof fetch;
+
+describe("truspec run — a file that does not parse", () => {
+  const workspace = (): string => {
+    const dir = mkdtempSync(join(tmpdir(), "truspec-cli-parse-"));
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, "good.tspec.yaml"),
+      'tspec: "0.1"\nname: Good\nmethod: GET\nurl: "http://x/good"\nassertions: [ { type: status, equals: 200 } ]\n',
+    );
+    writeFileSync(join(dir, "broken.tspec.yaml"), 'tspec: "0.1"\nname: Broken\nmethod: GET\nurl: "http://x"\nheadrs: { a: b }\n');
+    return dir;
+  };
+
+  it("exits 1, names the file, suggests the key, and still reports the request that passed", async () => {
+    const dir = workspace();
+    const cap = capture();
+    try {
+      const code = await runCommand([dir], { cwd: repoRoot, stdout: cap.stdout, stderr: cap.stderr, fetch: okFetch({}) });
+      expect(code).toBe(1);
+      expect(cap.out).toContain("PASS  Good");        // the rest of the run was not lost
+      expect(cap.out).toContain("broken.tspec.yaml"); // pre-fix: the message named no file at all
+      expect(cap.out).toContain("did you mean 'headers'?");
+      expect(cap.out).toContain("1 unparseable");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not claim `no requests found` when the requests are there but unreadable", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "truspec-cli-allbad-"));
+    writeFileSync(join(dir, "broken.tspec.yaml"), 'tspec: "0.1"\nname: Broken\nheadrs: { a: b }\n');
+    const cap = capture();
+    try {
+      const code = await runCommand([dir], { cwd: repoRoot, stdout: cap.stdout, stderr: cap.stderr, fetch: okFetch({}) });
+      expect(code).toBe(1);
+      expect(cap.err).not.toContain("no .tspec.yaml requests found");
+      expect(cap.out).toContain("could not parse");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
 
 describe("truspec run", () => {
   it("runs the petstore example and passes (exit 0)", async () => {

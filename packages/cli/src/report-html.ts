@@ -15,6 +15,20 @@ export function formatHtml(result: WorkspaceRunResult, cwd: string, now = new Da
   const totalMs = result.results.reduce((sum, r) => sum + (r.response?.durationMs ?? 0), 0);
   const verdict = result.ok && total > 0 ? "pass" : "fail";
 
+  // A file that did not parse sent no request, so it appears in no card below — and a report that
+  // simply omits it looks like a clean run over a smaller collection.
+  const parseCards = (result.parseErrors ?? []).map(
+    (e) => `
+    <article class="case bad">
+      <header>
+        <span class="badge">ERROR</span>
+        <h2>could not parse</h2>
+        <code class="where">${esc(relative(cwd, e.file))}</code>
+      </header>
+      <pre>${esc(e.error)}</pre>
+    </article>`,
+  );
+
   const cards = result.results.map((r) => {
     const where = esc(r.filePath ? relative(cwd, r.filePath) : r.name);
     const failed = r.assertions.filter((a) => !a.ok);
@@ -69,6 +83,7 @@ export function formatHtml(result: WorkspaceRunResult, cwd: string, now = new Da
     <div class="stat"><b>${result.failed}</b><span>failed</span></div>
     ${result.skipped > 0 ? `<div class="stat"><b>${result.skipped}</b><span>skipped</span></div>` : ""}
     ${result.deselected ? `<div class="stat"><b>${result.deselected}</b><span>deselected</span></div>` : ""}
+    ${result.parseErrors?.length ? `<div class="stat"><b>${result.parseErrors.length}</b><span>unparseable</span></div>` : ""}
     <div class="stat"><b>${totalMs}</b><span>total ms</span></div>
   </div>
   ${
@@ -76,7 +91,8 @@ export function formatHtml(result: WorkspaceRunResult, cwd: string, now = new Da
       ? `<p class="warn">Unresolved secrets: ${result.missingSecrets.map((s) => `<code>${esc(s)}</code>`).join(", ")}</p>`
       : ""
   }
-  ${total === 0 ? `<p class="warn">No requests ran.</p>` : cards.join("")}
+  ${parseCards.join("")}
+  ${total === 0 && !result.parseErrors?.length ? `<p class="warn">No requests ran.</p>` : cards.join("")}
 </main>
 </body>
 </html>

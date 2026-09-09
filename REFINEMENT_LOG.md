@@ -765,3 +765,49 @@ injected transport is the one that actually sends, another proving a real refuse
 reported by name rather than as `fetch failed`, and 3 CLI tests for `serve`'s flags. 750 unit tests,
 89 e2e, coverage 95.46% lines / 87.41% branches / 96.44% functions — up on all three — typecheck
 8/8, own lint/docs/schema gates clean.
+
+### 27 — one typo should not take the run down, and should say what you meant
+
+**Gap.** Three problems, all reachable by mistyping one key:
+
+```
+$ truspec run ./api
+Error: Invalid TruSpec request:
+  <root>: Unrecognized key(s) in object: 'headrs'
+```
+
+That is the entire output for a 40-request collection. The run aborted at the first bad file
+(`files.map(parse)` threw from inside the map), **the message named no file**, and the 39 requests
+that were fine never ran. Meanwhile the web UI called `/api/state`, which has always reported bad
+files with their paths — and displayed none of them, so a broken file was simply absent from the
+sidebar, which reads as *deleted* rather than *broken*.
+
+**Change.**
+
+1. **The run survives it.** `runPath` collects `parseErrors: [{ file, error }]` instead of throwing,
+   runs everything that did parse, and reports `ok: false` regardless — a file nobody could read is
+   not a file that passed. Every reporter renders them: the human report names the file, the HTML
+   report gets a card, and JUnit emits a **failing testcase**, because a CI report that silently
+   omits an unreadable file reads as clean, which is the one outcome a gate must never produce.
+   `run` no longer claims "no .tspec.yaml requests found" when the requests are right there and
+   simply do not parse.
+2. **The error says what you meant.** `.strict()` exists to catch `headrs:` before it silently does
+   nothing at run time; naming the key it was one character from is the rest of that job:
+   `Unrecognized key(s) in object: 'headrs' (did you mean 'headers'?)`. Candidates come from the
+   schema **at that path**, narrowing a discriminated union by its discriminator — `equals` is
+   offered for a mistyped `jsonpath` assertion, and `ltMs` is *not* offered for a `status` one,
+   because a suggestion that doesn't parse is worse than none. There is a test asserting that
+   taking the advice produces a file that parses.
+3. **The UI shows it.** Unparseable files now appear as a labelled block at the top of the sidebar
+   tree, each expandable to the full error including the suggestion.
+
+**One thing the tests taught me.** The first distance function was plain Levenshtein, which charges
+**2** for a transposition — so `alpah` scored as further from `alpha` than `alphaa` does, and the
+most common typo in existence fell outside the threshold. Switched to optimal string alignment
+(adjacent transposition = 1 edit), which is also what lets the threshold stay tight enough to
+refuse unrelated keys.
+
+**Verification.** 21 new tests — 15 over suggestions (per-path narrowing, the union branches, every
+schema wrapper, the "advice must parse" invariant), 6 over surviving a bad file mid-run — plus 3
+reporter tests, 2 CLI tests and 3 e2e. 776 unit tests, 92 e2e, coverage 95.50% lines / 87.57%
+branches / 96.51% functions, typecheck 8/8, own lint/docs/schema gates clean.

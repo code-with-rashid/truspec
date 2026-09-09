@@ -5,6 +5,7 @@ import {
   FolderConfigSchema,
   RequestSchema,
 } from "./schema";
+import { suggestKey } from "./suggest";
 
 export interface ParseResult<T> {
   ok: boolean;
@@ -13,10 +14,29 @@ export interface ParseResult<T> {
   issues?: z.ZodIssue[];
 }
 
-function formatIssues(error: z.ZodError): string {
+/**
+ * Render Zod issues, adding a "did you mean" for a mistyped key.
+ *
+ * `.strict()` catches `headrs:` before it silently does nothing at run time; naming the key it was
+ * one character away from is the rest of that job. `raw` is the parsed value, needed to narrow a
+ * discriminated union to the branch whose keys are the relevant ones.
+ */
+function formatIssues(error: z.ZodError, schema: z.ZodTypeAny, raw: unknown): string {
   return error.issues
-    .map((i) => `  ${i.path.join(".") || "<root>"}: ${i.message}`)
+    .map((i) => `  ${i.path.join(".") || "<root>"}: ${i.message}${hint(i, schema, raw)}`)
     .join("\n");
+}
+
+function hint(issue: z.ZodIssue, schema: z.ZodTypeAny, raw: unknown): string {
+  if (issue.code !== "unrecognized_keys") return "";
+  const pairs = issue.keys
+    .map((key) => ({ key, did: suggestKey(schema, issue.path, key, raw) }))
+    .filter((p): p is { key: string; did: string } => p.did !== undefined);
+  if (pairs.length === 0) return "";
+  // With one key the reader already knows which one; repeating it back is noise.
+  const body =
+    pairs.length === 1 ? `'${pairs[0]!.did}'` : pairs.map((p) => `'${p.key}' → '${p.did}'`).join(", ");
+  return ` (did you mean ${body}?)`;
 }
 
 /**
@@ -31,7 +51,7 @@ function makeParser<S extends z.ZodTypeAny>(schema: S, label: string) {
       const raw = parseYaml(text);
       const result = schema.safeParse(raw);
       if (!result.success) {
-        throw new Error(`Invalid TruSpec ${label}:\n${formatIssues(result.error)}`);
+        throw new Error(`Invalid TruSpec ${label}:\n${formatIssues(result.error, schema, raw)}`);
       }
       return result.data;
     },
@@ -47,7 +67,7 @@ function makeParser<S extends z.ZodTypeAny>(schema: S, label: string) {
       if (!result.success) {
         return {
           ok: false,
-          error: formatIssues(result.error),
+          error: formatIssues(result.error, schema, raw),
           issues: result.error.issues,
         };
       }
@@ -60,7 +80,7 @@ function makeParser<S extends z.ZodTypeAny>(schema: S, label: string) {
         ? { ok: true, data: result.data }
         : {
             ok: false,
-            error: formatIssues(result.error),
+            error: formatIssues(result.error, schema, value),
             issues: result.error.issues,
           };
     },

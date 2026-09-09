@@ -21,12 +21,19 @@ export function formatHuman(result: WorkspaceRunResult, cwd: string): string {
       if (!a.ok) lines.push(`      ✗ ${a.message}`);
     }
   }
+  // Before the summary, and never silently: a file that did not parse ran no request at all, so it
+  // appears in no other line of this report.
+  for (const e of result.parseErrors ?? []) {
+    lines.push(`✗ ERROR  could not parse  (${relative(cwd, e.file)})`);
+    for (const line of e.error.split("\n")) lines.push(`      ${line.trim()}`);
+  }
   lines.push("");
   const parts = [`${result.passed} passed`, `${result.failed} failed`];
   if (result.iterations && result.iterations > 1) parts.push(`${result.iterations} iterations`);
   // `bail` and `--grep`/`--tag` both shrink what ran; say so, or a small "total" looks like a
   // missing-file bug rather than the selection the user asked for.
   if (result.skipped > 0) parts.push(`${result.skipped} skipped (bailed)`);
+  if (result.parseErrors?.length) parts.push(`${result.parseErrors.length} unparseable`);
   parts.push(`${result.results.length} total`);
   if (result.deselected) parts.push(`${result.deselected} deselected`);
   lines.push(parts.join(", "));
@@ -138,11 +145,20 @@ export function formatJunit(result: WorkspaceRunResult, cwd: string): string {
     ].join("; ");
     return `    <testcase name="${name}" classname="${classname}" time="${time}">\n      <failure message="${escapeXml(reasons || "failed")}"/>\n    </testcase>`;
   });
+  // A file that did not parse has to appear as a failing case: a CI report that simply omits it
+  // reads as clean, which is the one outcome a gate must never produce.
+  const parseCases = (result.parseErrors ?? []).map((e) => {
+    const classname = escapeXml(relative(cwd, e.file));
+    return `    <testcase name="${classname}" classname="${classname}" time="0.000">\n      <failure message="${escapeXml(e.error)}"/>\n    </testcase>`;
+  });
+  const total = result.results.length + parseCases.length;
+  const failures = result.failed + parseCases.length;
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
-    `<testsuites tests="${result.results.length}" failures="${result.failed}">`,
-    `  <testsuite name="truspec" tests="${result.results.length}" failures="${result.failed}">`,
+    `<testsuites tests="${total}" failures="${failures}">`,
+    `  <testsuite name="truspec" tests="${total}" failures="${failures}">`,
     ...cases,
+    ...parseCases,
     "  </testsuite>",
     "</testsuites>",
   ].join("\n");
