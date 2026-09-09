@@ -68,6 +68,8 @@ export interface RunResult {
   captured?: Record<string, VarValue>;
   /** Redirect hops actually followed, when `options.followRedirects` is on. */
   redirects?: string[];
+  /** The chain stopped because `maxRedirects` was reached, not because the server stopped redirecting. */
+  redirectLimitHit?: boolean;
   /** How many times the request had to be re-sent, when `options.retries` is set. */
   retries?: number;
   /** 1-based iteration this result belongs to, when the run was data-driven or repeated. */
@@ -319,6 +321,7 @@ export async function runRequest(req: TruSpecRequest, ctx: RunContext = {}): Pro
     ...head,
     ok,
     ...(sent.redirects.length > 0 ? { redirects: sent.redirects } : {}),
+    ...(sent.redirectLimitHit ? { redirectLimitHit: true } : {}),
     ...(sent.attempts > 0 ? { retries: sent.attempts } : {}),
     response: { status: response.status, statusText: response.statusText, durationMs, headers, bodyText },
     assertions,

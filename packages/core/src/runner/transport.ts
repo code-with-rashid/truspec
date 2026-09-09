@@ -22,6 +22,8 @@ export interface SendOutcome {
   redirects: string[];
   /** How many times the request had to be re-sent (0 when it succeeded first try). */
   attempts: number;
+  /** The chain stopped at `maxRedirects` rather than because the server stopped redirecting. */
+  redirectLimitHit: boolean;
 }
 
 /** Default pause before the first retry; doubles per attempt. */
@@ -78,7 +80,7 @@ async function sendOnce(
   url: string,
   init: { method: string; headers: Record<string, string>; body?: string | FormData },
   opts: SendOptions,
-): Promise<{ response: Response; redirects: string[] }> {
+): Promise<{ response: Response; redirects: string[]; redirectLimitHit: boolean }> {
   const o = opts.options ?? {};
   const timeoutMs = o.timeoutMs ?? opts.timeoutMs;
   const maxRedirects = o.followRedirects ? (o.maxRedirects ?? DEFAULT_MAX_REDIRECTS) : 0;
@@ -106,12 +108,18 @@ async function sendOnce(
     opts.onResponse?.(currentUrl, response);
 
     const location = response.headers.get("location");
-    if (hop >= maxRedirects || !REDIRECT_STATUSES.has(response.status) || !location) {
-      return { response, redirects };
+    // Distinguish "the chain ended" from "we stopped following": a bare 302 in the report reads as
+    // the server's answer, when it may be the third one and the client gave up. Only the second
+    // case is the limit, and only when following was on at all.
+    if (!REDIRECT_STATUSES.has(response.status) || !location) {
+      return { response, redirects, redirectLimitHit: false };
+    }
+    if (hop >= maxRedirects) {
+      return { response, redirects, redirectLimitHit: maxRedirects > 0 };
     }
 
     const next = resolveLocation(currentUrl, location);
-    if (!next) return { response, redirects };
+    if (!next) return { response, redirects, redirectLimitHit: false };
     await response.arrayBuffer().catch(() => {}); // drain before reusing the connection
     ({ method, body, headers } = nextHop(response.status, method, body, headers, currentUrl, next));
     currentUrl = next;

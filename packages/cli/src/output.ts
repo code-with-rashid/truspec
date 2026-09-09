@@ -18,6 +18,13 @@ export function formatHuman(result: WorkspaceRunResult, cwd: string): string {
     const iter = r.iteration !== undefined ? `[${r.iteration}] ` : "";
     lines.push(`${iter}${r.ok ? "✓" : "✗"} ${r.ok ? "PASS" : "FAIL"}  ${r.name}  (${where})${meta}`);
     if (r.error) lines.push(`      error: ${r.error}`);
+    // A bare 302 in the report reads as the server's answer. When redirects were followed it may
+    // be the last of several, and when the cap stopped the chain the status says nothing about
+    // why. The chain was already recorded; it was just invisible in the format people read.
+    if (r.redirects && r.redirects.length > 0) {
+      const stopped = r.redirectLimitHit ? " — stopped at maxRedirects" : "";
+      lines.push(`      ↪ followed ${r.redirects.length} redirect(s)${stopped}: ${r.redirects.join(" → ")}`);
+    }
     for (const a of r.assertions) {
       if (!a.ok) lines.push(`      ✗ ${a.message}`);
     }

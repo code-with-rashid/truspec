@@ -178,3 +178,45 @@ describe("formatContract never claims conformance that did not happen", () => {
     expect(text).toContain("Contract violations: 1.");
   });
 });
+
+describe("formatHuman shows the redirect chain", () => {
+  const withRedirects = (redirects: string[], redirectLimitHit?: boolean) =>
+    formatHuman(
+      {
+        results: [
+          {
+            name: "R",
+            filePath: "/w/r.tspec.yaml",
+            request: { method: "GET", url: "http://a/start" },
+            ok: false,
+            response: { status: 302, statusText: "Found", durationMs: 5, bodyText: "", headers: {} },
+            assertions: [],
+            redirects,
+            ...(redirectLimitHit ? { redirectLimitHit: true } : {}),
+          },
+        ],
+        passed: 0,
+        failed: 1,
+        skipped: 0,
+        ok: false,
+        missingSecrets: [],
+      } as never,
+      "/w",
+    );
+
+  it("says how many hops it followed", () => {
+    const text = withRedirects(["http://a/1", "http://a/2"]);
+    expect(text).toContain("followed 2 redirect(s)");
+    expect(text).toContain("http://a/1 → http://a/2");
+    expect(text).not.toContain("maxRedirects");
+  });
+
+  it("distinguishes the cap stopping the chain from the chain ending", () => {
+    // A bare 302 reads as the server's answer; it may be the third one, with the client giving up.
+    expect(withRedirects(["http://a/1"], true)).toContain("stopped at maxRedirects");
+  });
+
+  it("stays silent when no redirect was followed", () => {
+    expect(withRedirects([])).not.toContain("followed");
+  });
+});

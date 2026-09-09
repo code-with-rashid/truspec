@@ -161,6 +161,15 @@ route through a corporate proxy is a property of *where you are running*, not of
 a committed file saying "skip TLS verification" is a liability that outlives the afternoon it was
 needed. curl, git and every CI tool draw the line in the same place.
 
+When redirects are followed, the run names the chain and says whether it ended because the server
+stopped redirecting or because `maxRedirects` was reached — a bare `302` in a report otherwise reads
+as the server's answer when it may be the third one:
+
+```
+✗ FAIL  R  (api/r.tspec.yaml)  302 26ms
+      ↪ followed 1 redirect(s) — stopped at maxRedirects: http://127.0.0.1:4000/step1
+```
+
 ```bash
 truspec run ./api --env staging --ca ./corp-root.pem
 truspec run ./api --proxy http://proxy.corp:8080

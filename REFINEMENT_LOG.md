@@ -1663,3 +1663,42 @@ reported rather than skipped. 907 unit tests, 101 e2e, coverage 95.72% lines / 8
 96.19% functions, typecheck 8/8. The examples still pass `lint --strict`, which matters more than
 usual here: a new *error*-severity path over files never linted before would have broken that gate
 outright if it were over-eager.
+
+### 51 — a 302 that was really "I gave up"
+
+**Gap.** Probed the runner's redirect and retry behaviour against two real loopback origins. Almost
+all of it is right, and the most important part is right for the right reason:
+
+- Redirects are **off by default**; a 3xx is returned as-is and stays assertable.
+- On a **cross-origin** redirect the credentials are dropped — the second origin received
+  `auth: null, cookie: null`. That is the security property the PR claimed, now verified against a
+  real second server rather than taken on trust.
+- `maxRedirects` caps the chain (1 + N requests, exactly), retries re-send on a 5xx and stop as
+  soon as it recovers, and a same-origin hop keeps its credentials.
+
+The gap is in the report. When the chain stops, the result is the last response — and a bare `302`
+in a run report reads as *the server's answer*, when it may be the third one and the client is the
+thing that stopped. Nothing distinguished "the server stopped redirecting" from "we hit the cap".
+
+The chain was already being recorded: `redirects` is on the result and visible in `--json`. It was
+simply invisible in the format people actually read, and carried no reason.
+
+**Change.** `sendRequest` now reports *why* it stopped, and the human output shows the chain:
+
+    ✗ FAIL  R  (api/r.tspec.yaml)  302 26ms
+          ↪ followed 1 redirect(s) — stopped at maxRedirects: http://127.0.0.1:4000/step1
+
+versus a chain that ended on its own:
+
+    ✓ PASS  R  (api/r.tspec.yaml)  200 30ms
+          ↪ followed 2 redirect(s): http://…/step1 → http://…/step2
+
+**One distinction worth being careful about.** With `followRedirects` off, `maxRedirects` is 0, so
+`hop >= maxRedirects` is true on the very first response — but "we never follow" is not "we gave
+up". That case must not be labelled a limit, and there is a test for exactly it.
+
+**Verification.** 5 tests: the cap flagged and the natural end not flagged (driven through a real
+server that redirects twice then succeeds), the following-disabled case, and three over the output
+— hop count, the `stopped at maxRedirects` suffix, and silence when no redirect was followed.
+912 unit tests, 101 e2e, coverage 95.72% lines / 87.45% branches / 96.19% functions, typecheck 8/8,
+dogfood gates clean.
