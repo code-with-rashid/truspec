@@ -326,3 +326,32 @@ One jar per run, never persisted. A request's own `Cookie` header wins. `--no-co
 attacks, expiry semantics, the comma-join hazard, the redirect-hop case, explicit-header
 precedence, and the workspace default plus opt-out. Typecheck 8/8, build 5/5.
 
+### 12 — Data-driven runs (`--data`, `--repeat`)
+
+**Gap.** No way to run a collection over a dataset — the `newman -d` / Bruno-runner capability
+that turns one request into a table-driven test.
+
+**Change.** `--data <file.csv|json>` runs the whole selection once per row, with the row's columns
+as variables; `--repeat <n>` repeats without a dataset. The CSV parser is a real RFC 4180 one
+(quoted fields, embedded commas and newlines, `""` escapes, CRLF normalization) — `split(",")`
+corrupts every realistic dataset, which is exactly the data request payloads contain.
+
+Two decisions worth naming:
+
+- **Iterations are independent.** Each starts from the same base variables with a *fresh cookie
+  jar*, so row 2 cannot inherit row 1's captured ids or session. The OAuth2 token cache is
+  deliberately shared, since the credentials don't change between rows.
+- **An empty or missing dataset is an error, not a pass.** A gate that never exercised the data it
+  was handed has not passed — the same reasoning as the existing zero-requests rule.
+
+Results carry a 1-based `iteration`, shown in the human log (`[2] ✓ PASS …`) and folded into JUnit
+test names — without it, N rows collapse into one testcase and a CI reporter shows only the last
+outcome.
+
+**Verification.** 592 tests (was 573) — 19 covering the CSV edge cases, JSON dataset typing and
+its error messages, per-row substitution, iteration labelling, cross-iteration isolation, `bail`
+across iterations, and the empty/missing dataset refusals. Typecheck 8/8, build 5/5.
+
+Also corrected `CLAUDE.md`/`AGENTS.md`, which still described the pre-iteration-5 auth list and
+omitted `tags`/`options` — agents read that file, so a stale copy is a real defect.
+

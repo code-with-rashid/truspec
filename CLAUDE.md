@@ -59,7 +59,7 @@ body:
   type: json                       # none | json | text | form | multipart | graphql
   content: { name: "Rex" }
 auth:                              # optional; can inherit from folder.tspec.yaml
-  type: bearer                     # none | bearer | basic | apikey
+  type: bearer                     # none | bearer | basic | apikey | oauth2
   token: "{{token}}"
 assertions:                        # declarative + machine-checkable (power CI + coverage)
   - { type: status, equals: 200 }
@@ -69,6 +69,8 @@ assertions:                        # declarative + machine-checkable (power CI +
 capture:                           # save response values into vars for later requests
   token: "$.access_token"          # jsonpath shorthand; or { header: "X-Id" } / { status: true }
 order: 1                           # run order within a collection (lower first; default 0)
+tags: [smoke]                      # labels for `truspec run --tag smoke`
+options:                           # transport: timeoutMs / retries / followRedirects / maxRedirects
 docs: "Fetch a single pet by its id."
 spec:                              # links request → OpenAPI operation (drift/coverage)
   operation: "GET /pets/{id}"

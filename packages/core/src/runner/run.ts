@@ -69,6 +69,8 @@ export interface RunResult {
   redirects?: string[];
   /** How many times the request had to be re-sent, when `options.retries` is set. */
   retries?: number;
+  /** 1-based iteration this result belongs to, when the run was data-driven or repeated. */
+  iteration?: number;
 }
 
 function looksLikeJson(text: string): boolean {

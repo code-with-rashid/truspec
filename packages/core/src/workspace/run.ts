@@ -7,6 +7,7 @@ import { CookieJar, type RunResult, runRequest, type TokenCache, type Vars } fro
 import { refMatchesOp } from "../spec/drift";
 import { parseOpenApi, type SpecOperation } from "../spec/openapi";
 import { confinePath } from "./confine";
+import { type DataRow, parseDataText } from "./data";
 import { buildVars, loadDotenv, loadEnvironment, loadFolderChain } from "./context";
 import { discoverRequests, findUp } from "./discover";
 
@@ -71,10 +72,19 @@ export interface WorkspaceRunOptions {
   sleep?: (ms: number) => Promise<void>;
   /** Set to false to send no cookies at all. Default: a jar shared across the run. */
   cookies?: boolean;
+  /**
+   * Dataset path (CSV or JSON). The selection runs once per row, with the row's columns as
+   * variables — the data-driven runs `newman -d` and Bruno's runner provide.
+   */
+  data?: string;
+  /** Run the selection this many times. Ignored when `data` is set (the dataset decides). */
+  repeat?: number;
 }
 
 export interface WorkspaceRunResult {
   results: RunResult[];
+  /** How many times the selection was executed (1 unless `data`/`repeat` was used). */
+  iterations?: number;
   passed: number;
   failed: number;
   /** Requests that were selected but never sent, because `bail` stopped the run first. */
@@ -83,6 +93,18 @@ export interface WorkspaceRunResult {
   missingSecrets: string[];
   /** Requests filtered out by `grep`/`tags` before the run started. */
   deselected?: number;
+}
+
+/** Load the dataset a data-driven run iterates over, or `undefined` for a single pass. */
+function loadDataRows(opts: WorkspaceRunOptions, cwd: string): DataRow[] | undefined {
+  if (!opts.data) return undefined;
+  const abs = resolve(cwd, opts.data);
+  if (!existsSync(abs)) throw new Error(`Data file not found: ${opts.data}`);
+  const rows = parseDataText(readFileSync(abs, "utf8"), abs);
+  // An empty dataset must not quietly become "one run with no variables" — that would report a
+  // pass for a gate that never exercised the data it was given.
+  if (rows.length === 0) throw new Error(`Data file has no rows: ${opts.data}`);
+  return rows;
 }
 
 /**
@@ -160,48 +182,61 @@ export async function runPath(target: string, opts: WorkspaceRunOptions = {}): P
     .map((name) => built.vars[name])
     .filter((v): v is string => typeof v === "string" && v.length >= 6);
 
-  let vars: Vars = { ...built.vars, ...opts.vars };
+  const baseVars: Vars = { ...built.vars, ...opts.vars };
   const results: RunResult[] = [];
   // One cache for the whole run: twenty requests under a folder-level OAuth2 block should fetch
   // one token, not twenty (a real rate-limit hazard, and a real cost on metered providers).
+  // It survives across iterations too — the credentials do not change between rows.
   const tokenCache: TokenCache = new Map();
-  // One jar for the whole run and never persisted: a CI run must not inherit state from a
-  // previous one, and a session cookie is a credential with no business in a repository.
-  const cookieJar = opts.cookies === false ? undefined : new CookieJar();
   const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+
+  const dataRows = loadDataRows(opts, cwd);
+  const iterations = dataRows ? dataRows.length : Math.max(1, Math.floor(opts.repeat ?? 1));
   let bailed = false;
-  for (const [index, { file, req }] of requests.entries()) {
-    if (bailed) break;
-    // Rate-limited APIs need breathing room between calls; pause *between* requests only, so a
-    // single-request run is never slowed down for nothing.
-    if (opts.delayMs && opts.delayMs > 0 && index > 0) await sleep(opts.delayMs);
-    const folder = loadFolderChain(dirname(file), root);
-    // Match the request to its spec operation so its response is validated against the contract.
-    const op = specOps && req.spec ? specOps.find((o) => refMatchesOp(req.spec!, o)) : undefined;
-    const result = await runRequest(req, {
-      folder,
-      vars,
-      fetch: opts.fetch,
-      now: opts.now,
-      timeoutMs: opts.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-      tokenCache,
-      ...(cookieJar ? { cookieJar } : {}),
-      readFile: makeFileReader(dirname(file), root),
-      ...(op && specDoc ? { contract: { doc: specDoc, operation: op, auto: true } } : {}),
-    });
-    result.filePath = file;
-    results.push(result);
-    if (result.captured) vars = { ...vars, ...result.captured }; // chain the real values forward…
-    redactSecrets(result, secretValues); // …then mask declared secrets in the reported result
-    if (opts.bail && !result.ok) bailed = true;
+  let executed = 0;
+
+  for (let iteration = 0; iteration < iterations && !bailed; iteration++) {
+    // Each iteration starts from the same variables and a fresh cookie jar: rows must be
+    // independent, or row 2 silently inherits row 1's captured ids and session.
+    let vars: Vars = { ...baseVars, ...(dataRows?.[iteration] ?? {}) };
+    const cookieJar = opts.cookies === false ? undefined : new CookieJar();
+
+    for (const [index, { file, req }] of requests.entries()) {
+      if (bailed) break;
+      // Rate-limited APIs need breathing room between calls; pause *between* requests only, so a
+      // single-request run is never slowed down for nothing.
+      if (opts.delayMs && opts.delayMs > 0 && (index > 0 || iteration > 0)) await sleep(opts.delayMs);
+      const folder = loadFolderChain(dirname(file), root);
+      // Match the request to its spec operation so its response is validated against the contract.
+      const op = specOps && req.spec ? specOps.find((o) => refMatchesOp(req.spec!, o)) : undefined;
+      const result = await runRequest(req, {
+        folder,
+        vars,
+        fetch: opts.fetch,
+        now: opts.now,
+        timeoutMs: opts.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+        tokenCache,
+        ...(cookieJar ? { cookieJar } : {}),
+        readFile: makeFileReader(dirname(file), root),
+        ...(op && specDoc ? { contract: { doc: specDoc, operation: op, auto: true } } : {}),
+      });
+      result.filePath = file;
+      if (iterations > 1) result.iteration = iteration + 1;
+      results.push(result);
+      executed += 1;
+      if (result.captured) vars = { ...vars, ...result.captured }; // chain the real values forward…
+      redactSecrets(result, secretValues); // …then mask declared secrets in the reported result
+      if (opts.bail && !result.ok) bailed = true;
+    }
   }
 
   const passed = results.filter((r) => r.ok).length;
   return {
     results,
+    ...(iterations > 1 ? { iterations } : {}),
     passed,
     failed: results.length - passed,
-    skipped: requests.length - results.length,
+    skipped: requests.length * iterations - executed,
     ok: results.every((r) => r.ok),
     missingSecrets: built.missingSecrets,
     ...(deselected > 0 ? { deselected } : {}),

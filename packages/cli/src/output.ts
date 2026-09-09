@@ -12,7 +12,10 @@ export function formatHuman(result: WorkspaceRunResult, cwd: string): string {
   for (const r of result.results) {
     const where = r.filePath ? relative(cwd, r.filePath) : r.name;
     const meta = r.response ? `  ${r.response.status} ${r.response.durationMs}ms` : "";
-    lines.push(`${r.ok ? "✓" : "✗"} ${r.ok ? "PASS" : "FAIL"}  ${r.name}  (${where})${meta}`);
+    // Without the iteration number, a data-driven run's log is N identical-looking lines and a
+    // failure cannot be traced back to the row that caused it.
+    const iter = r.iteration !== undefined ? `[${r.iteration}] ` : "";
+    lines.push(`${iter}${r.ok ? "✓" : "✗"} ${r.ok ? "PASS" : "FAIL"}  ${r.name}  (${where})${meta}`);
     if (r.error) lines.push(`      error: ${r.error}`);
     for (const a of r.assertions) {
       if (!a.ok) lines.push(`      ✗ ${a.message}`);
@@ -20,6 +23,7 @@ export function formatHuman(result: WorkspaceRunResult, cwd: string): string {
   }
   lines.push("");
   const parts = [`${result.passed} passed`, `${result.failed} failed`];
+  if (result.iterations && result.iterations > 1) parts.push(`${result.iterations} iterations`);
   // `bail` and `--grep`/`--tag` both shrink what ran; say so, or a small "total" looks like a
   // missing-file bug rather than the selection the user asked for.
   if (result.skipped > 0) parts.push(`${result.skipped} skipped (bailed)`);
@@ -122,7 +126,9 @@ function escapeXml(s: string): string {
 /** JUnit XML — one testcase per request — for CI test reporters. */
 export function formatJunit(result: WorkspaceRunResult, cwd: string): string {
   const cases = result.results.map((r) => {
-    const name = escapeXml(r.name);
+    // A JUnit reporter keys on name+classname; without the iteration, N rows collapse into one
+    // testcase and a reporter silently shows only the last outcome.
+    const name = escapeXml(r.iteration !== undefined ? `${r.name} [${r.iteration}]` : r.name);
     const classname = escapeXml(r.filePath ? relative(cwd, r.filePath) : r.name);
     const time = ((r.response?.durationMs ?? 0) / 1000).toFixed(3);
     if (r.ok) return `    <testcase name="${name}" classname="${classname}" time="${time}"/>`;

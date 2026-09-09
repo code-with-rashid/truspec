@@ -95,10 +95,40 @@ truspec run <path> [--env <name>] [--spec <openapi>] [--var k=v] [--grep <re>] [
 | `--bail` | | Stop at the first failure; the remaining requests are reported as skipped. |
 | `--delay <ms>` | | Pause between requests, for rate-limited APIs. |
 | `--no-cookies` | | Send no cookies. By default a jar is shared across the run. |
+| `--data <file>` | `-d` | Run the selection once per row of a CSV or JSON dataset. |
+| `--repeat <n>` | | Run the selection `n` times (ignored when `--data` is given). |
 | `--json` | | Shorthand for `--reporter json`. |
 | `--reporter <fmt>` | | Output format: `human` (default), `json`, `junit`, or `html`. |
 | `--output <file>` | `-o` | Write the report to a file instead of stdout. |
 | `--timeout <ms>` | | Per-request timeout. Default `30000`. Use `0` to disable. |
+
+**Data-driven runs.** `--data` runs the whole selection once per row, with the row's columns
+available as `{{variables}}`:
+
+```csv
+# pets.csv
+petId,expected
+1,Rex
+2,Fido
+```
+
+```bash
+truspec run ./api --env local --data pets.csv
+# [1] ✓ PASS  Get pet by id  (api/get-pet.tspec.yaml)  200 12ms
+# [2] ✓ PASS  Get pet by id  (api/get-pet.tspec.yaml)  200  9ms
+#
+# 2 passed, 0 failed, 2 iterations, 2 total
+```
+
+CSV is parsed properly (quoted fields, embedded commas and newlines, `""` escapes, CRLF), and a
+`.json` dataset is an array of objects. **Iterations are independent**: each starts from the same
+variables with a fresh cookie jar, so row 2 never inherits row 1's captured ids or session. The
+OAuth2 token cache *is* shared, since the credentials don't change between rows. Results carry
+their 1-based iteration, which appears in the human log and in JUnit test names — without it, N
+rows collapse into one testcase and a reporter shows only the last outcome.
+
+An empty or missing dataset is an error, not a pass: a gate that never exercised the data it was
+given has not passed.
 
 **Cookies.** A run shares one in-memory cookie jar, so a login request's session cookie is sent by
 the requests that follow — including cookies set on a redirect hop. The jar is never written to
