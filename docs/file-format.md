@@ -327,6 +327,7 @@ must hold.
 | `jsonpath` | `path` + (`equals` · `exists` · `matches`) | A value selected from the JSON body. |
 | `body` | `contains` · `matches` | The raw response body text. |
 | `duration` | `ltMs` | Wall-clock request duration (strictly less than). |
+| `sse` | `event` · `count` · `minCount` · `maxCount` · `contains` · `matches` · `jsonpath` + `equals`/`exists` | A `text/event-stream` response's **events**. |
 | `schema` | `status` · `contentType` · `required` | The body against the spec's OpenAPI **response** schema. |
 
 ### `status`
@@ -411,6 +412,26 @@ reach for in a security or privacy check ("no internal hostname in the error bod
 ```yaml
 - { type: duration, ltMs: 1000 }   # fail if the request took ≥ 1s
 ```
+
+### `sse`
+
+```yaml
+- { type: sse, minCount: 1 }                        # the stream produced at least one event
+- { type: sse, event: token, minCount: 2 }          # at least two events named `token`
+- { type: sse, contains: "[DONE]" }                 # some event's data contains this
+- { type: sse, event: token, jsonpath: "$.delta", exists: true }
+- { type: sse, event: done, jsonpath: "$.usage.total_tokens", equals: 42 }
+```
+
+For a `text/event-stream` response. A streaming endpoint's response *is* its events: asserting on
+the concatenated stream text works but says nothing about how many arrived, in what order, or
+under which name.
+
+`event` narrows every other condition to events with that name; the count conditions apply after
+that filter. `jsonpath` parses **each event's `data` as its own JSON document** — an SSE stream is
+many small documents, not one — and the condition holds if any event satisfies it; an event whose
+data is not JSON (`[DONE]`) is skipped rather than failing the assertion. Against a response that
+is not an event stream, the assertion fails and says so.
 
 ### `schema`
 

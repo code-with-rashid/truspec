@@ -2838,3 +2838,44 @@ platform than it was before it started failing.
 
 **Verification.** 1075 unit tests, watcher suite 11/11 in 345ms (faster than the fixed sleep it
 replaced), typecheck 8/8.
+
+### 79 — an `sse` assertion, so a stream can be tested the way everything else is
+
+**The half iteration 77 left.** Events are parsed and reported, but the only way to assert on them
+was `body contains "[DONE]"` against the concatenated stream text. That works and says nothing
+useful: not how many events arrived, not in what order, not under which name — which is the entire
+question about a streaming endpoint. Declarative assertions are this product's core, and streams
+were outside them.
+
+```yaml
+assertions:
+  - { type: sse, minCount: 1 }
+  - { type: sse, event: token, minCount: 2 }
+  - { type: sse, contains: "[DONE]" }
+  - { type: sse, event: token, jsonpath: "$.delta", exists: true }
+  - { type: sse, event: done, jsonpath: "$.usage.total_tokens", equals: 42 }
+```
+
+`event` narrows every other condition; counts apply after that filter; conditions are AND-ed like
+every other assertion type.
+
+**The design decision worth stating.** `jsonpath` parses **each event's `data` as its own JSON
+document**, and holds if *any* event satisfies it. An SSE stream is many small documents, not one —
+treating it as a single body would mean either concatenating invalid JSON or picking an event
+arbitrarily. An event whose data is not JSON at all (`[DONE]`, which is exactly what OpenAI-shaped
+streams send last) is skipped rather than failing the assertion, so `{ event: token, jsonpath: … }`
+is not broken by the terminator.
+
+Against a response that is not a stream the assertion fails and says so, naming the content type —
+rather than passing vacuously because there were no events to contradict it.
+
+**Where it cannot go.** The Postman exporter warns instead of translating: Postman buffers a stream
+as one body and has no notion of an individual event, so any translation would be a weaker
+assertion wearing the same name — the same judgement made for `schema` assertions in iteration 43.
+
+The JSON Schema regenerates with the new variant (41 lines), the shared `describeAssertion` speaks
+it (`` `token` events: at least 2 ``), and the docs carry the type table row plus a worked section.
+
+**Verification.** 1086 unit tests (11 new for the assertion, 5 more for its description), coverage
+95.95% lines / 87.69% branches / 96.62% functions, typecheck 8/8, docs site builds, schema
+committed.

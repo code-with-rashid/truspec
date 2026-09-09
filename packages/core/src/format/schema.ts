@@ -190,6 +190,34 @@ export const Assertion = z.discriminatedUnion("type", [
   z.object({ type: z.literal("duration"), ltMs: z.number().positive() }).strict(),
   z
     .object({
+      /**
+       * Assertions over a `text/event-stream` response's events.
+       *
+       * A streaming endpoint's response *is* its events; asserting on the concatenated stream text
+       * works but says nothing about how many arrived, in what order, or under which name. Every
+       * condition below is AND-ed, and the count conditions apply after `event` filters.
+       */
+      type: z.literal("sse"),
+      /** Only consider events whose `event:` field is this. */
+      event: z.string().optional(),
+      /** Exactly this many (matching) events. */
+      count: z.number().int().nonnegative().optional(),
+      minCount: z.number().int().nonnegative().optional(),
+      maxCount: z.number().int().nonnegative().optional(),
+      /** At least one matching event's `data` contains this substring. */
+      contains: z.string().optional(),
+      /** At least one matching event's `data` matches this regular expression. */
+      matches: z.string().optional(),
+      /** Select inside each matching event's `data`, parsed as JSON. */
+      jsonpath: z.string().optional(),
+      /** With `jsonpath`: at least one event where the selected value equals this. */
+      equals: z.unknown().optional(),
+      /** With `jsonpath`: whether at least one event has (or no event has) the path. */
+      exists: z.boolean().optional(),
+    })
+    .strict(),
+  z
+    .object({
       type: z.literal("schema"),
       /** Validate against the schema for this status (default: the response's actual status). */
       status: z.number().int().optional(),

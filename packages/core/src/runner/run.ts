@@ -444,7 +444,14 @@ export async function runRequest(req: TruSpecRequest, ctx: RunContext = {}): Pro
     }
   }
 
-  const view: ResponseView = { status: response.status, headers, bodyText, json, durationMs };
+  const view: ResponseView = {
+    status: response.status,
+    headers,
+    bodyText,
+    json,
+    durationMs,
+    ...(body.events !== undefined ? { events: body.events } : {}),
+  };
   const contractCtx: ContractContext | undefined = ctx.contract
     ? { doc: ctx.contract.doc, operation: ctx.contract.operation }
     : undefined;
