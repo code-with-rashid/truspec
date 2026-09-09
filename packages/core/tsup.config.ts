@@ -11,6 +11,7 @@ export default defineConfig({
     "src/exporters/index.ts",
     "src/codegen/index.ts",
     "src/lint/index.ts",
+    "src/jsonpath/index.ts",
     "src/mock/index.ts",
   ],
   format: ["esm"],

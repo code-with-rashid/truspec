@@ -412,3 +412,33 @@ them announceable.
 **Verification.** 4 new e2e tests pinning each defect; full e2e suite 71/71, unit 611, typecheck
 8/8, build 5/5.
 
+### 15 — Response viewer: a filter box that is also a path picker
+
+**Gap.** The response body was a static `<pre>`. No search, no raw view, no wrap control — and,
+more importantly, no path off the screen: reading a body is only half the job, and every client
+leaves the other half (turn what you found into an assertion) to hand-retyping the path.
+
+**Change.** A `ResponseBody` viewer with `pretty`/`raw` and `wrap` toggles, and a filter box that
+does two things depending on what you type:
+
+- **plain text** — narrows the body to matching lines with a count, so a large body stays
+  navigable;
+- **a `$.`-prefixed JSONPath** — evaluates the *real* engine against the *real* response, shows
+  exactly what it selects, and when it selects exactly one value offers **`+ assert`** and
+  **`+ capture`**, which write straight into the request draft (`{ type: jsonpath, path, exists }`
+  / `capture: { name: path }`, with the variable name pre-filled from the last path segment).
+
+That closes the loop the format is built around — you discover a path by looking at a response and
+commit it as a machine-checkable assertion without ever retyping it.
+
+Getting the engine into the browser needed a new `@truspec/core/jsonpath` entry point: the
+`runner` barrel would have dragged the assertion engine and OpenAPI reader into the bundle, which
+is far more than a UI needs. The new module has no imports at all.
+
+**Verification.** 5 e2e tests (match reporting, no-match, assert round-trip, capture round-trip
+with the pre-filled name, text filtering, the toggles). Full e2e 76/76, unit 611, typecheck 8/8.
+
+Two of those tests initially failed and the code was right: they asserted on `textContent` where
+the values live in an input's `value`. Worth recording, because "the test failed" is not the same
+as "the feature is broken".
+

@@ -48,6 +48,10 @@
       "types": "./dist/codegen/index.d.ts",
       "import": "./dist/codegen/index.js"
     },
+    "./jsonpath": {
+      "types": "./dist/jsonpath/index.d.ts",
+      "import": "./dist/jsonpath/index.js"
+    },
     "./lint": {
       "types": "./dist/lint/index.d.ts",
       "import": "./dist/lint/index.js"

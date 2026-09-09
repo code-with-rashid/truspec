@@ -6,7 +6,8 @@ import { BodyEditor } from "./BodyEditor";
 import { CodeModal } from "./CodeModal";
 import { CaptureEditor } from "./CaptureEditor";
 import { EditableKV, objectToRows, rowsToObject, type KVRow } from "./EditableKV";
-import { JsonBlock, prettyBody, statusClass } from "../format-utils";
+import { statusClass } from "../format-utils";
+import { ResponseBody } from "./ResponseBody";
 import { ScriptEditor } from "./ScriptEditor";
 import { VarAwareInput } from "./VarAwareInput";
 
@@ -462,7 +463,18 @@ export function RequestWorkspace({
               </div>
               <div className="response-body-wrap">
                 {respTab === "body" ? (
-                  <JsonBlock text={prettyBody(result.response.bodyText)} />
+                  <ResponseBody
+                    bodyText={result.response.bodyText}
+                    onAssert={(path) =>
+                      onFieldChange("assertions", [
+                        ...(effective.assertions ?? []),
+                        { type: "jsonpath", path, exists: true },
+                      ])
+                    }
+                    onCapture={(path, name) =>
+                      onFieldChange("capture", { ...(effective.capture ?? {}), [name]: path })
+                    }
+                  />
                 ) : (
                   <KV obj={result.response.headers} />
                 )}
