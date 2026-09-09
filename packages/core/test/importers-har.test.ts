@@ -8,6 +8,8 @@ interface EntryInput {
   headers?: Array<{ name: string; value: string }>;
   postData?: { mimeType?: string; text?: string; params?: Array<{ name: string; value: string }> };
   status?: number;
+  /** `response.content.mimeType` — what devtools recorded coming back. */
+  mimeType?: string;
 }
 
 const har = (entries: EntryInput[]): unknown => ({
@@ -20,7 +22,10 @@ const har = (entries: EntryInput[]): unknown => ({
         headers: e.headers ?? [],
         ...(e.postData ? { postData: e.postData } : {}),
       },
-      response: { status: e.status ?? 200 },
+      response: {
+        status: e.status ?? 200,
+        ...(e.mimeType ? { content: { mimeType: e.mimeType, size: 10 } } : {}),
+      },
     })),
   },
 });
@@ -198,5 +203,73 @@ describe("importHar", () => {
       ]),
     );
     expect(() => parse.request.parse(r.files[0]!.content)).not.toThrow();
+  });
+});
+
+describe("importHar skips the asset pipeline", () => {
+  const asset = (url: string, mimeType: string) => ({ url, mimeType });
+
+  it("drops documents, styles, scripts, images, fonts and media by default", () => {
+    // A devtools HAR of one page load is mostly this. Importing it produced a collection that had
+    // to be hand-pruned before it was usable — the same reason OPTIONS preflights are skipped.
+    const r = importHar(
+      har([
+        asset("https://a.test/", "text/html"),
+        asset("https://a.test/main.css", "text/css"),
+        asset("https://a.test/app.js", "application/javascript"),
+        asset("https://a.test/b.js", "text/javascript"),
+        asset("https://a.test/logo.svg", "image/svg+xml"),
+        asset("https://a.test/hero.png", "image/png"),
+        asset("https://a.test/i.woff2", "font/woff2"),
+        asset("https://a.test/clip.mp4", "video/mp4"),
+        asset("https://a.test/t.eot", "application/vnd.ms-fontobject"),
+        { url: "https://api.test/v1/me", mimeType: "application/json" },
+      ]),
+    );
+    expect(r.files).toHaveLength(1);
+    expect(r.files[0]?.content).toContain("https://api.test/v1/me");
+    expect(r.warnings.join(" ")).toContain("Skipped 9 static asset(s)");
+    expect(r.warnings.join(" ")).toContain("includeAssets");
+  });
+
+  it("keeps an entry whose content type was never recorded", () => {
+    // Absence of evidence is not evidence: a HAR without a mimeType must not lose the request.
+    const r = importHar(har([{ url: "https://api.test/v1/me" }]));
+    expect(r.files).toHaveLength(1);
+  });
+
+  it("keeps a request that merely looks like an asset by its URL", () => {
+    // The recorded type is the authoritative signal, not the path — an API route ending in .json
+    // is not an asset, and this is why the URL is not consulted.
+    const r = importHar(har([{ url: "https://api.test/v1/config.json", mimeType: "application/json" }]));
+    expect(r.files).toHaveLength(1);
+  });
+
+  it("restores everything under includeAssets", () => {
+    const entries = [asset("https://a.test/main.css", "text/css"), { url: "https://api.test/v1/me", mimeType: "application/json" }];
+    expect(importHar(har(entries), { includeAssets: true }).files).toHaveLength(2);
+    expect(importHar(har(entries), { includeAssets: true }).warnings.join(" ")).not.toContain("static asset");
+  });
+
+  it("does skip an API endpoint that genuinely returns an image — which is what the flag is for", () => {
+    // Stated rather than hidden: filtering by response type cannot tell your avatar endpoint from
+    // the page's logo, so the escape hatch and the counted warning are the whole mitigation.
+    const r = importHar(har([{ url: "https://api.test/v1/users/1/avatar", mimeType: "image/png" }]));
+    expect(r.files).toHaveLength(0);
+    expect(r.warnings.join(" ")).toContain("Skipped 1 static asset(s)");
+    expect(importHar(har([{ url: "https://api.test/v1/users/1/avatar", mimeType: "image/png" }]), { includeAssets: true }).files).toHaveLength(1);
+  });
+
+  it("counts assets and OPTIONS preflights separately", () => {
+    const r = importHar(
+      har([
+        asset("https://a.test/main.css", "text/css"),
+        { url: "https://api.test/v1/me", method: "OPTIONS", mimeType: "application/json" },
+        { url: "https://api.test/v1/me", mimeType: "application/json" },
+      ]),
+    );
+    expect(r.files).toHaveLength(1);
+    expect(r.warnings.join(" ")).toContain("Skipped 1 OPTIONS preflight(s)");
+    expect(r.warnings.join(" ")).toContain("Skipped 1 static asset(s)");
   });
 });

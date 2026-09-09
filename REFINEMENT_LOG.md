@@ -1586,3 +1586,41 @@ mechanism), the notice on a large-but-whole body, the truncation notice with bot
 and carries no notice at all. That last test matters most: a performance fix that quietly degrades
 the common case is not a fix. 894 unit tests, **101 e2e**, coverage 95.71% lines / 87.44% branches
 / 96.18% functions, typecheck 8/8, dogfood gates clean.
+
+### 49 — importing a HAR gave you the asset pipeline
+
+**Gap.** A HAR is "Save all as HAR" from the browser's Network panel, which the docs correctly call
+the fastest way to turn what an app actually did into a collection. The importer already skips
+`OPTIONS` preflights by default, on the stated grounds that they are "transport, not API surface".
+Static assets are the same category and vastly more numerous, and nothing skipped them.
+
+Measured on a realistic single page load — document, stylesheet, two script chunks, an SVG, a PNG,
+a favicon, a webfont, an analytics beacon, four API calls, one preflight:
+
+    13 files written, of which 4 were API calls
+
+**69% noise**, and that is a deliberately small fixture; a real SPA HAR carries hundreds of asset
+entries. Every one becomes a `.tspec.yaml` that `truspec lint` then flags for having no assertions.
+You cannot use the result without pruning it by hand first.
+
+**Change.** Static assets are skipped by default — documents, styles, scripts, images, fonts, media
+— with the count reported the way the `OPTIONS` skip already is, and `--include-assets` /
+`includeAssets` to keep them. Same fixture: 13 files became 5.
+
+**Two decisions worth stating.** The judgement uses the HAR's **recorded response content type**,
+never the URL: an API route ending in `.json` is not an asset, and a path like `/avatar` may well
+be one. And an entry whose type the HAR never recorded is **kept** — absence of evidence is not
+evidence.
+
+**The honest cost.** Response-type filtering genuinely cannot distinguish your avatar endpoint from
+the page's logo. An API that serves images or PDFs loses those entries by default. That is not
+hidden: it has a test of its own asserting the drop happens, the counted warning names it every
+time, and the docs say plainly that nothing can tell them apart for you — which is what the flag is
+for. The analytics beacon in the fixture is correctly *kept*, because a `text/plain` POST is a real
+request the app made, not an asset; filtering by host would have been overreach.
+
+**Verification.** 6 tests: every asset family, the un-recorded type, the URL-that-looks-like-an-asset
+case, `includeAssets` restoring everything, the avatar case stated rather than hidden, and assets
+counted separately from preflights. 900 unit tests, 101 e2e, coverage 95.72% lines / 87.45%
+branches / 96.19% functions, typecheck 8/8, dogfood gates clean. (The doc note first landed inside
+a fenced code block — caught by checking the fences balance, and moved out.)

@@ -29,6 +29,16 @@ truspec import insomnia ./insomnia_export.json --out ./api
 truspec import har ./session.har --out ./api --filter api.example.com --base-url-var baseUrl
 ```
 
+A devtools HAR of a single page load is mostly the asset pipeline: the document, stylesheets,
+script chunks, images, fonts. Those are skipped by default — the same call `OPTIONS` preflights
+get, and for the same reason: they are not API surface, and importing them leaves a collection you
+have to prune before it is usable. The decision is made from the **recorded response content type**,
+never the URL, and an entry whose type the HAR did not record is kept.
+
+The count is always reported (`Skipped 8 static asset(s) …`), and `--include-assets` keeps
+everything. Use it when your API genuinely serves one of those types — an avatar or a PDF endpoint
+looks exactly like a page asset from the outside, and nothing can tell them apart for you.
+
 Each source request becomes one `<name>.tspec.yaml` file, preserving the folder structure
 of the original collection.
 
@@ -61,6 +71,7 @@ truspec import postman ./postman_collection.json
 truspec import <postman|bruno|insomnia|curl|har> <path> [--out <dir>] [--dry-run] [--name <base>]
                                              [--filter <substr>] [--base-url-var <name>]
                                              [--keep-noise-headers] [--include-options]
+                                             [--include-assets]
 ```
 
 | Argument / flag | Alias | Description |
@@ -74,6 +85,7 @@ truspec import <postman|bruno|insomnia|curl|har> <path> [--out <dir>] [--dry-run
 | `--base-url-var <name>` | | HAR only: replace the recorded origin with `{{name}}`. |
 | `--keep-noise-headers` | | HAR only: keep `sec-*`, `user-agent`, … (stripped by default). |
 | `--include-options` | | HAR only: keep `OPTIONS` preflights (skipped by default). |
+| `--include-assets` | | HAR only: keep static assets — documents, styles, scripts, images, fonts, media (skipped by default). |
 
 ---
 

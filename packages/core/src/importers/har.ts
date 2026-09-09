@@ -46,6 +46,12 @@ export interface HarImportOptions {
   keepNoiseHeaders?: boolean;
   /** Import `OPTIONS` preflights too. Off by default — they are transport, not API surface. */
   includeOptions?: boolean;
+  /**
+   * Import static assets too (documents, CSS, scripts, images, fonts, media). Off by default for
+   * the same reason `OPTIONS` is: a devtools HAR of one page load is mostly the asset pipeline,
+   * and importing it produces a collection that has to be hand-pruned before it is usable.
+   */
+  includeAssets?: boolean;
   /** Replace the recorded origin with `{{baseUrl}}` so the collection is environment-portable. */
   baseUrlVar?: string;
 }
@@ -58,6 +64,21 @@ export interface HarImportOptions {
  * browser noise is stripped, preflights are skipped, and each request asserts the status that was
  * actually recorded, so the result reads like a collection someone wrote rather than a packet dump.
  */
+/**
+ * Response content types that are the page, not the API.
+ *
+ * Judged from the HAR's recorded `response.content.mimeType`, which is the authoritative signal —
+ * not the URL, because an API route ending in `.json` is not an asset and an endpoint at `/avatar`
+ * may well be one. An entry with no recorded type is kept: absence of evidence is not evidence.
+ */
+const ASSET_MIME = /^(?:text\/(?:html|css)|(?:text|application)\/(?:x-)?javascript|image\/|font\/|audio\/|video\/|application\/(?:font-\w+|vnd\.ms-fontobject))/;
+
+function isStaticAsset(entry: Record<string, unknown> | undefined): boolean {
+  const mime = asRecord(asRecord(entry?.response)?.content)?.mimeType;
+  if (typeof mime !== "string" || mime.trim() === "") return false;
+  return ASSET_MIME.test(mime.trim().toLowerCase());
+}
+
 export function importHar(json: unknown, opts: HarImportOptions = {}): ImportResult {
   const warnings: string[] = [];
   const log = asRecord(asRecord(json)?.log);
@@ -69,6 +90,7 @@ export function importHar(json: unknown, opts: HarImportOptions = {}): ImportRes
   const files: ImportedFile[] = [];
   const used = new Set<string>();
   let skipped = 0;
+  let assets = 0;
 
   for (const rawEntry of entries) {
     const entry = asRecord(rawEntry);
@@ -82,6 +104,10 @@ export function importHar(json: unknown, opts: HarImportOptions = {}): ImportRes
     const method = typeof request.method === "string" ? request.method.toUpperCase() : "GET";
     if (method === "OPTIONS" && !opts.includeOptions) {
       skipped += 1;
+      continue;
+    }
+    if (!opts.includeAssets && isStaticAsset(entry)) {
+      assets += 1;
       continue;
     }
     if (!VALID_METHODS.has(method)) {
@@ -104,6 +130,11 @@ export function importHar(json: unknown, opts: HarImportOptions = {}): ImportRes
 
   if (skipped > 0) {
     warnings.push(`Skipped ${skipped} OPTIONS preflight(s) — pass includeOptions to keep them`);
+  }
+  if (assets > 0) {
+    warnings.push(
+      `Skipped ${assets} static asset(s) — documents, styles, scripts, images, fonts — pass includeAssets to keep them`,
+    );
   }
   if (files.length === 0 && warnings.length === 0) {
     warnings.push("No importable entries found in the HAR");

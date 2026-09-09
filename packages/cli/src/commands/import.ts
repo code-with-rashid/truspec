@@ -43,6 +43,7 @@ export async function importCommand(argv: string[], deps: Partial<CommandDeps> =
     "base-url-var": { type: "string" },
     "keep-noise-headers": { type: "boolean" },
     "include-options": { type: "boolean" },
+    "include-assets": { type: "boolean" },
   } as const;
   let values: {
     out?: string;
@@ -52,6 +53,7 @@ export async function importCommand(argv: string[], deps: Partial<CommandDeps> =
     "base-url-var"?: string;
     "keep-noise-headers"?: boolean;
     "include-options"?: boolean;
+    "include-assets"?: boolean;
   };
   let positionals: string[];
   try {
@@ -97,6 +99,7 @@ export async function importCommand(argv: string[], deps: Partial<CommandDeps> =
                 ...(values["base-url-var"] ? { baseUrlVar: values["base-url-var"] } : {}),
                 ...(values["keep-noise-headers"] ? { keepNoiseHeaders: true } : {}),
                 ...(values["include-options"] ? { includeOptions: true } : {}),
+                ...(values["include-assets"] ? { includeAssets: true } : {}),
               })
               : importBrunoDir(abs);
       if (source === "har" && result.files.length === 0) {
