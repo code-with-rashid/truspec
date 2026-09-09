@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { Agent, ProxyAgent, fetch as undiciFetch } from "undici";
+import { Agent, FormData as UndiciFormData, ProxyAgent, fetch as undiciFetch } from "undici";
 
 export interface TransportFlags {
   /** Skip TLS certificate verification. */
@@ -110,9 +110,39 @@ export function buildFetch(flags: TransportFlags, cwd: string): typeof globalThi
   };
 
   // `fetch` has no standard way to carry a TLS/proxy configuration, so this uses undici's — the
-  // same implementation Node's own global `fetch` is built on, just with a dispatcher attached.
+  // same *implementation* Node's own global `fetch` is built on, but a separate copy of it, which
+  // is why `sameRealm` below exists.
   return ((input: string | URL | Request, init?: RequestInit) =>
-    undiciFetch(input as never, Object.assign({}, init, { dispatcher: pick(input) }) as never)) as unknown as typeof globalThis.fetch;
+    undiciFetch(
+      input as never,
+      Object.assign({}, init, {
+        ...(init?.body instanceof globalThis.FormData ? { body: sameRealm(init.body) } : {}),
+        dispatcher: pick(input),
+      }) as never,
+    )) as unknown as typeof globalThis.fetch;
+}
+
+/**
+ * Re-create a global `FormData` as the one *this* copy of undici recognises.
+ *
+ * The standalone `undici` package bundles its own `FormData` class, distinct from the global one
+ * Node exposes from its bundled copy. Undici's fetch identifies a multipart body by `instanceof`
+ * against its own class, so a global `FormData` is not recognised — and rather than failing, the
+ * body spec says an unrecognised value is stringified. Every multipart upload went out as the
+ * eleven bytes `[object FormData]` under `Content-Type: text/plain`, silently, whenever any
+ * transport flag or proxy environment variable was in play.
+ *
+ * `Blob` needs no such treatment: undici uses `node:buffer`'s, which *is* the global one.
+ */
+function sameRealm(form: FormData): UndiciFormData {
+  const out = new UndiciFormData();
+  for (const [name, value] of form.entries()) {
+    // Two-arg and three-arg `append` are different overloads: passing `undefined` as the filename
+    // selects the file one, which then rejects a string value.
+    if (typeof value === "string") out.append(name, value);
+    else out.append(name, value, value.name);
+  }
+  return out;
 }
 
 /**

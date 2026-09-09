@@ -2936,3 +2936,54 @@ a blank gutter rather than an invented `1`.
 **Verification.** 1101 unit tests (13 new for the locator, 2 for the rendering), coverage 95.92%
 lines / 87.72% branches / 96.64% functions, typecheck 8/8, `lint examples --strict` clean, docs site
 builds.
+
+### 81 — every multipart upload was going out as the string `[object FormData]`
+
+**Found by sending one.** Iteration 80 finished, so I picked a surface the log had never probed
+end-to-end — `body.type: multipart` — stood up an echo server, and looked at the wire:
+
+```
+ct: text/plain;charset=UTF-8
+[object FormData]
+```
+
+Not a formatting problem. The file was never sent. Neither was any other part. The request returned
+**200 and passed its assertions**, because the echo server accepted anything — which is exactly how
+this survived: a real API would have rejected it, but nothing in the repo ever sent one.
+
+**The cause is a realm boundary, and the code comment asserted the opposite.** `packages/cli/src/transport.ts`
+imports `fetch` from the standalone `undici` package to attach a TLS/proxy dispatcher, and said:
+
+> the same implementation Node's own global `fetch` is built on, just with a dispatcher attached.
+
+Same implementation, **different copy**. Undici recognises a multipart body by `instanceof` against
+*its own* `FormData` class; the runner builds a `globalThis.FormData`, from Node's bundled copy. The
+check fails, and the fetch body spec says an unrecognised value is stringified — so `String(form)`
+went out as `text/plain`. Silently, with no error anywhere.
+
+**And it fired far more often than "when you pass `--proxy`."** `buildFetch` returns undici's fetch
+whenever *any* transport option is set, and `transportFromEnv` reads `HTTPS_PROXY`, `http_proxy` and
+`NODE_EXTRA_CA_CERTS` from the environment. Every CI runner behind a proxy, every corporate laptop,
+every container with a CA bundle — all of them uploaded nothing, and were told it worked.
+
+**The fix** re-creates the form as the class *this* copy of undici knows, at the one place the
+boundary is crossed. `Blob` needs no such treatment: undici uses `node:buffer`'s, which *is* the
+global one — the mismatch is `FormData` alone. (Two- and three-argument `append` are different
+overloads, so a string value must not be passed a `undefined` filename; it selects the file overload
+and is then rejected for not being a Blob.)
+
+**Why no test saw it.** There are eleven multipart tests. Every one injects a capturing `fetch` and
+inspects the `FormData` *object* — which is the correct unit test and structurally cannot observe
+what leaves the socket. The single `buildFetch` test sent a bodiless GET. The gap was not a missing
+assertion; it was a **seam nobody crossed**: body assembly is core's, the dispatcher is the CLI's,
+and no test held both. The new test is at that seam — a real loopback POST through `buildFetch`,
+asserting the bytes on the wire — and it fails against the old code, which I checked by reverting
+the fix.
+
+**The generalised lesson**, worth keeping: *a mock that stands in for the thing you are testing the
+boundary of proves the boundary works with the mock.* Every capturing-fetch test in this repo is
+sound, and all of them together could not see this.
+
+**Verification.** 1103 unit tests (2 new at the seam), coverage 95.92% lines / 87.74% branches /
+96.65% functions, typecheck 8/8; a live multipart POST now sends all four part shapes — plain value,
+coerced number, file from disk, typed inline text — with correct per-part headers.
