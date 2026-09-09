@@ -39,10 +39,34 @@ export function toHttpShape(req: TruSpecRequest, opts: ShapeOptions = {}): HttpS
   const eff = resolveRequest(req, { folder: opts.folder, vars: opts.vars, onMissing: "keep" });
   return {
     method: eff.method,
-    url: eff.url,
+    url: sendableUrl(eff.url),
     headers: { ...eff.headers },
     body: structuredBody(req, opts.vars ?? {}),
   };
+}
+
+/**
+ * The URL as the request will actually be sent, not as it was typed.
+ *
+ * A snippet's whole promise is "run this and you get the same request". The runner never had to
+ * keep that promise itself — it hands the authored URL to `fetch`, which normalizes it on the way
+ * out — so a URL containing a character that is illegal in one (a space, most often from a
+ * `{{var}}` that expanded to a value with one) worked when run and produced a snippet that did
+ * not: `curl` rejects it outright with `URL rejected: Malformed input to a URL function`, and a
+ * client that does encode it may not encode it the same way.
+ *
+ * Left verbatim in the two cases where normalizing would be wrong rather than right: a URL still
+ * carrying a `{{placeholder}}` (whose braces are themselves illegal, and which a *reader* is meant
+ * to fill in), and one that is not absolute (no base to resolve it against — the same thing the
+ * runner passes through).
+ */
+function sendableUrl(url: string): string {
+  if (url.includes("{{")) return url;
+  try {
+    return new URL(url).toString();
+  } catch {
+    return url;
+  }
 }
 
 /** Re-derive the body in structured form (the runner's `EffectiveRequest.body` is already a string). */

@@ -2987,3 +2987,46 @@ sound, and all of them together could not see this.
 **Verification.** 1103 unit tests (2 new at the seam), coverage 95.92% lines / 87.74% branches /
 96.65% functions, typecheck 8/8; a live multipart POST now sends all four part shapes — plain value,
 coerced number, file from disk, typed inline text — with correct per-part headers.
+
+### 82 — the generated `curl` command did not run
+
+**Same method as 81, pointed at the next mock-shaped seam.** `codegen` renders a request as a
+snippet in 17 clients. Twenty tests assert what the snippet *says*. None had ever run one. So I ran
+one:
+
+```
+$ truspec codegen api/post.tspec.yaml --lang curl > snip.sh && sh snip.sh
+curl: (3) URL rejected: Malformed input to a URL function
+```
+
+**The cause.** The request's URL contained a space — `?q=a b`. `truspec run` sends it happily,
+because it hands the authored URL to `fetch`, which normalizes it to `%20` on the way out. The
+runner never had to encode anything itself, so nothing in the codebase did, so codegen emitted the
+URL exactly as typed. `curl` refuses it. `wget` and the JS/Python clients each encode it themselves,
+which is worse in its way: the snippet runs and there is no guarantee they all encode it the same.
+
+A space in a URL is not an exotic authoring mistake. `{{query}}` expanding to a value with a space
+in it produces exactly this, and that is the normal way this format is used.
+
+**The fix** is one line in `toHttpShape` — emit the URL as it will actually be sent, via `new URL`.
+Two cases stay verbatim, and they are the interesting ones:
+
+- A URL still carrying `{{placeholder}}`. Braces are themselves illegal in a URL, so normalizing
+  would percent-encode the very thing the reader is meant to fill in.
+- A relative URL. There is no base to resolve it against — the same thing the runner passes through.
+
+**Two tests, at two different depths.** The unit test pins the encoding. The other one *executes the
+snippet*: it stands up a loopback recorder, runs the request through the runner, runs the generated
+javascript-fetch snippet in a real Node process, and asserts the two arrivals match — target,
+headers, and body. That is the promise codegen actually makes, checked rather than assumed.
+
+**And a real limit, worth naming.** The executed snippet test passes against the *old* code, because
+`fetch` normalizes the URL itself. Only a client that refuses can see this defect — so there is a
+third test that shells out to `curl` and asserts the request arrives, skipping (not failing) where
+`curl` is absent. Reverting the fix turns both URL tests red and leaves the fetch one green, which is
+the honest picture: **executing one client proves one client.**
+
+**Verification.** 1108 unit tests (5 new), coverage 95.93% lines / 87.77% branches / 96.66%
+functions, typecheck 8/8, `lint examples --strict` clean. A live comparison now shows the curl
+snippet and `truspec run` arriving at the same server with the same target, the same headers, and
+the same body.
