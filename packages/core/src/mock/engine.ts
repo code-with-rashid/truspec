@@ -1,5 +1,6 @@
 import { parse as parseYaml } from "yaml";
 import { asRecord, parseOpenApi, resolveRef } from "../spec/openapi";
+import { validateAgainstSchema } from "../spec/validate-response";
 
 const METHODS = ["get", "put", "post", "delete", "patch", "head", "options"] as const;
 
@@ -169,6 +170,9 @@ export function buildRoutes(doc: Record<string, unknown>): MockRoute[] {
 export interface MockRequestInfo {
   query?: Record<string, string>;
   hasBody?: boolean;
+  /** The raw request body, when the caller read one. Needed to check it against the spec. */
+  bodyText?: string;
+  contentType?: string;
 }
 
 export interface MockResponder {
@@ -181,17 +185,61 @@ export interface MockResponderOptions {
   validate?: boolean;
 }
 
+/** JSON bodies only: a form or multipart body has no JSON Schema to check it against here. */
+function isJsonBody(contentType: string | undefined): boolean {
+  return contentType === undefined || contentType === "" || /json/i.test(contentType);
+}
+
+/**
+ * Check a request body against the schema its operation declares.
+ *
+ * Returns a 400 describing every violation, or `undefined` when the body conforms (or when there
+ * is nothing to check: no schema, no body read, or a non-JSON media type).
+ */
+function validateRequestBody(
+  schema: Record<string, unknown> | undefined,
+  info: MockRequestInfo | undefined,
+  doc: Record<string, unknown>,
+): MockResponse | undefined {
+  if (!schema || info?.bodyText === undefined || info.bodyText === "") return undefined;
+  if (!isJsonBody(info.contentType)) return undefined;
+  let value: unknown;
+  try {
+    value = JSON.parse(info.bodyText);
+  } catch {
+    return {
+      status: 400,
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ error: "Request body is not valid JSON" }),
+    };
+  }
+  const violations = validateAgainstSchema(value, schema, doc);
+  if (violations.length === 0) return undefined;
+  return {
+    status: 400,
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      error: "Request body does not satisfy the spec",
+      violations: violations.map((v) => ({ path: v.path || "/", message: v.message })),
+    }),
+  };
+}
+
 /** Build a stateless mock responder from OpenAPI text (YAML or JSON). */
 export function createMockResponder(specText: string, opts: MockResponderOptions = {}): MockResponder {
   const doc = asRecord(parseYaml(specText)) ?? {};
   const routes = buildRoutes(doc);
 
-  const rules = new Map<string, { requiredQuery: string[]; bodyRequired: boolean }>();
+  const rules = new Map<
+    string,
+    { requiredQuery: string[]; bodyRequired: boolean; bodySchema?: Record<string, unknown> }
+  >();
   if (opts.validate) {
     for (const op of parseOpenApi(specText).operations) {
       rules.set(op.key, {
         requiredQuery: op.parameters.filter((p) => p.in === "query" && p.required).map((p) => p.name),
         bodyRequired: op.requestBodyRequired,
+        ...(op.requestBodySchema ? { bodySchema: op.requestBodySchema } : {}),
       });
     }
   }
@@ -244,6 +292,11 @@ export function createMockResponder(specText: string, opts: MockResponderOptions
             body: JSON.stringify({ error: "Request does not satisfy the spec", missing }),
           };
         }
+        // Whether the body *satisfies* its schema, not merely whether one was sent. A mock that
+        // accepts `{"name": 1}` against `name: string` is agreeing with a request the real API
+        // will reject — which is the one thing a spec-backed mock exists to prevent.
+        const bad = validateRequestBody(rule.bodySchema, info, doc);
+        if (bad) return bad;
       }
 
       const headers: Record<string, string> = {};

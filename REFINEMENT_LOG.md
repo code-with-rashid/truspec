@@ -2370,3 +2370,52 @@ without stubbing the thing being tested.
 **Verification.** 995 unit tests (3 new in the extension suite), coverage 96.00% lines / 87.77%
 branches / 96.47% functions, typecheck 8/8, both READMEs and the editors page updated, docs site
 builds.
+
+### 68 — a mock that validated the envelope and not the letter
+
+**What I looked for.** `mock --validate` is what a spec-first user points their client at to find
+out whether the requests they send match the contract. I sent it four requests and read the
+answers.
+
+```
+GET  /products                          -> 400  {"missing":["query:limit"]}       ✓
+POST /products {"name":"x"}             -> 201  {}                                ✗
+POST /products {"name":1,"priceCents":"free"} -> 201  {}                          ✗
+```
+
+The second and third are the ones that matter. `priceCents` is required and absent; `name` is
+declared `string` and arrives as a number. Both got a 201. The mock was checking that *a* body had
+been sent — never what was in it.
+
+That is precisely backwards for the feature's purpose. A mock that agrees with a request the real
+API will reject is worse than no mock: it certifies the bug.
+
+Two reasons it could not do better. The engine kept only `bodyRequired` from each operation, not
+the schema — even though iteration 53 had already put `requestBodySchema` on `SpecOperation` for
+`gen`. And the server never read the body at all; it inferred `hasBody` from `content-length` and
+threw the bytes away.
+
+**Now:** the server reads the body (bounded at 2MB — a local mock has no reason to buffer whatever
+arrives, and answers 413 past it), and the engine checks it with `validateAgainstSchema`, the same
+validator behind the `schema` assertion and `truspec contract`. One validator, so the mock, the
+runner and the contract report cannot disagree about what the spec says.
+
+```json
+{
+  "error": "Request body does not satisfy the spec",
+  "violations": [
+    { "path": "/name", "message": "expected string, got number" },
+    { "path": "/priceCents", "message": "expected integer, got string" }
+  ]
+}
+```
+
+**What it deliberately does not do.** A non-JSON media type (form, multipart) passes through —
+there is no JSON Schema to check it against, and inventing one would be guessing. A body that is
+not valid JSON gets its own message rather than a schema violation, because "your JSON is broken"
+and "your JSON is wrong" send the reader to different places. And an absent required body still
+reports `missing: ["body"]`, which is what iteration 54's test pinned.
+
+**Verification.** 1003 unit tests (8 new: seven at the engine level, one over real HTTP proving the
+server actually reads the body), coverage 95.98% lines / 87.80% branches / 96.49% functions,
+typecheck 8/8, docs updated with the exact shape of the 400.
