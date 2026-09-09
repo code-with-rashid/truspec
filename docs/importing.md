@@ -1,8 +1,9 @@
-# Importing from Postman, Bruno, curl & HAR
+# Importing from Postman, Bruno, Insomnia, curl & HAR
 
 `truspec import` converts an existing collection into TruSpec's plain-text format so you
 can migrate without rebuilding by hand. It supports **Postman v2.1** collections,
-**Bruno** directories, **`curl` command lines**, and **HAR** exports from browser devtools.
+**Bruno** directories, **Insomnia** exports, **`curl` command lines**, and **HAR** exports from
+browser devtools.
 
 ---
 
@@ -20,6 +21,9 @@ truspec import curl "curl 'https://api.example.com/pets' -H 'Accept: application
 
 # curl — piped in
 pbpaste | truspec import curl - --out ./api
+
+# Insomnia — an exported collection JSON (v4 or v5)
+truspec import insomnia ./insomnia_export.json --out ./api
 
 # HAR — "Save all as HAR" from the browser's Network panel
 truspec import har ./session.har --out ./api --filter api.example.com --base-url-var baseUrl
@@ -54,14 +58,14 @@ truspec import postman ./postman_collection.json
 ## Options
 
 ```
-truspec import <postman|bruno|curl|har> <path> [--out <dir>] [--dry-run] [--name <base>]
+truspec import <postman|bruno|insomnia|curl|har> <path> [--out <dir>] [--dry-run] [--name <base>]
                                              [--filter <substr>] [--base-url-var <name>]
                                              [--keep-noise-headers] [--include-options]
 ```
 
 | Argument / flag | Alias | Description |
 |---|---|---|
-| `<postman\|bruno\|curl\|har>` | | **Required.** Source format. |
+| `<postman\|bruno\|insomnia\|curl\|har>` | | **Required.** Source format. |
 | `<path>` | | **Required.** Postman JSON, Bruno directory, a curl command (`-` for stdin), or a `.har`. |
 | `--out <dir>` | `-o` | Destination directory. Omit for a dry-run preview. |
 | `--dry-run` | | Force preview mode even when `--out` is given. |
@@ -70,6 +74,19 @@ truspec import <postman|bruno|curl|har> <path> [--out <dir>] [--dry-run] [--name
 | `--base-url-var <name>` | | HAR only: replace the recorded origin with `{{name}}`. |
 | `--keep-noise-headers` | | HAR only: keep `sec-*`, `user-agent`, … (stripped by default). |
 | `--include-options` | | HAR only: keep `OPTIONS` preflights (skipped by default). |
+
+---
+
+## Importing from Insomnia
+
+Insomnia stores a collection as a **flat** `resources` array with `parentId` pointers, not a tree,
+so folders are reassembled by walking parents (with a cycle guard — a malformed export can point a
+group at itself). Rows the user **disabled** are skipped rather than imported as live headers and
+parameters, and `{{ _.var }}` templates are normalized to `{{var}}`.
+
+An OAuth2 block is imported only for the grants a machine can complete unattended
+(`client_credentials`, `password`, `refresh_token`); an authorization-code flow needs a browser, so
+it is reported rather than imported as a block that could never run.
 
 ---
 

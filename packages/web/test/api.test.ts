@@ -112,6 +112,47 @@ describe("web server api", () => {
     }
   });
 
+  it("imports an Insomnia export, reassembling its flat resource list into folders", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "truspec-web-insomnia-"));
+    try {
+      const doc = {
+        resources: [
+          { _id: "wrk", _type: "workspace", name: "W" },
+          { _id: "grp", _type: "request_group", parentId: "wrk", name: "Pets" },
+          {
+            _id: "req",
+            _type: "request",
+            parentId: "grp",
+            name: "Get pet",
+            method: "GET",
+            url: "https://api.test/pets/1",
+            headers: [],
+          },
+        ],
+      };
+      const r = await handleApi("POST", "/api/import/insomnia", noQuery, { json: doc }, { dir });
+      const out = r.json as { ok: boolean; stats: { requests: number }; files: string[] };
+      expect(out.ok).toBe(true);
+      expect(out.stats.requests).toBe(1);
+      expect(out.files[0]).toContain("pets");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("reports a document that is not an Insomnia export", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "truspec-web-insomnia-bad-"));
+    try {
+      const missing = await handleApi("POST", "/api/import/insomnia", noQuery, {}, { dir });
+      expect(missing.status).toBe(400);
+      const junk = await handleApi("POST", "/api/import/insomnia", noQuery, { json: { nope: 1 } }, { dir });
+      expect((junk.json as { ok: boolean; error: string }).ok).toBe(false);
+      expect((junk.json as { error: string }).error).toMatch(/Not an Insomnia export/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("lists code-generation targets", async () => {
     const r = await handleApi("GET", "/api/codegen/targets", noQuery, undefined, ctx);
     const targets = (r.json as { targets: Array<{ id: string }> }).targets;

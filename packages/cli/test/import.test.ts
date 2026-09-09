@@ -122,15 +122,15 @@ describe("truspec import", () => {
     expect(cap.err).toMatch(/No curl command/);
   });
 
-  it("rejects an unknown source with usage listing curl", async () => {
+  it("rejects an unknown source, listing the ones it does support", async () => {
     const cap = capture();
-    const code = await importCommand(["insomnia", "x.json"], {
+    const code = await importCommand(["soapui", "x.xml"], {
       cwd: repoRoot,
       stdout: cap.stdout,
       stderr: cap.stderr,
     });
     expect(code).toBe(2);
-    expect(cap.err).toMatch(/postman\|bruno\|curl/);
+    expect(cap.err).toMatch(/postman\|bruno\|insomnia\|curl\|har/);
   });
 
   it("imports a HAR file, honoring --filter and --base-url-var", async () => {

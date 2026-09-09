@@ -24,7 +24,7 @@ truspec --version
 | [`codegen`](#codegen) | Render a request as a runnable snippet in another client or language. |
 | [`lint`](#lint) | Static checks over a collection; non-zero exit on an error. |
 | [`docs`](#docs) | Render a collection as committable Markdown documentation. |
-| [`import`](#import) | Convert a Postman/Bruno collection or a curl command to `.tspec.yaml`. |
+| [`import`](#import) | Convert a Postman/Bruno/Insomnia collection, curl command, or HAR. |
 | [`mock`](#mock) | Serve generated responses from a spec (offline). |
 | [`serve`](#serve) | Open the local web UI for a collection. |
 
@@ -557,7 +557,7 @@ Convert an existing Postman or Bruno collection â€” or a single `curl` command â
 `.tspec.yaml` files. See the [Importing guide](./importing.md) for details and caveats.
 
 ```
-truspec import <postman|bruno|curl> <path> [--out <dir>] [--dry-run] [--name <base>]
+truspec import <postman|bruno|insomnia|curl|har> <path> [--out <dir>] [--dry-run] [--name <base>]
 truspec import curl -            # read the command from stdin
 ```
 

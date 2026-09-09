@@ -218,6 +218,20 @@ export function createServer(ctx: ServerContext = {}): McpServer {
   );
 
   server.registerTool(
+    "truspec_import_insomnia",
+    {
+      title: "Import an Insomnia export",
+      description:
+        "Convert an Insomnia v4/v5 export into .tspec.yaml request files, reassembling its flat parentId list back into folders.",
+      inputSchema: {
+        path: z.string().describe("Path to the exported JSON."),
+        out: z.string().default(".").describe("Directory to write the request file(s) into."),
+      },
+    },
+    async ({ path, out }) => json(tools.importInsomniaTool(c, path, out)),
+  );
+
+  server.registerTool(
     "truspec_import_har",
     {
       title: "Import a HAR export",

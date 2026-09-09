@@ -11,7 +11,7 @@ import {
   scaffoldFromSpec as coreScaffold,
   writeScaffold,
 } from "@truspec/core/spec";
-import { importCurl, importHarFile, writeImport } from "@truspec/core/importers";
+import { importCurl, importHarFile, importInsomniaFile, writeImport } from "@truspec/core/importers";
 import { lintWorkspace } from "@truspec/core/lint";
 import { confinePath, discoverRequests, prepareRequest, runPath } from "@truspec/core/workspace";
 
@@ -202,5 +202,17 @@ export function docsTool(ctx: ToolContext, dir = ".", lang = "curl", title?: str
     count: result.count,
     markdown: result.markdown,
     ...(result.errors.length > 0 ? { errors: result.errors } : {}),
+  };
+}
+
+/** Convert an Insomnia export into request files. */
+export function importInsomniaTool(ctx: ToolContext, path: string, outDir = ".") {
+  const result = importInsomniaFile(confinePath(ctx.cwd, path));
+  if (result.files.length === 0) return { created: 0, warnings: result.warnings };
+  const written = writeImport(result, confinePath(ctx.cwd, outDir));
+  return {
+    created: written.length,
+    files: written.map((f) => relative(ctx.cwd, f)),
+    ...(result.warnings.length > 0 ? { warnings: result.warnings } : {}),
   };
 }

@@ -8,6 +8,7 @@ import {
   importBruno,
   importCurlText,
   importHar,
+  importInsomnia,
   importPostman,
   type RequestDetail,
   type RunResult,
@@ -137,6 +138,7 @@ export function FlowView({ env, running, onRun, getResult, onImported }: FlowVie
   const postmanRef = useRef<HTMLInputElement>(null);
   const brunoRef = useRef<HTMLInputElement | null>(null);
   const harRef = useRef<HTMLInputElement>(null);
+  const insomniaRef = useRef<HTMLInputElement>(null);
 
   const refresh = (): void => {
     getFlow()
@@ -266,6 +268,33 @@ export function FlowView({ env, running, onRun, getResult, onImported }: FlowVie
       sourceName,
       targetDir: slugify(sourceName),
     });
+  }
+
+  /** Insomnia export: a flat resource list that has to be reassembled into folders server-side. */
+  async function onInsomniaFile(e: ChangeEvent<HTMLInputElement>): Promise<void> {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setImportMsg(null);
+    setImportBusy(true);
+    try {
+      const r = await importInsomnia(JSON.parse(await file.text()));
+      if (!r.ok) {
+        setImportMsg(`Import failed: ${r.error ?? "unknown error"}`);
+        return;
+      }
+      const n = r.stats?.requests ?? 0;
+      setImportMsg(
+        `Imported ${n} request${n === 1 ? "" : "s"}` +
+          (r.warnings?.length ? ` (${r.warnings.length} warning${r.warnings.length === 1 ? "" : "s"})` : ""),
+      );
+      refresh();
+      onImported();
+    } catch (err) {
+      setImportMsg(`Import failed: ${String(err)}`);
+    } finally {
+      setImportBusy(false);
+    }
   }
 
   /** HAR import: a browser's own record of what an app did, turned into a collection. */
@@ -525,6 +554,9 @@ export function FlowView({ env, running, onRun, getResult, onImported }: FlowVie
                     <button className="btn" disabled={importBusy} onClick={() => brunoRef.current?.click()}>
                       bruno collection (folder)
                     </button>
+                    <button className="btn" disabled={importBusy} onClick={() => insomniaRef.current?.click()}>
+                      insomnia export (.json)
+                    </button>
                     <button className="btn" disabled={importBusy} onClick={() => harRef.current?.click()}>
                       HAR export (.har)
                     </button>
@@ -533,6 +565,7 @@ export function FlowView({ env, running, onRun, getResult, onImported }: FlowVie
                     </button>
                   </div>
                   <input ref={postmanRef} aria-label="postman collection file" type="file" accept="application/json,.json" className="sr-only" onChange={(e) => void onPostmanFile(e)} />
+                  <input ref={insomniaRef} aria-label="insomnia export file" type="file" accept="application/json,.json" className="sr-only" onChange={(e) => void onInsomniaFile(e)} />
                   <input ref={harRef} aria-label="HAR export file" type="file" accept=".har,application/json" className="sr-only" onChange={(e) => void onHarFile(e)} />
                   <input
                     ref={(el) => {

@@ -8,6 +8,7 @@ import {
   importBrunoFiles,
   importCurl,
   importHar,
+  importInsomnia,
   importPostman,
   type ImportedFile,
   type ImportResult,
@@ -530,6 +531,31 @@ export async function handleApi(
     const result = importHar(b.json, b.options ?? {});
     if (result.files.length === 0) {
       return { status: 200, json: { ok: false, error: result.warnings[0] ?? "No importable entries" } };
+    }
+    try {
+      const written = writeImportConfined(result, target);
+      return { status: 200, json: { ok: true, stats: result.stats, warnings: result.warnings, files: written } };
+    } catch (e) {
+      return { status: 200, json: { ok: false, error: (e as Error).message } };
+    }
+  }
+  if (method === "POST" && pathname === "/api/import/insomnia") {
+    const b = (body ?? {}) as { json?: unknown; targetDir?: string };
+    if (b.json === undefined) return { status: 400, json: { error: "json required" } };
+    let target: string;
+    try {
+      target = b.targetDir ? confinePath(ctx.dir, b.targetDir) : ctx.dir;
+    } catch (e) {
+      return { status: 200, json: { ok: false, error: (e as Error).message } };
+    }
+    let result: ImportResult;
+    try {
+      result = importInsomnia(b.json);
+    } catch (e) {
+      return { status: 200, json: { ok: false, error: (e as Error).message } };
+    }
+    if (result.files.length === 0) {
+      return { status: 200, json: { ok: false, error: result.warnings[0] ?? "No requests found" } };
     }
     try {
       const written = writeImportConfined(result, target);

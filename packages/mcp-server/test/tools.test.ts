@@ -8,6 +8,7 @@ import {
   docsTool,
   importCurlTool,
   importHarTool,
+  importInsomniaTool,
   lintTool,
   contractTool,
   coverageTool,
@@ -205,6 +206,26 @@ describe("mcp tools", () => {
       writeFileSync(join(dir, "x.tspec.yaml"), 'tspec: "0.1"\nname: X\nurl: "https://x.test/a"\n');
       expect((lintTool({ cwd: dir }, ".") as { findings: unknown[] }).findings.length).toBe(1);
       expect((lintTool({ cwd: dir }, ".", ["no-assertions"]) as { findings: unknown[] }).findings).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("imports an Insomnia export into request files", () => {
+    const dir = mkdtempSync(join(tmpdir(), "truspec-mcp-insomnia-"));
+    try {
+      writeFileSync(
+        join(dir, "e.json"),
+        JSON.stringify({
+          resources: [
+            { _id: "w", _type: "workspace", name: "W" },
+            { _id: "r", _type: "request", parentId: "w", name: "Get pet", method: "GET", url: "https://api.test/pets", headers: [] },
+          ],
+        }),
+      );
+      const r = importInsomniaTool({ cwd: dir }, "e.json", "api") as { created: number; files: string[] };
+      expect(r.created).toBe(1);
+      expect(readFileSync(join(dir, r.files[0]!), "utf8")).toContain("https://api.test/pets");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

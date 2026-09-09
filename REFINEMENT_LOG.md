@@ -636,3 +636,33 @@ comment that misstates the gate is worse than none.
 
 **Verification.** Both gates pass locally; `truspec docs` verified byte-identical across two runs.
 
+### 23 — Insomnia importer
+
+**Gap.** The last major competitor format. Postman, Bruno, curl and HAR were covered; a team on
+Insomnia had no on-ramp at all.
+
+**Change.** `importInsomnia()`, wired to `truspec import insomnia`, `POST /api/import/insomnia`
+behind a picker in the web dialog, and the `truspec_import_insomnia` MCP tool.
+
+Insomnia stores a collection as a **flat `resources` array with `parentId` pointers**, not a tree,
+so folders are reassembled by walking parents — with a cycle guard, because a malformed export can
+point a group at itself and a naive walk would hang. Beyond the shape:
+
+- **Disabled rows are skipped.** Insomnia keeps headers and query parameters the user switched
+  off; importing them would send headers someone explicitly turned off.
+- `{{ _.var }}` (v5) and `{{ var }}` (v4) both normalize to `{{var}}`.
+- Bodies map across all four shapes, including multipart *with its file parts*.
+- An OAuth2 block is imported only for the grants a machine can complete unattended; an
+  authorization-code flow needs a browser, so it is reported rather than imported as a block that
+  could never run — the same line drawn when OAuth2 was added.
+- Output is sorted, so the written files (and any diff of them) are reproducible regardless of the
+  export's own ordering.
+
+Also reordered `import`'s source list to `postman|bruno|insomnia|curl|har` — collection formats
+first, then the two single-request/recording formats.
+
+**Verification.** 22 tests — 18 core (folder reassembly, the cycle guard, disabled rows, template
+normalization, every auth and body shape, the browser-grant refusal, filename de-duplication,
+stable ordering, malformed input), 2 web API, 1 MCP, 1 CLI. Coverage held at 95.39% lines /
+96.56% functions. 705 tests, e2e 86/86, typecheck 8/8, build 5/5.
+

@@ -5,13 +5,14 @@ import {
   importBrunoDir,
   importCurl,
   importHarFile,
+  importInsomniaFile,
   importPostmanFile,
   type ImportResult,
   writeImport,
 } from "@truspec/core/importers";
 import { type CommandDeps, resolveDeps } from "./deps";
 
-const SOURCES = ["postman", "bruno", "curl", "har"] as const;
+const SOURCES = ["postman", "bruno", "insomnia", "curl", "har"] as const;
 type Source = (typeof SOURCES)[number];
 const USAGE = `Usage: truspec import <${SOURCES.join("|")}> <path> [--out <dir>] [--dry-run]
        truspec import curl -            # read the curl command from stdin
@@ -87,14 +88,16 @@ export async function importCommand(argv: string[], deps: Partial<CommandDeps> =
       result =
         source === "postman"
           ? importPostmanFile(abs)
-          : source === "har"
+          : source === "insomnia"
+            ? importInsomniaFile(abs)
+            : source === "har"
             ? importHarFile(abs, {
                 ...(values.filter ? { filter: values.filter } : {}),
                 ...(values["base-url-var"] ? { baseUrlVar: values["base-url-var"] } : {}),
                 ...(values["keep-noise-headers"] ? { keepNoiseHeaders: true } : {}),
                 ...(values["include-options"] ? { includeOptions: true } : {}),
               })
-            : importBrunoDir(abs);
+              : importBrunoDir(abs);
       if (source === "har" && result.files.length === 0) {
         for (const w of result.warnings) d.stderr(`warning: ${w}\n`);
         d.stderr("No importable entries in that HAR.\n");

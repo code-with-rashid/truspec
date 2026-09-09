@@ -28,7 +28,7 @@ Usage:
   truspec docs [<dir>] [--out <file>] [--lang <target>]
   truspec lint [<dir>] [--strict] [--json] [--disable <rule>] [--list-rules]
   truspec codegen <request> [--lang <target>] [--env <name>] [--list]
-  truspec import <postman|bruno|curl|har> <path|-> [--out <dir>] [--filter <substr>]
+  truspec import <postman|bruno|insomnia|curl|har> <path|-> [--out <dir>] [--filter <substr>]
   truspec mock --spec <openapi> [--port <n>] [--delay <ms>]
   truspec serve [--dir <collection>] [--port <n>]
   truspec --help
@@ -44,7 +44,7 @@ Commands:
   docs       Render a collection as committable Markdown documentation.
   lint       Static checks over a collection (inline secrets, dead assertions, undeclared vars).
   codegen    Render a request as a runnable snippet (curl, Python, Go, …); --list for targets.
-  import     Convert a Postman/Bruno collection, curl command, or HAR export to .tspec.yaml.
+  import     Convert a Postman/Bruno/Insomnia collection, curl command, or HAR export.
   mock       Serve generated responses from an OpenAPI spec (local, offline).
   serve      Open the local web UI for a collection (executes requests server-side).
 `;

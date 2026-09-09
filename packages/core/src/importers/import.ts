@@ -4,6 +4,7 @@ import { parse } from "../format";
 import { walkDirSafe } from "../workspace/walk";
 import { bruToRequest } from "./bru";
 import { type HarImportOptions, importHar } from "./har";
+import { importInsomnia } from "./insomnia";
 import { importPostman } from "./postman";
 import type { ImportedFile, ImportResult } from "./types";
 
@@ -25,6 +26,16 @@ export function importHarFile(file: string, opts: HarImportOptions = {}): Import
     throw new Error(`Failed to read HAR file: ${(e as Error).message}`);
   }
   return importHar(json, opts);
+}
+
+export function importInsomniaFile(file: string): ImportResult {
+  let json: unknown;
+  try {
+    json = JSON.parse(readFileSync(file, "utf8"));
+  } catch (e) {
+    throw new Error(`Failed to read Insomnia export: ${(e as Error).message}`);
+  }
+  return importInsomnia(json);
 }
 
 function findBruFiles(dir: string): string[] {
