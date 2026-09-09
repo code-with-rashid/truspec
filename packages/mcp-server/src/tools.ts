@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { dirname, relative, resolve } from "node:path";
+import { dirname, relative } from "node:path";
 import { CODEGEN_TARGETS, codegenTargetIds, generateCode } from "@truspec/core/codegen";
 import { collectionDocs } from "@truspec/core/docs";
 import { buildJsonSchemas, parse, SCHEMA_VERSION } from "@truspec/core/format";
@@ -36,6 +36,20 @@ export interface ToolContext {
  * `truspec_lint` reads that as permission. The CLI already exits 1 on the same mistyped path, and
  * `truspec_run_request` already errors; the rest of the agent surface owes the same answer.
  */
+/**
+ * Resolve a path argument against the workspace, refusing one that escapes it.
+ *
+ * Every path this server acts on comes from a model, not from a person at a shell. The workspace
+ * is what the user pointed the server at, so it is the boundary — the same one the write tools
+ * have always enforced with `confinePath`. Reading, running and specs were the half that did not:
+ * `truspec_run_collection {dir: "/"}` walked the whole filesystem and sent every request file it
+ * found anywhere on it. A collection genuinely spread across a monorepo is served by pointing the
+ * server at the repo root rather than at one package.
+ */
+export function workspacePath(ctx: ToolContext, path: string): string {
+  return confinePath(ctx.cwd, path);
+}
+
 function requireDir(abs: string, dir: string): string {
   if (!existsSync(abs)) throw new Error(`Directory not found: ${dir}`);
   if (!statSync(abs).isDirectory()) throw new Error(`Not a directory: ${dir}`);
@@ -43,7 +57,7 @@ function requireDir(abs: string, dir: string): string {
 }
 
 export function listCollections(ctx: ToolContext, dir = ".") {
-  const root = requireDir(resolve(ctx.cwd, dir), dir);
+  const root = requireDir(workspacePath(ctx, dir), dir);
   const files = discoverRequests(root);
   const requests: Array<Record<string, unknown>> = [];
   // One malformed file must NOT abort the whole listing — otherwise an agent/UI can't see any of
@@ -75,11 +89,11 @@ export function listCollections(ctx: ToolContext, dir = ".") {
 }
 
 export async function runRequestTool(ctx: ToolContext, path: string, env?: string) {
-  return runPath(resolve(ctx.cwd, path), { env, cwd: ctx.cwd, fetch: ctx.fetch });
+  return runPath(workspacePath(ctx, path), { env, cwd: ctx.cwd, fetch: ctx.fetch });
 }
 
 export async function runCollectionTool(ctx: ToolContext, dir: string, env?: string) {
-  return runPath(resolve(ctx.cwd, dir), { env, cwd: ctx.cwd, fetch: ctx.fetch });
+  return runPath(workspacePath(ctx, dir), { env, cwd: ctx.cwd, fetch: ctx.fetch });
 }
 
 /**
@@ -164,25 +178,25 @@ export function updateRequest(ctx: ToolContext, path: string, patch: Record<stri
 }
 
 export async function driftTool(ctx: ToolContext, dir: string, specPath: string, live?: string) {
-  const d = requireDir(resolve(ctx.cwd, dir), dir);
-  const s = resolve(ctx.cwd, specPath);
+  const d = requireDir(workspacePath(ctx, dir), dir);
+  const s = workspacePath(ctx, specPath);
   return live ? liveDriftReport(d, s, live, { fetch: ctx.fetch }) : driftReport(d, s);
 }
 
 export function coverageTool(ctx: ToolContext, dir: string, specPath: string, minPercent = 0) {
-  const abs = requireDir(resolve(ctx.cwd, dir), dir);
-  return coverageReport(abs, resolve(ctx.cwd, specPath), minPercent);
+  const abs = requireDir(workspacePath(ctx, dir), dir);
+  return coverageReport(abs, workspacePath(ctx, specPath), minPercent);
 }
 
 /** Run the collection and validate each response against its OpenAPI response schema. */
 export async function contractTool(ctx: ToolContext, dir: string, specPath: string, env?: string) {
-  const abs = requireDir(resolve(ctx.cwd, dir), dir);
-  return contractReport(abs, resolve(ctx.cwd, specPath), { env, cwd: ctx.cwd, fetch: ctx.fetch });
+  const abs = requireDir(workspacePath(ctx, dir), dir);
+  return contractReport(abs, workspacePath(ctx, specPath), { env, cwd: ctx.cwd, fetch: ctx.fetch });
 }
 
 /** Scaffold a request stub for every operation in an OpenAPI spec (closes drift's "added" gap). */
 export function scaffoldFromSpec(ctx: ToolContext, specPath: string, outDir: string, baseUrlVar = "baseUrl") {
-  const specText = readFileSync(resolve(ctx.cwd, specPath), "utf8");
+  const specText = readFileSync(workspacePath(ctx, specPath), "utf8");
   const result = coreScaffold(specText, { baseUrlVar });
   const written = writeScaffold(result.files, confinePath(ctx.cwd, outDir));
   return {

@@ -74,9 +74,14 @@ files **validate against the schema before writing**, so an agent can't land a m
 
 Notes:
 
-- **Writes are confined to the workspace.** `create`/`update`/`scaffold` resolve and
-  confine paths so an agent can't write outside the directory the server was launched in
-  (symlinks are followed and checked).
+- **Every path is confined to the workspace** — reads, runs and spec paths as well as
+  writes. A path that resolves outside the directory the server was launched in is refused
+  with `Path escapes the workspace: <path>` (symlinks are followed and checked). If your
+  collection and its spec live in different packages of a monorepo, launch the server at the
+  repo root rather than inside one package.
+- **A directory that does not exist is an error, not an empty report.** `lint`, `docs`,
+  `coverage`, `drift`, `contract`, `list_collections` and `environments` refuse a path that
+  names nothing rather than answering `ok: true` about it.
 - **The mock is stateful per server instance.** `truspec_mock_start` runs one mock at a
   time; calling it again while one is running reports the existing URL. Omit `port` to get
   an ephemeral free port. `truspec_mock_stop` tears it down.

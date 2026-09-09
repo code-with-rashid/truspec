@@ -16,6 +16,7 @@ import {
   createRequest,
   driftTool,
   listCollections,
+  runCollectionTool,
   runRequestTool,
   scaffoldFromSpec,
   updateRequest,
@@ -110,7 +111,10 @@ describe("mcp tools", () => {
   it("scaffolds requests from a spec", () => {
     const dir = mkdtempSync(join(tmpdir(), "truspec-scaffold-"));
     try {
-      const r = scaffoldFromSpec({ cwd: dir }, resolve(repoRoot, "examples/petstore/openapi.yaml"), "api");
+      // The spec lives in the workspace: every path this server is given comes from a model, and
+      // is confined to the directory the server was started in — reads and runs included.
+      writeFileSync(join(dir, "openapi.yaml"), readFileSync(resolve(repoRoot, "examples/petstore/openapi.yaml"), "utf8"));
+      const r = scaffoldFromSpec({ cwd: dir }, "openapi.yaml", "api");
       expect(r.created).toBe(3);
       expect(readFileSync(join(dir, "api", "getpetbyid.tspec.yaml"), "utf8")).toMatch(
         /\{\{baseUrl\}\}\/pets\/\{\{id\}\}/,
@@ -317,5 +321,40 @@ describe("a directory that is not there", () => {
   it("says so specifically when the path is a file, not a directory", () => {
     writeFileSync(join(dir, "a.txt"), "x");
     expect(() => lintTool(ctx, "a.txt")).toThrow(/Not a directory: a.txt/);
+  });
+});
+
+describe("the workspace is the boundary, for reads and runs too", () => {
+  // The write tools have always confined; reading, running and spec paths did not.
+  // `truspec_run_collection {dir: "/"}` walked the whole filesystem and sent every request file it
+  // found on it. Every path here comes from a model, not from a person at a shell.
+  const base = mkdtempSync(join(tmpdir(), "truspec-mcp-escape-"));
+  const ws = join(base, "workspace");
+  const outside = join(base, "elsewhere");
+  const ctx = { cwd: ws };
+
+  mkdirSync(ws, { recursive: true });
+  mkdirSync(outside, { recursive: true });
+  const REQ = 'tspec: "0.1"\nname: Out\nmethod: GET\nurl: "http://127.0.0.1:1/x"\nassertions: []\n';
+  writeFileSync(join(outside, "out.tspec.yaml"), REQ);
+  writeFileSync(join(outside, "openapi.yaml"), 'openapi: 3.0.3\ninfo: { title: X, version: "1" }\npaths: {}\n');
+
+  it("refuses to run a request file outside it", async () => {
+    await expect(runRequestTool(ctx, "../elsewhere/out.tspec.yaml")).rejects.toThrow(/escapes the workspace/);
+  });
+
+  it("refuses to run a collection outside it", async () => {
+    await expect(runCollectionTool(ctx, "../elsewhere")).rejects.toThrow(/escapes the workspace/);
+  });
+
+  it("refuses a spec outside it", () => {
+    expect(() => scaffoldFromSpec(ctx, "../elsewhere/openapi.yaml", "api")).toThrow(/escapes the workspace/);
+    expect(() => coverageTool(ctx, ".", "../elsewhere/openapi.yaml")).toThrow(/escapes the workspace/);
+  });
+
+  it("still runs what is inside it", async () => {
+    writeFileSync(join(ws, "in.tspec.yaml"), REQ);
+    const r = await runRequestTool(ctx, "in.tspec.yaml");
+    expect(r.results.length).toBe(1);
   });
 });

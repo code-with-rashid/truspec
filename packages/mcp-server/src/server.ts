@@ -1,5 +1,4 @@
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { type MockServerHandle, startMockServer } from "@truspec/core/mock";
 import { z } from "zod";
@@ -204,7 +203,7 @@ export function createServer(ctx: ServerContext = {}): McpServer {
     },
     async ({ spec, port, delay, validate }) => {
       if (mock) return json({ alreadyRunning: true, url: mock.url, routes: mock.routes });
-      const specText = readFileSync(resolve(c.cwd, spec), "utf8");
+      const specText = readFileSync(tools.workspacePath(c, spec), "utf8");
       mock = await startMockServer(specText, { port: port ?? 0, delayMs: delay, validate });
       return json({ started: true, url: mock.url, routes: mock.routes });
     },

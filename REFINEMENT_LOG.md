@@ -1860,3 +1860,45 @@ footnote in this one.
 
 **Verification.** 932 unit tests (9 new), coverage 95.81% lines / 87.63% branches / 96.24%
 functions, typecheck 8/8, `lint examples --strict` clean, JSON Schema unchanged.
+
+### 56 — the workspace boundary that half the agent surface enforced
+
+**The inconsistency iteration 55 flagged.** Every write tool confines its path to the directory the
+MCP server was launched in — `create`, `update`, `delete`, `scaffold`'s output, every importer's
+output. Reading, running, and every spec path did not: they resolved against `cwd` and went
+wherever they were pointed.
+
+```
+truspec_run_request   {path: "../../../etc/hosts"}   -> read it, reported it by absolute path
+truspec_run_collection {dir: "/"}                    -> walks the entire filesystem, and sends
+                                                        every .tspec.yaml found anywhere on it
+```
+
+The second is the one that matters. `run` is the side-effecting tool: it makes network requests,
+resolves secrets out of the environment into them, and hands the responses back to the model. A
+request file the user never wrote, sitting anywhere on the machine, was reachable.
+
+**What I checked before fixing.** Whether a pre-request script from such a file could reach the
+filesystem — it cannot; the vm context exposes only `tr`, and `require` is undefined there. So the
+exposure is "sends requests the user did not author and reports what came back", not arbitrary
+code execution. Worth fixing, and worth stating accurately.
+
+**The rule, now uniform:** every path an MCP tool acts on is confined to the workspace, because
+every one of them comes from a model rather than from a person at a shell — the same boundary
+`confinePath` has always drawn for writes, extended to the other half.
+
+**The cost, and why I took it.** This does break one real layout: a monorepo whose collection and
+OpenAPI spec live in different packages, addressed as `../shared/openapi.yaml`. The answer is to
+launch the server at the repo root, which is where the workspace root already resolves to. I chose
+the rule that can be stated in one sentence over a per-argument split (writes confined, specs not)
+that nobody could predict — and the refusal names itself: `Path escapes the workspace: <path>`, so
+an agent that hits it learns the boundary at the moment it matters. Documented in `docs/mcp.md`,
+including the monorepo escape hatch.
+
+One existing test had to change: it scaffolded from `examples/petstore/openapi.yaml` into a temp
+cwd — an artifact of the test setup rather than a user pattern. The spec now lives in the workspace
+under test, which is also a more honest fixture.
+
+**Verification.** 936 unit tests (4 new pinning the boundary, including one proving what is
+*inside* still runs), coverage 95.85% lines / 87.64% branches / 96.47% functions, typecheck 8/8,
+docs site builds.
