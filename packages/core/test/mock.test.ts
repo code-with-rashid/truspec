@@ -45,8 +45,47 @@ describe("mock responder", () => {
     ]);
     expect(responder.respond("POST", "/pets")?.status).toBe(201);
   });
-  it("misses unknown routes", () => {
-    expect(responder.respond("DELETE", "/pets/1")).toBeUndefined();
+  it("misses a path the spec does not define at all", () => {
+    expect(responder.respond("GET", "/nothing-here")).toBeUndefined();
+  });
+
+  it("answers 405 with Allow for a path it knows, on a method it does not", () => {
+    // `/pets/1` is not an unknown route — only DELETE on it is. Answering 404 reads as "wrong
+    // URL" and sends the reader looking in the wrong place.
+    const res = responder.respond("DELETE", "/pets/1");
+    expect(res?.status).toBe(405);
+    expect(res?.headers.allow).toBe("GET, HEAD");
+    expect(JSON.parse(res?.body ?? "{}")).toEqual({
+      error: "DELETE is not defined for /pets/1",
+      allow: ["GET", "HEAD"],
+    });
+  });
+
+  it("serves HEAD from the GET route, with GET's headers and no body", () => {
+    // RFC 9110: HEAD is GET without the body. Specs almost never declare it, so a mock that only
+    // matches declared methods 404s the existence check clients make before a GET.
+    const get = responder.respond("GET", "/pets/1");
+    const head = responder.respond("HEAD", "/pets/1");
+    expect(head?.status).toBe(get?.status);
+    expect(head?.headers["content-type"]).toBe(get?.headers["content-type"]);
+    expect(head?.body).toBe("");
+    // The length GET would have sent, not the length of the empty body.
+    expect(head?.headers["content-length"]).toBe(String(new TextEncoder().encode(get?.body ?? "").length));
+  });
+
+  it("prefers an explicitly declared HEAD route over the GET fallback", () => {
+    const declared = createMockResponder(
+      [
+        "openapi: 3.0.3",
+        'info: { title: T, version: "1" }',
+        "paths:",
+        "  /thing:",
+        '    get: { responses: { "200": { description: ok } } }',
+        '    head: { responses: { "204": { description: no content } } }',
+        "",
+      ].join("\n"),
+    );
+    expect(declared.respond("HEAD", "/thing")?.status).toBe(204);
   });
 });
 

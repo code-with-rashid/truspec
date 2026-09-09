@@ -642,7 +642,10 @@ truspec mock --spec <openapi> [--port <n>] [--delay <ms>] [--validate]
 | `--delay <ms>` | | Artificial response latency, in milliseconds. |
 | `--validate` | | Validate incoming requests against the spec (responds `400` on mismatch). |
 
-The server runs until interrupted (Ctrl+C). Routes that aren't in the spec return `404`.
+The server runs until interrupted (Ctrl+C). A path the spec doesn't define returns `404`; a path
+it does define, asked with a method it doesn't, returns `405` with an `Allow` header listing the
+methods that are defined. `HEAD` is served from the matching `GET` operation — same status and
+headers, no body — so you don't have to declare it in the spec.
 
 ```bash
 truspec mock --spec openapi.yaml                  # http://127.0.0.1:4000

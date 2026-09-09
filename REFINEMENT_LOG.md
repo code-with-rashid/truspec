@@ -1186,3 +1186,41 @@ must never read as "it held".
 **Verification.** 827 unit tests, 97 e2e, coverage 95.70% lines / 87.75% branches / 96.61%
 functions, typecheck 8/8, dogfood gates clean. The cross-platform result is by definition not
 verifiable here — that is what the new job is for, and I expect to be fixing what it finds.
+
+### 39 — a mock that said "wrong URL" when it meant "wrong method"
+
+**Gap.** The mock server had never been examined by this campaign, so I probed it rather than read
+it: nine requests against the blog example, covering the cases a real client sends.
+
+Two answers were wrong, both in the same way — the mock only matched methods the spec declares
+explicitly, and treated everything else as a missing route.
+
+`HEAD /posts` returned **404**, on a path it serves happily via GET. HEAD is GET without the body
+(RFC 9110 9.3.2); specs almost never declare it, and clients routinely send it as an existence
+check before a GET. Worse for this product specifically: `method: HEAD` is valid in a `.tspec.yaml`,
+so you could write a HEAD request that the tool's own mock could never serve.
+
+`DELETE /posts` returned **404 "No mock for DELETE /posts"** — for a path the spec very much
+defines. A 404 reads as "you typed the URL wrong" and sends the reader looking in the wrong place,
+when the actual answer is "that path exists; the spec doesn't define DELETE on it".
+
+**Change.** HEAD now falls back to the matching GET route, returning GET's status and headers with
+an empty body and a `content-length` reporting what GET *would* have sent — and an explicitly
+declared HEAD operation still wins over the fallback. A known path asked with an undefined method
+now answers **405** with an `Allow` header (and the same list in the JSON body) naming what the
+spec does define. A 404 now means what it should: the path itself matched nothing.
+
+Both live in the responder rather than the HTTP server, so every consumer gets them — including the
+web UI's mock view, which drives the same engine.
+
+**A test that asserted the bug.** `mock.test.ts` had `it("misses unknown routes")` asserting
+`respond("DELETE", "/pets/1")` is `undefined`. Its own name gives away the confusion: `/pets/1` is
+not an unknown route, only DELETE on it is. Replaced with an honest unknown-path case plus tests
+for the two corrected behaviours and for declared-HEAD precedence.
+
+**Verification.** 830 unit tests, 97 e2e, coverage 95.72% lines / 87.79% branches / 96.62%
+functions, typecheck 8/8, dogfood gates clean. Re-probed over real HTTP: HEAD's `content-length`
+(64) matches GET's body byte-for-byte and `Allow: GET, HEAD, POST` is correct. Three docs
+(`cli.md`, `mocking.md`, `faq.md`) each stated the old "routes not in the spec return 404" rule —
+the FAQ entry was titled "The mock returns 404 for a path that's in my spec", which was describing
+this bug as if it were expected behaviour.

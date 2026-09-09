@@ -160,8 +160,9 @@ target); mutating operations are reported as skipped, not probed. See
 ### The mock returns 404 for a path that's in my spec
 
 The mock matches operations from the spec's `paths`. Check the path template matches
-exactly (including parameter braces) and the method is supported. Routes not defined in the
-spec return `404`.
+exactly (including parameter braces). If the path is right but the method isn't defined for it,
+you'll get `405` with an `Allow` header naming the methods that are — a `404` really does mean
+the path itself matched nothing.
 
 ### "Web UI not available — build it with `pnpm --filter @truspec/web build`."
 
