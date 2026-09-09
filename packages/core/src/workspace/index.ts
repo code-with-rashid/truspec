@@ -6,3 +6,4 @@ export * from "./run";
 export * from "./prepare";
 export * from "./init";
 export * from "./data";
+export * from "./watch";

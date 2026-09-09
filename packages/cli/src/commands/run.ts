@@ -1,5 +1,5 @@
 import { parseArgs } from "node:util";
-import { runPath, type WorkspaceRunResult } from "@truspec/core/workspace";
+import { runPath, watchWorkspace, type WorkspaceRunResult } from "@truspec/core/workspace";
 import { formatHuman, formatJson, formatJunit } from "../output";
 import { formatHtml } from "../report-html";
 import { type CommandDeps, emit, num, resolveDeps } from "./deps";
@@ -23,6 +23,7 @@ export async function runCommand(argv: string[], deps: Partial<CommandDeps> = {}
     "no-cookies": { type: "boolean" },
     data: { type: "string", short: "d" },
     repeat: { type: "string" },
+    watch: { type: "boolean", short: "w" },
   } as const;
 
   let values: {
@@ -40,6 +41,7 @@ export async function runCommand(argv: string[], deps: Partial<CommandDeps> = {}
     "no-cookies"?: boolean;
     data?: string;
     repeat?: string;
+    watch?: boolean;
   };
   let positionals: string[];
   try {
@@ -71,56 +73,84 @@ export async function runCommand(argv: string[], deps: Partial<CommandDeps> = {}
     return 2;
   }
 
-  let result: WorkspaceRunResult;
-  try {
-    result = await runPath(target, {
-      env: values.env,
-      spec: values.spec,
-      cwd: d.cwd,
-      fetch: d.fetch,
-      now: d.now,
-      processEnv: d.processEnv,
-      timeoutMs: num(values.timeout),
-      vars: overrides,
-      grep: values.grep,
-      tags: values.tag,
-      bail: values.bail,
-      delayMs: num(values.delay),
-      cookies: !values["no-cookies"],
-      data: values.data,
-      repeat: num(values.repeat),
-    });
-  } catch (e) {
-    d.stderr(`Error: ${(e as Error).message}\n`);
-    return 1;
-  }
-
-  if (result.missingSecrets.length > 0) {
-    d.stderr(`Warning: unresolved secrets (set as env vars): ${result.missingSecrets.join(", ")}\n`);
-  }
-  // Finding ZERO requests is a failure, not a pass: `run` is a CI gate, and a green build when no
-  // request executed silently masks a misconfigured path, uncommitted files, or a bad glob — the
-  // worst kind of false-positive for a gate. (`[].every()` is `true`, so `result.ok` alone says
-  // "pass" here.) Industry test runners (jest, pytest, go test) fail on "no tests found" too.
-  const noRequests = result.results.length === 0;
-  if (noRequests) {
-    // Distinguish "nothing here" from "your filter matched nothing" — the fix differs, and a
-    // silently-empty filtered run is exactly the false-positive this gate exists to prevent.
-    d.stderr(
-      result.deselected
-        ? `Error: --grep/--tag matched none of the ${result.deselected} request(s) under "${target}".\n`
-        : `Error: no .tspec.yaml requests found under "${target}".\n`,
-    );
-  }
-
   const reporter = values.reporter ?? (values.json ? "json" : "human");
   if (!REPORTERS.includes(reporter as Reporter)) {
     d.stderr(`Unknown --reporter "${reporter}". Known: ${REPORTERS.join(", ")}.\n`);
     return 2;
   }
-  const text = render(reporter as Reporter, result, d.cwd);
-  emit(d, text, values.output);
-  return result.ok && !noRequests ? 0 : 1;
+
+  /** One pass: run, report, and return the exit code it would produce on its own. */
+  const once = async (): Promise<number> => {
+    let result: WorkspaceRunResult;
+    try {
+      result = await runPath(target, {
+        env: values.env,
+        spec: values.spec,
+        cwd: d.cwd,
+        fetch: d.fetch,
+        now: d.now,
+        processEnv: d.processEnv,
+        timeoutMs: num(values.timeout),
+        vars: overrides,
+        grep: values.grep,
+        tags: values.tag,
+        bail: values.bail,
+        delayMs: num(values.delay),
+        cookies: !values["no-cookies"],
+        data: values.data,
+        repeat: num(values.repeat),
+      });
+    } catch (e) {
+      d.stderr(`Error: ${(e as Error).message}\n`);
+      return 1;
+    }
+
+    if (result.missingSecrets.length > 0) {
+      d.stderr(`Warning: unresolved secrets (set as env vars): ${result.missingSecrets.join(", ")}\n`);
+    }
+    // Finding ZERO requests is a failure, not a pass: `run` is a CI gate, and a green build when no
+    // request executed silently masks a misconfigured path, uncommitted files, or a bad glob — the
+    // worst kind of false-positive for a gate. (`[].every()` is `true`, so `result.ok` alone says
+    // "pass" here.) Industry test runners (jest, pytest, go test) fail on "no tests found" too.
+    const noRequests = result.results.length === 0;
+    if (noRequests) {
+      // Distinguish "nothing here" from "your filter matched nothing" — the fix differs, and a
+      // silently-empty filtered run is exactly the false-positive this gate exists to prevent.
+      d.stderr(
+        result.deselected
+          ? `Error: --grep/--tag matched none of the ${result.deselected} request(s) under "${target}".\n`
+          : `Error: no .tspec.yaml requests found under "${target}".\n`,
+      );
+    }
+
+    emit(d, render(reporter as Reporter, result, d.cwd), values.output);
+    return result.ok && !noRequests ? 0 : 1;
+  };
+
+  const code = await once();
+  if (!values.watch) return code;
+
+  // Watch mode never exits on a failing run — a red result is what you are iterating against. It
+  // ends only on Ctrl-C, which resolves this promise with the LAST run's code so a wrapped
+  // invocation still reports something meaningful.
+  d.stdout(`\nWatching for changes — Ctrl-C to stop.\n`);
+  return await new Promise<number>((resolveExit) => {
+    let last = code;
+    const stop = watchWorkspace(target, async () => {
+      d.stdout(`\n${"─".repeat(40)}\nchange detected — re-running\n`);
+      last = await once();
+    }, {
+      cwd: d.cwd,
+      onError: (e) => d.stderr(`Error: ${e instanceof Error ? e.message : String(e)}\n`),
+    });
+    const finish = (): void => {
+      stop();
+      process.off("SIGINT", finish);
+      d.stdout("\n");
+      resolveExit(last);
+    };
+    process.on("SIGINT", finish);
+  });
 }
 
 const REPORTERS = ["human", "json", "junit", "html"] as const;

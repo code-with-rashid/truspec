@@ -504,3 +504,28 @@ its author uses.
 *from outside the request view* — and one asserting `?` stays inert while typing. Full e2e 86/86,
 unit 611, typecheck 8/8, build 5/5.
 
+### 18 — `truspec run --watch`
+
+**Gap.** No local loop. Because collections are plain files, a watcher is the natural companion to
+the format — and re-running by hand after every edit is the friction that keeps people in a GUI.
+
+**Change.** `--watch` re-runs on any change to a request, environment, `.env`, or spec under the
+collection. Three behaviors matter more than the watching:
+
+- **Debounce** — one editor save typically emits three filesystem events (temp file, rename,
+  chmod); without it, one save runs the collection three times.
+- **No overlap** — a change arriving *during* a run is remembered and fires exactly once when it
+  finishes. Otherwise a slow collection plus a fast typist queues runs faster than they complete.
+- **A throwing run doesn't end the watch.** Writing the test for this found a real bug: the
+  callback runs detached, so an error escaping it surfaced as an **unhandled rejection and would
+  have taken the process down** — the opposite of what a watcher is for, since a broken file is
+  precisely when you keep editing. Now caught and reported through an `onError` hook.
+
+`run` was refactored so one pass is a `once()` function reused by both modes, rather than
+duplicating the reporting and exit-code logic.
+
+**Verification.** 8 tests with an injected watcher *and* clock, so nothing depends on real
+filesystem events or real time: relevance filtering, which directories get watched, debouncing,
+the overlap guard, teardown ignoring an armed timer and a late event, and the throwing-run case.
+619 unit tests, typecheck 8/8, build 5/5.
+

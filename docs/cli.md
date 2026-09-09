@@ -97,6 +97,7 @@ truspec run <path> [--env <name>] [--spec <openapi>] [--var k=v] [--grep <re>] [
 | `--no-cookies` | | Send no cookies. By default a jar is shared across the run. |
 | `--data <file>` | `-d` | Run the selection once per row of a CSV or JSON dataset. |
 | `--repeat <n>` | | Run the selection `n` times (ignored when `--data` is given). |
+| `--watch` | `-w` | Re-run whenever a request, environment, `.env` or spec file changes. |
 | `--json` | | Shorthand for `--reporter json`. |
 | `--reporter <fmt>` | | Output format: `human` (default), `json`, `junit`, or `html`. |
 | `--output <file>` | `-o` | Write the report to a file instead of stdout. |
@@ -129,6 +130,18 @@ rows collapse into one testcase and a reporter shows only the last outcome.
 
 An empty or missing dataset is an error, not a pass: a gate that never exercised the data it was
 given has not passed.
+
+**Watch mode.** `--watch` re-runs on every change to a request, environment, `.env`, or spec file
+under the collection — the loop the plain-text format makes natural:
+
+```bash
+truspec run ./api --env local --watch
+```
+
+A burst of filesystem events from one editor save is debounced into a single run, a change arriving
+*during* a run is coalesced into exactly one follow-up (rather than queueing runs faster than they
+complete), and a run that throws is reported without ending the watch — a broken file is precisely
+when you keep editing. Watch mode exits only on Ctrl-C, returning the last run's exit code.
 
 **Cookies.** A run shares one in-memory cookie jar, so a login request's session cookie is sent by
 the requests that follow — including cookies set on a redirect hop. The jar is never written to

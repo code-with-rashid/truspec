@@ -18,7 +18,8 @@ const HELP = `truspec ${VERSION} — local-first, spec-synced, agent-native API 
 Usage:
   truspec init [<dir>] [--spec <openapi>] [--dir <requests>] [--base-url <url>] [--env <name>]
   truspec run <path> [--env <name>] [--spec <openapi>] [--var k=v] [--grep <re>] [--tag <name>]
-                     [--bail] [--delay <ms>] [--json | --reporter <r>] [--output <file>] [--timeout <ms>]
+                     [--bail] [--delay <ms>] [--watch]
+                     [--data <file>] [--repeat <n>] [--json | --reporter <r>] [--output <file>] [--timeout <ms>]
   truspec drift --spec <openapi> [<dir>] [--live <baseUrl>] [--json]
   truspec coverage --spec <openapi> [<dir>] [--min <percent>] [--json]
   truspec contract --spec <openapi> [<dir>] [--env <name>] [--json]
