@@ -980,3 +980,31 @@ green on the fixed tree, and on reintroducing the original byte it reports
 **Verification.** 801 unit tests (the existing oauth and cookie suites cover the key-building paths
 and are unchanged), coverage 95.59% lines / 87.64% branches / 96.56% functions, typecheck 8/8,
 dogfood lint + deterministic-docs + schema gates clean.
+
+### 33 — the editor could tell you nothing at all
+
+**Gap.** The VS Code extension had not been touched by this campaign, so it still behaved the way
+the rest of the product did before iterations 25 and 27.
+
+Its CodeLens is registered for `**/*.tspec.yaml` — which matches `folder.tspec.yaml`, a *folder
+config*, not a request. So every folder config in the workspace offered a **▶ Run** button. Clicking
+it calls `runPath` on that file, which parses it as a request and fails:
+`url: Required`, `Unrecognized key(s) in object: 'baseUrl'`. Confirmed by running it directly.
+
+And then the panel threw that away. `renderResults` only ever rendered `result.results`, so a run
+with zero rows and one parse error displayed **"no requests. · 0 passed · 0 failed"** — a button
+that cannot work, wired to a panel that says nothing went wrong. `missingSecrets` was dropped the
+same way, so a run failing on an unresolved secret showed only unexplained auth errors.
+
+**Change.** Three things, in the order a user meets them: the ▶ Run lens is no longer offered on a
+`folder.tspec.yaml`; invoking the command on one anyway now says *"folder configuration, not a
+request — use Run collection"* rather than running; and the results panel renders what the run
+actually reported — a "could not read" section naming each unparseable file with its error, an
+"unresolved secrets" section, and an `N unreadable` count in the summary. "no requests." is now
+reserved for a run that genuinely had nothing to report.
+
+**Verification.** 6 new tests. The two renderer tests were checked against the unfixed file first
+and both fail there, so neither is vacuous. 806 unit tests, coverage 95.60% lines / 87.72% branches
+/ 96.56% functions, typecheck 8/8, dogfood lint + deterministic-docs + schema gates clean. The
+extension README and `docs/editors.md` both claimed the lens appears on *every* `.tspec.yaml`;
+both now say what it actually does.

@@ -35,6 +35,46 @@ describe("vscode results rendering", () => {
     expect(html).toContain("◢◤ TruSpec");
   });
 
+  it("names the files that could not be read, instead of an empty panel", () => {
+    // Running a `folder.tspec.yaml` — which the CodeLens used to offer — yields zero result rows
+    // and one parse error. The panel used to render that as "no requests · 0 passed · 0 failed".
+    const result: WorkspaceRunResult = {
+      results: [],
+      passed: 0,
+      failed: 0,
+      skipped: 0,
+      ok: false,
+      missingSecrets: [],
+      parseErrors: [{ file: "/w/folder.tspec.yaml", error: "Invalid TruSpec request:\n  url: Required" }],
+    };
+    const html = renderResults(result);
+    expect(html).toContain("could not read · 1");
+    expect(html).toContain("/w/folder.tspec.yaml");
+    expect(html).toContain("url: Required");
+    expect(html).toContain("1 unreadable");
+    expect(html).not.toContain("no requests.");
+  });
+
+  it("names unresolved secrets, which otherwise fail as unexplained auth errors", () => {
+    const result: WorkspaceRunResult = {
+      results: [],
+      passed: 0,
+      failed: 0,
+      skipped: 0,
+      ok: false,
+      missingSecrets: ["apiToken"],
+    };
+    const html = renderResults(result);
+    expect(html).toContain("unresolved secrets · 1");
+    expect(html).toContain("apiToken");
+  });
+
+  it("still says 'no requests.' when there is genuinely nothing to report", () => {
+    const html = renderResults({ results: [], passed: 0, failed: 0, skipped: 0, ok: true, missingSecrets: [] });
+    expect(html).toContain("no requests.");
+    expect(html).not.toContain("unreadable");
+  });
+
   it("renders drift and coverage", () => {
     const drift: DriftReport = {
       specOperations: 4,
