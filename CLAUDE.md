@@ -149,7 +149,9 @@ script:
 
 Runs in a Node vm context exposing `tr.response` ({ status, headers, bodyText, json }),
 `tr.set(name, value)`, `tr.expect(cond, msg)`, and `tr.vars`. **Neither script is a security
-sandbox** — scripts are authored in your collection; only run collections you trust.
+sandbox** — a script can reach the host realm and has the same access as the `truspec` process
+itself (every environment variable, every readable file); `truspec lint` flags requests that carry
+one (`script-runs-unsandboxed`) — scripts are authored in your collection; only run collections you trust.
 
 ### Environment (`environments/<name>.env.yaml`)
 

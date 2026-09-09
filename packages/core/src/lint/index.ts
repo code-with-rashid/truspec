@@ -51,6 +51,7 @@ export const LINT_RULES: Array<{ id: string; severity: Severity; description: st
   { id: "body-on-bodiless-method", severity: "error", description: "A GET or HEAD request carries a body, which the HTTP client refuses to send at all." },
   { id: "content-type-conflict", severity: "warning", description: "An explicit Content-Type contradicts the body's declared type, so the bytes are sent under the wrong label." },
   { id: "capture-never-used", severity: "warning", description: "A captured variable is referenced by no later request." },
+  { id: "script-runs-unsandboxed", severity: "warning", description: "The request carries a script, which runs with the same access as the truspec process itself." },
 ];
 
 /**
@@ -194,6 +195,23 @@ export function lintWorkspace(dir: string, opts: LintOptions = {}): LintReport {
       if (usedNames.has(name)) continue;
       add(path, "warning", "capture-never-used", `capture.${name} is referenced by no later request.`);
     }
+  }
+
+  // A `script:` block is not sandboxed — `docs/scripting.md` says so, and it is demonstrably true:
+  // a script can reach the host realm through any object handed into the vm context, and from
+  // there read every environment variable and file the user can. That is fine for a collection you
+  // wrote. It is worth seeing for one you just imported, were sent, or generated — which is
+  // exactly when nobody thinks to open the files. Surfacing it here makes an invisible risk a
+  // reviewable line in `truspec lint`.
+  for (const { path, req } of ordered) {
+    const which = [req.script?.pre ? "pre" : "", req.script?.post ? "post" : ""].filter(Boolean);
+    if (which.length === 0) continue;
+    add(
+      path,
+      "warning",
+      "script-runs-unsandboxed",
+      `script.${which.join(" and script.")} runs with the same access as the truspec process (no sandbox) — review it before running a collection you did not write.`,
+    );
   }
 
   const errors = findings.filter((f) => f.severity === "error").length;

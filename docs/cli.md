@@ -539,6 +539,7 @@ truspec lint [<dir>] [--strict] [--json] [--disable <rule>] [--output <file>] [-
 | `body-on-bodiless-method` | error | A `GET` or `HEAD` request carries a body. The HTTP client refuses to send it, so the request can never run. |
 | `content-type-conflict` | warning | An explicit `Content-Type` names a different format than `body.type`. The header wins, so the body is sent under the wrong label. (A *narrower* type of the same format — `application/vnd.api+json` for a JSON body — is fine and is not flagged.) |
 | `capture-never-used` | warning | A captured variable is referenced by no later request — usually a rename applied on only one side. |
+| `script-runs-unsandboxed` | warning | The request carries a `script`, which runs with the same access as the `truspec` process — review it before running a collection you did not write. See [Scripting](./scripting.md). |
 
 **Exit code:** `1` if any error was found (or with `--strict`, any warning); otherwise `0`.
 

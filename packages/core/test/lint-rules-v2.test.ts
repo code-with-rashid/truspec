@@ -116,3 +116,41 @@ describe("rule registry", () => {
     expect(report.ok).toBe(true); // the error is what made it not ok
   });
 });
+
+describe("script-runs-unsandboxed", () => {
+  const withScript = (name: string, script: string): string =>
+    `tspec: "0.1"\nname: ${name}\nmethod: GET\nurl: "{{baseUrl}}/x"\nscript: ${script}\nassertions: [ { type: status, equals: 200 } ]\n`;
+
+  it("names which script a request carries", () => {
+    // The point is reviewability after an import: a script has the same access as the process,
+    // so a collection you did not write deserves a line telling you to look.
+    write("pre.tspec.yaml", withScript("A", '{ pre: "tr.set(\'a\',1)" }'));
+    const pre = find("script-runs-unsandboxed");
+    expect(pre?.severity).toBe("warning");
+    expect(pre?.message).toContain("script.pre runs");
+    expect(pre?.message).toContain("same access as the truspec process");
+
+    rmSync(join(dir, "pre.tspec.yaml"));
+    write("post.tspec.yaml", withScript("B", '{ post: "tr.expect(true)" }'));
+    expect(find("script-runs-unsandboxed")?.message).toContain("script.post runs");
+
+    rmSync(join(dir, "post.tspec.yaml"));
+    write("both.tspec.yaml", withScript("C", '{ pre: "tr.set(\'a\',1)", post: "tr.expect(true)" }'));
+    expect(find("script-runs-unsandboxed")?.message).toContain("script.pre and script.post");
+  });
+
+  it("says nothing about a request with no script", () => {
+    write("plain.tspec.yaml", `tspec: "0.1"\nname: D\nmethod: GET\nurl: "{{baseUrl}}/x"\nassertions: [ { type: status, equals: 200 } ]\n`);
+    expect(rules()).not.toContain("script-runs-unsandboxed");
+  });
+
+  it("can be disabled like any other rule", () => {
+    write("pre.tspec.yaml", withScript("A", '{ pre: "tr.set(\'a\',1)" }'));
+    const report = lintWorkspace(dir, { disable: ["script-runs-unsandboxed"] });
+    expect(report.findings.some((f) => f.rule === "script-runs-unsandboxed")).toBe(false);
+  });
+
+  it("is listed in LINT_RULES, so `--list-rules` and the docs can stay in step", () => {
+    expect(LINT_RULES.some((r) => r.id === "script-runs-unsandboxed")).toBe(true);
+  });
+});

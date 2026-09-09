@@ -1509,3 +1509,46 @@ the change — that the behaviour is **off by default**, so every other field st
 text. Plus end-to-end checks that a resolved request really puts `2` and not `"2"` on the wire.
 890 unit tests, 97 e2e, coverage 95.71% lines / 87.44% branches / 96.18% functions, typecheck 8/8,
 dogfood gates clean.
+
+### 47 — what a script can actually reach, made visible
+
+**Gap.** Probed the scripting sandbox. Error handling is genuinely good: a pre-script that throws,
+references an undefined name, or fails to parse each fails the request **without sending it**, with
+the real message (`Pre-request script error: boom in pre`). A failing `tr.expect` in a post-script
+lands as a normal assertion failure. Nothing to fix there.
+
+The interesting part is the isolation. The obvious globals are absent — inside a script, `process`,
+`require` and `fetch` are all `undefined`, and the context's own
+`Function("return typeof process")()` correctly answers `undefined`. But every object handed into
+the context is a bridge out of it: `tr.constructor.constructor("return typeof process")()` returns
+`object`. That is the host realm. A script therefore has the same access as the `truspec` process
+itself — every environment variable, every resolved secret, every file the user can read or write.
+
+**This is documented, and I did not treat it as a hidden bug.** `docs/scripting.md` and `CLAUDE.md`
+both say a `vm` context is not a security boundary; Node's own documentation says the same. I
+deliberately did **not** try to harden it: `vm` is not a sandbox, a partial fix that blocks the one
+probe I happened to write would create false confidence, and claiming a sandbox I cannot deliver
+would be worse than the honest warning that exists.
+
+**What was missing was visibility, at the moment it matters.** The trust model assumes you wrote
+the collection. This product's headline features include importing Postman, Bruno, Insomnia and HAR
+collections — files you were handed, downloaded, or generated. Nobody opens every file after an
+import, and nothing told them a `script:` block was in there.
+
+**Change.** A twelfth lint rule, `script-runs-unsandboxed`: a warning on every request carrying a
+script, naming which (`script.pre`, `script.post`, or both) and why it matters. `truspec lint` on a
+freshly imported collection now lists exactly what to read before running it — an invisible risk
+turned into a reviewable line, using the machinery this project already has for secrets and dead
+assertions.
+
+The docs were also vaguer than the facts. "Not a security sandbox" is true but abstract; it now
+states concretely that the obvious globals are absent, that a script can still reach the host realm
+through an object passed into the context, and precisely what that grants — and that the ~1s
+timeout bounds a runaway loop, not access.
+
+**Verification.** 4 tests: each of the three script shapes named correctly, silence for a request
+with no script, the rule disable-able like any other, and its presence in `LINT_RULES` so
+`--list-rules` and the docs cannot drift. 894 unit tests, 97 e2e, coverage 95.71% lines / 87.44%
+branches / 96.18% functions, typecheck 8/8. The examples still pass `lint --strict` (the new rule
+would have broken that gate had any example carried a script — checked deliberately, since
+`--strict` fails on warnings).
