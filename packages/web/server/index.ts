@@ -2,6 +2,7 @@ import { createReadStream, existsSync, statSync } from "node:fs";
 import { createServer, type ServerResponse } from "node:http";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { closeHttpServer } from "@truspec/core/http";
 import { type ApiContext, handleApi } from "./api";
 
 /** Cap request bodies so a runaway/hostile client can't exhaust memory. */
@@ -216,7 +217,7 @@ export async function startWebServer(opts: WebServerOptions = {}): Promise<WebSe
         await ctx.mock.handle.close();
         ctx.mock = undefined;
       }
-      await new Promise<void>((r, j) => server.close((e) => (e ? j(e) : r())));
+      await closeHttpServer(server);
     },
   };
 }

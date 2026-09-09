@@ -5,7 +5,7 @@ import { expect, test } from "./fixtures";
 const withExtras = 'tspec: "0.1"\nname: Tagged\nmethod: GET\nurl: "{{baseUrl}}/pets/1"\ntags: [smoke, auth]\noptions: { timeoutMs: 5000, retries: 2, followRedirects: true }\nassertions: [ { type: status, equals: 200 } ]\n';
 
 test.describe("tags and transport options (real browser)", () => {
-  test("a request's tags are shown, addable and removable", async ({ page, app }) => {
+  test("a request's tags are shown, addable and removable", async ({ app, page }) => {
     // `truspec run --tag smoke` shipped long before the UI could show a tag, so the selection you
     // run in CI was invisible in the client you author in.
     writeFileSync(join(app.dir, "tagged.tspec.yaml"), withExtras);
@@ -29,7 +29,7 @@ test.describe("tags and transport options (real browser)", () => {
     expect(saved).not.toContain("auth");
   });
 
-  test("transport options are editable, and clearing them removes the block entirely", async ({ page, app }) => {
+  test("transport options are editable, and clearing them removes the block entirely", async ({ app, page }) => {
     writeFileSync(join(app.dir, "tagged.tspec.yaml"), withExtras);
     await page.goto(app.url);
     await page.getByText("Tagged", { exact: true }).first().click();
@@ -47,7 +47,7 @@ test.describe("tags and transport options (real browser)", () => {
     expect(readFileSync(join(app.dir, "tagged.tspec.yaml"), "utf8")).not.toContain("options");
   });
 
-  test("editing an unrelated field does not drop tags or options from the file", async ({ page, app }) => {
+  test("editing an unrelated field does not drop tags or options from the file", async ({ app, page }) => {
     // The save path spreads the draft, so these survive at runtime — but nothing asserted it, and
     // one 'tidy the type' change away it would silently delete both.
     writeFileSync(join(app.dir, "tagged.tspec.yaml"), withExtras);

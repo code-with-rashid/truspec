@@ -12,8 +12,20 @@
     "directory": "packages/core"
   },
   "bugs": "https://github.com/code-with-rashid/truspec/issues",
-  "keywords": ["api", "openapi", "http", "testing", "local-first", "drift", "coverage", "mock", "agent"],
-  "publishConfig": { "access": "public" },
+  "keywords": [
+    "api",
+    "openapi",
+    "http",
+    "testing",
+    "local-first",
+    "drift",
+    "coverage",
+    "mock",
+    "agent"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "sideEffects": false,
   "exports": {
     ".": {
@@ -64,9 +76,16 @@
       "types": "./dist/mock/index.d.ts",
       "import": "./dist/mock/index.js"
     },
+    "./http": {
+      "types": "./dist/http/index.d.ts",
+      "import": "./dist/http/index.js"
+    },
     "./schema/*": "./schema/*"
   },
-  "files": ["dist", "schema"],
+  "files": [
+    "dist",
+    "schema"
+  ],
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit",

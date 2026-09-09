@@ -24,6 +24,7 @@ packages/
     src/lint/        static checks over a collection (secrets, dead assertions, undeclared vars)
     src/docs/        collection -> deterministic Markdown documentation
     src/mock/        local mock server generated from a spec
+    src/http/        shared HTTP-server lifecycle (a shutdown that always terminates)
     schema/          PUBLISHED JSON Schema (generated; do not hand-edit)
   cli/           truspec — `run` / `drift` / `coverage` / `contract` / `gen` / `codegen` / `lint` / `docs` / `env` / `import` / `mock`
   mcp-server/    @truspec/mcp-server — 23 tools over the official MCP SDK
@@ -31,8 +32,8 @@ examples/        petstore + blog sample collections (+ openapi.yaml) for tests +
 ```
 
 Core modules are imported via subpaths: `@truspec/core/format`, `/runner`, `/workspace`,
-`/spec`, `/importers`, `/exporters`, `/codegen`, `/lint`, `/docs`, `/mock`. The filesystem/server modules (`workspace`, `spec`,
-`importers`, `mock`) are kept out of the browser-safe main entry on purpose.
+`/spec`, `/importers`, `/exporters`, `/codegen`, `/lint`, `/docs`, `/mock`, `/http`. The filesystem/server modules (`workspace`, `spec`,
+`importers`, `mock`, `http`) are kept out of the browser-safe main entry on purpose.
 
 ## File format (v0, schema version `0.1`)
 

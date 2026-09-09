@@ -37,6 +37,10 @@ export const test = base.extend<{ app: App }>({
     // mixed `C:\...\dist/client` (backslash root + forward-slash tail, as `${ROOT}/...` produces on
     // Windows) never matches, 403ing every asset request.
     const web = await startWebServer({ dir, port: 0, clientDir: join(ROOT, "packages", "web", "dist", "client") });
+    // Destructure fixtures as `{ app, page }`, not `{ page, app }`: Playwright tears down in reverse
+    // order of setup, so listing `page` first closes this server while the browser still holds
+    // sockets on it. The server survives that now (see `closeHttpServer`), but the browser-first
+    // order is still the one that shuts everything down cleanly.
     await use({ url: web.url, dir });
     await web.close();
     await new Promise((r) => mock.close(() => r(undefined)));

@@ -14,6 +14,7 @@ export default defineConfig({
     "src/jsonpath/index.ts",
     "src/docs/index.ts",
     "src/mock/index.ts",
+    "src/http/index.ts",
   ],
   format: ["esm"],
   dts: true,

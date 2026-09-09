@@ -911,3 +911,40 @@ list what is actually editable.
 **Verification.** 3 e2e tests (chips add/remove and round-trip to the file; options edited and
 cleared; the no-data-loss regression). 95 e2e passing including the full axe sweep, 795 unit tests,
 coverage 95.57% lines / 87.65% branches / 96.55% functions, typecheck 8/8, dogfood gates clean.
+
+### 31 — a shutdown that never finished, found by CI rather than by reading
+
+**Gap.** CI went red on three consecutive commits with two different symptoms: once an autocomplete
+assertion, twice `Tearing down "app" exceeded the test timeout of 30000ms` in `broken-file.spec.ts`.
+The full suite passed locally every time, twice over. The tempting reading is "CI is flaky" — and
+that reading is wrong.
+
+`server.close()` does not do what its name suggests. It stops accepting connections and sweeps the
+sockets that are idle *at that instant*, but it then waits, with no timeout, on any socket that is
+connected and has not yet sent a request. Chromium opens exactly those speculatively (preconnect),
+so a single open tab can make `close()` never resolve. Reproduced directly: connect a bare
+`net.Socket`, send nothing, call `close()` — it hangs indefinitely, on both the web server and the
+mock server.
+
+That is not only a test problem. The mock server's `close()` is what `/api/mock/stop` awaits, so
+the UI's stop button hangs on the same condition — and the single close-time sweep means even a
+socket that parks *after* close() (its response having just finished) holds shutdown open.
+
+**Why it surfaced now.** Playwright tears fixtures down in reverse order of setup. The 81 older
+specs destructure `{ app, page }`, so the browser closes first and the server never sees a live
+socket. The two specs added in iterations 27 and 30 wrote `{ page, app }` and so tore the server
+down first — exposing a latent defect that had been there the whole time, intermittently, because
+whether Chromium is holding an unused socket at that instant is a race.
+
+**Change.** A shared `closeHttpServer` (new server-only `@truspec/core/http` subpath, used by both
+servers): stop accepting work, retire sockets as they fall idle rather than once, give anything
+genuinely in flight a 1s grace, then destroy what is left. The promise is now guaranteed to settle.
+The two specs were also put back on the `{ app, page }` order, with a comment in `fixtures.ts`
+saying why — the fix makes the order survivable, but browser-first is still the right teardown.
+
+**Verification.** 5 unit tests, one per failure mode — the preconnect socket that caused this, a
+parked keep-alive socket, an in-flight response that must still complete, a double close, and a
+convergence assertion that shutdown returns as soon as the socket falls idle instead of sitting out
+the whole grace (which is what a single sweep did: 1007ms → 132ms). Both original repros now
+terminate. 800 unit tests, 95 e2e, coverage 95.59% lines / 87.64% branches / 96.56% functions,
+typecheck 8/8, dogfood lint + deterministic-docs + schema gates clean.

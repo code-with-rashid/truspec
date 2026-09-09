@@ -17,6 +17,7 @@ export default defineConfig({
       { find: "@truspec/core/jsonpath", replacement: core("jsonpath/index.ts") },
       { find: "@truspec/core/docs", replacement: core("docs/index.ts") },
       { find: "@truspec/core/mock", replacement: core("mock/index.ts") },
+      { find: "@truspec/core/http", replacement: core("http/index.ts") },
       { find: "@truspec/core/runner", replacement: core("runner/index.ts") },
       { find: "@truspec/core/format", replacement: core("format/index.ts") },
       { find: "@truspec/core", replacement: core("index.ts") },
