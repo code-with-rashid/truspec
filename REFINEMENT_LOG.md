@@ -3287,3 +3287,49 @@ multipart body still reports `multipart 0` — the type is a fact even when the 
 that an empty script string is not a script), 3 new Playwright tests, and the **full 120-test e2e
 suite green including the axe-core accessibility pass**. Coverage 95.90% lines / 87.87% branches /
 96.67% functions, typecheck 8/8.
+
+### 88 — the flow view drew the chain and refused to name it
+
+**Opened the Flow view on a three-step chain** — log in, capture `token` and `userId`, then two
+requests that use them — and this is what it showed:
+
+```
+     1  POST  Log in                                            not run
+ (   2  GET   Get me     {{baseUrl}}/users/{{userId}}            not run
+     3  GET   List things                                       not run
+```
+
+A stray squiggle on the left, and three steps that look like an unrelated list. **The one question
+this view exists to answer** — which request feeds which, and with what — was not on screen.
+
+**The data was all there.** `buildEdges` already computes every dependency, correctly: the
+*nearest preceding* producer wins, matching how the runner forward-chains `vars`, and the edges are
+lane-packed git-log style so they never overlap. Three edges were being drawn. They were:
+
+- **1.5px of `--line-2`** at 0.6 opacity — literally panel-border colour, on a panel.
+- **Labelled only in an SVG `<title>`** — so the variable name required hovering a hairline inside
+  an `aria-hidden` element.
+- **Legible only after selecting a step**, which highlights its edges in lime. Before that, nothing.
+
+**Now:**
+
+```
+     1  POST  Log in                                              not run
+ (   2  GET   Get me                        ↳ userId  token       not run
+     3  GET   List things                   ↳ token               not run
+```
+
+Each step names what it takes from an earlier one, with the producing request in the title
+(`{{userId}} from Log in`) since the chips cannot fit it. The edge stroke moved from border colour
+to `--dim`, so the rail reads as a graph rather than as decoration.
+
+**What I deliberately did not do.** The obvious fix is to label the curves themselves — that is the
+honest graph metaphor. The rail is `RAIL_PAD * 2 + lanes * LANE_W` = **38px** for two lanes, and
+widening it enough for text would push labels into collision the moment a collection has several
+overlapping chains, which is exactly when the view matters most. The step card has room, is already
+where the eye is, and scales.
+
+**Verification.** 4 new Playwright tests: the chips appear on the consumers and not on the
+producer, the title names the producing request, the three edges are still drawn (the change adds
+naming, it does not replace the rail), and a collection of independent steps says nothing at all.
+1157 unit tests, typecheck 8/8, full e2e suite green.

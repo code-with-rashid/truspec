@@ -2618,9 +2618,11 @@ select:focus {
 }
 .edge {
   fill: none;
-  stroke: var(--line-2);
+  /* Was `--line-2` at 0.6 — the same colour as a panel border, which made the chain read as a
+     stray squiggle rather than as the dependency graph it is. */
+  stroke: var(--dim);
   stroke-width: 1.5;
-  opacity: 0.6;
+  opacity: 0.5;
 }
 .edge.broken {
   stroke: var(--red);
@@ -3287,4 +3289,32 @@ select:focus {
 .tab-badge.warn {
   color: var(--amber);
   border-color: color-mix(in srgb, var(--amber) 45%, transparent);
+}
+
+/* What a flow step takes from an earlier one. The rail draws the edges; this names what travels
+   along them, so the chain is readable without selecting a step or hovering a 1.5px curve. */
+.flow-needs {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  max-width: 260px;
+  overflow: hidden;
+}
+.flow-needs-arrow {
+  color: var(--dim);
+  font-size: 12px;
+}
+.flow-needs-var {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--panel-3);
+  border: 1px solid var(--line-2);
+  color: var(--dim);
+  white-space: nowrap;
+}
+.flow-node.active .flow-needs-var {
+  color: var(--text);
 }
