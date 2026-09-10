@@ -158,7 +158,9 @@ interface SpecOpRow {
   key: string;
   method: string;
   path: string;
-  badge: "tested" | "changed" | "untested";
+  badge: "tested" | "changed" | "untested" | "unasserted";
+  /** For an `unasserted` row: the request that exists but checks nothing. */
+  request?: string;
 }
 
 /** True when the event came from somewhere the user is typing, where a bare `?` is just a `?`. */
@@ -1198,6 +1200,20 @@ export function App() {
 
   const driftCount = driftRep ? driftRep.added.length + driftRep.removed.length + driftRep.changed.length : 0;
 
+  /**
+   * Operations that *have* a request which asserts nothing, by key.
+   *
+   * "No request at all" and "a request that checks nothing" are both uncovered, and the two have
+   * opposite fixes — write one, versus add assertions to the one you have. The report has told
+   * them apart for a while and the CLI prints the difference; this view rendered both as a flat
+   * `UNTESTED`, and then offered "create a request" as the only remedy — which is wrong advice for
+   * an operation whose request is sitting in the sidebar.
+   */
+  const unasserted = useMemo(
+    () => new Map((covRep?.unasserted ?? []).map((u) => [u.op, u])),
+    [covRep],
+  );
+
   const specOps: SpecOpRow[] = useMemo(() => {
     if (!covRep) return [];
     const changedKeys = new Set((driftRep?.changed ?? []).map((c) => c.split(":")[0]));
@@ -1211,11 +1227,18 @@ export function App() {
         const method = spaceAt === -1 ? key : key.slice(0, spaceAt);
         const path = spaceAt === -1 ? "" : key.slice(spaceAt + 1);
         const changed = changedKeys.has(key);
-        const badge: SpecOpRow["badge"] = covered ? (changed ? "changed" : "tested") : "untested";
-        return { key, method, path, badge };
+        const silent = unasserted.get(key);
+        const badge: SpecOpRow["badge"] = covered
+          ? changed
+            ? "changed"
+            : "tested"
+          : silent
+            ? "unasserted"
+            : "untested";
+        return { key, method, path, badge, ...(silent ? { request: silent.request } : {}) };
       })
       .sort((a, b) => a.key.localeCompare(b.key));
-  }, [covRep, driftRep]);
+  }, [covRep, driftRep, unasserted]);
 
   // Every drift/coverage entry is keyed by the same spec-operation ref a request's own `specRef`
   // resolves to — this map lets the dashboard jump straight to the request behind an operation
@@ -2140,6 +2163,10 @@ function SpecDashboard({
   specRefToPath: Map<string, string>;
   onOpenRequest: (path: string) => void;
 }) {
+  // "No request at all" and "a request that checks nothing" are both uncovered, and their fixes
+  // are opposite — write one, versus add assertions to the one you have. The report tells them
+  // apart and the CLI prints the difference; this view rendered both as a flat `untested`.
+  const unasserted = new Map((covRep?.unasserted ?? []).map((u) => [u.op, u]));
   if (!spec) {
     return (
       <div className="empty">
@@ -2185,11 +2212,19 @@ function SpecDashboard({
             <>
               <div className="cov-meta">untested:</div>
               <div className="oplist">
-                {covRep.uncovered.map((o) => (
-                  <code key={o} className="op amber">
-                    ✗ {o}
-                  </code>
-                ))}
+                {covRep.uncovered.map((o) => {
+                  const silent = unasserted.get(o);
+                  return (
+                    <code
+                      key={o}
+                      className="op amber"
+                      title={silent ? `"${silent.request}" exists but asserts nothing` : "no request points at this operation"}
+                    >
+                      ✗ {o}
+                      {silent && <span className="op-why"> — "{silent.request}" asserts nothing</span>}
+                    </code>
+                  );
+                })}
               </div>
             </>
           )}
@@ -2258,6 +2293,35 @@ function SpecDashboard({
                   <code key={o} className="op amber">
                     + {o}
                   </code>
+                ))}
+              </div>
+            </div>
+          )}
+          {/* Its own group, because its fix is the opposite of "Untracked": the request exists —
+              open it and give it assertions. Offering "create a request" here would send someone
+              to write a second one. */}
+          {(covRep?.unasserted?.length ?? 0) > 0 && (
+            <div>
+              <div className="resolve-group-head">
+                <span className="resolve-dot amber" />
+                <span className="resolve-title">Tested by a request that asserts nothing</span>
+                <span className="resolve-sub">the request exists — give it assertions</span>
+              </div>
+              <div className="resolve-items">
+                {covRep?.unasserted?.map((u) => (
+                  <button
+                    key={u.op}
+                    className="op amber as-button"
+                    title={u.filePath ? `open ${u.filePath}` : `open "${u.request}"`}
+                    onClick={() => {
+                      const path = u.filePath ?? specRefToPath.get(u.op);
+                      if (path) {
+                        onOpenRequest(path);
+                      }
+                    }}
+                  >
+                    ✎ {u.op} <span className="op-why">— {u.request}</span>
+                  </button>
                 ))}
               </div>
             </div>

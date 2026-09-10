@@ -46,8 +46,17 @@ describe("truspec codegen", () => {
     expect(r.out).toContain("-H 'Accept: application/json'");
   });
 
-  it("resolves a declared secret from the environment for the snippet", async () => {
+  // Changed deliberately: this used to assert the resolved secret appeared in the snippet, which
+  // is the leak `secret-leak.test.ts` documents. A snippet is made to be shared, so a declared
+  // secret now keeps its placeholder unless `--with-secrets` asks otherwise.
+  it("keeps a declared secret as its placeholder, even when the environment resolves it", async () => {
     const r = await run([PETSTORE, "--env", "local"], { token: "s3cret-token" });
+    expect(r.out).toContain("Authorization: Bearer {{token}}");
+    expect(r.out).not.toContain("s3cret-token");
+  });
+
+  it("inlines it on --with-secrets", async () => {
+    const r = await run([PETSTORE, "--env", "local", "--with-secrets"], { token: "s3cret-token" });
     expect(r.out).toContain("Authorization: Bearer s3cret-token");
   });
 

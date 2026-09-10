@@ -23,6 +23,15 @@ export interface PreparedRequest {
   root: string;
   /** Declared secrets with no value in the environment — snippets will show them unresolved. */
   missingSecrets: string[];
+  /**
+   * Every name the environment declares under `secrets`, resolved or not.
+   *
+   * A consumer that *renders* a request rather than sending it needs to know which values are
+   * credentials. `truspec codegen --env` interpolated them into the snippet — URL, header and
+   * body — while every other output surface masks them, and a snippet's documented purpose is
+   * being pasted into a bug report.
+   */
+  secretNames: string[];
 }
 
 /**
@@ -56,5 +65,6 @@ export function prepareRequest(file: string, opts: PrepareOptions = {}): Prepare
     vars: { ...built.vars, ...opts.vars },
     root,
     missingSecrets: built.missingSecrets,
+    secretNames: [...(env?.secrets ?? [])],
   };
 }

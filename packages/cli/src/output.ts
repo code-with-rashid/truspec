@@ -64,7 +64,11 @@ export function formatHuman(result: WorkspaceRunResult, cwd: string): string {
   // missing-file bug rather than the selection the user asked for.
   if (result.skipped > 0) parts.push(`${result.skipped} skipped (bailed)`);
   if (result.parseErrors?.length) parts.push(`${result.parseErrors.length} unparseable`);
-  parts.push(`${result.results.length} total`);
+  // Count the skipped ones in the total. "1 failed, 4 skipped (bailed), 1 total" reads as a
+  // contradiction — the four were selected to run and are part of what the run was asked to do.
+  // `?? 0` because a report from an older version — a saved `--json` file piped back in — has no
+  // `skipped` at all, and `3 + undefined` is NaN on screen.
+  parts.push(`${result.results.length + (result.skipped ?? 0)} total`);
   if (result.deselected) parts.push(`${result.deselected} deselected`);
   lines.push(parts.join(", "));
   return lines.join("\n");
@@ -208,19 +212,32 @@ export function formatJunit(result: WorkspaceRunResult, cwd: string): string {
     ].join("; ");
     return `    <testcase name="${name}" classname="${classname}" time="${time}">\n      <failure message="${escapeXml(reasons || "failed")}"/>\n    </testcase>`;
   });
+  // Requests `--bail` stopped before. JUnit has a first-class element for exactly this, and
+  // leaving them out made a five-request run report as a one-test suite — the same "omitting it
+  // reads as clean" failure the parse-error case below guards against.
+  const skippedCases = (result.skippedRequests ?? []).map((sk) => {
+    const name = escapeXml(sk.iteration !== undefined ? `${sk.name} [${sk.iteration}]` : sk.name);
+    const classname = escapeXml(toPosixPath(relative(cwd, sk.filePath)));
+    return `    <testcase name="${name}" classname="${classname}" time="0.000">\n      <skipped message="not run — the run bailed at the first failure"/>\n    </testcase>`;
+  });
   // A file that did not parse has to appear as a failing case: a CI report that simply omits it
   // reads as clean, which is the one outcome a gate must never produce.
   const parseCases = (result.parseErrors ?? []).map((e) => {
     const classname = escapeXml(toPosixPath(relative(cwd, e.file)));
     return `    <testcase name="${classname}" classname="${classname}" time="0.000">\n      <failure message="${escapeXml(e.error)}"/>\n    </testcase>`;
   });
-  const total = result.results.length + parseCases.length;
+  const total = result.results.length + skippedCases.length + parseCases.length;
   const failures = result.failed + parseCases.length;
+  // `skipped` is its own attribute in the JUnit schema, distinct from `failures`: a reporter that
+  // sees five tests, one failure and four skips has the true picture of a bailed run.
+  const skipped = skippedCases.length;
+  const suiteAttrs = `tests="${total}" failures="${failures}"${skipped > 0 ? ` skipped="${skipped}"` : ""}`;
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
-    `<testsuites tests="${total}" failures="${failures}">`,
-    `  <testsuite name="truspec" tests="${total}" failures="${failures}">`,
+    `<testsuites ${suiteAttrs}>`,
+    `  <testsuite name="truspec" ${suiteAttrs}>`,
     ...cases,
+    ...skippedCases,
     ...parseCases,
     "  </testsuite>",
     "</testsuites>",

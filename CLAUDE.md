@@ -72,7 +72,7 @@ capture:                           # save response values into vars for later re
   token: "$.access_token"          # jsonpath shorthand; or { header: "X-Id" } / { status: true }
 order: 1                           # run order within a collection (lower first; default 0)
 tags: [smoke]                      # labels for `truspec run --tag smoke`
-options:                           # transport: timeoutMs / retries / followRedirects / maxRedirects
+options: { timeoutMs: 5000, retries: 1 }   # also followRedirects / maxRedirects / retryDelayMs
 docs: "Fetch a single pet by its id."
 spec:                              # links request → OpenAPI operation (drift/coverage)
   operation: "GET /pets/{id}"

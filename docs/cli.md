@@ -244,7 +244,7 @@ truspec run ./api --delay 200                  # 200ms between requests (rate li
 With `--bail` or a filter, the summary says what did not run:
 
 ```
-1 passed, 1 failed, 2 skipped (bailed), 2 total, 3 deselected
+1 passed, 1 failed, 2 skipped (bailed), 4 total, 3 deselected
 ```
 
 ### HTML report
@@ -314,6 +314,29 @@ it applies:
 `--reporter junit` emits a JUnit `<testsuites>` document — one `<testcase>` per request —
 that CI test reporters (GitHub Actions, GitLab, Jenkins, etc.) understand natively. Pair it
 with `--output` to write a file the reporter can pick up.
+
+**A `--bail`ed run reports every request it selected**, not only the ones that ran: those the bail
+stopped before appear as `<skipped>` cases, and the suite carries a `skipped` count alongside
+`tests` and `failures`.
+
+```xml
+<testsuites tests="5" failures="1" skipped="4">
+  <testsuite name="truspec" tests="5" failures="1" skipped="4">
+    <testcase name="R1" classname="r1.tspec.yaml" time="0.000">
+      <failure message="…"/>
+    </testcase>
+    <testcase name="R2" classname="r2.tspec.yaml" time="0.000">
+      <skipped message="not run — the run bailed at the first failure"/>
+    </testcase>
+    …
+```
+
+Without this a five-request run reported as a one-test suite and the four that never ran were
+absent from the record — a dashboard showing a sliver of the truth. A file that failed to parse
+appears as a failing case for the same reason: a report that omits something reads as clean.
+
+A request excluded by `--grep`/`--tag` is *not* listed. That is a selection you asked for, not
+something that failed to happen; the summary's `deselected` count says how many.
 
 ### Notes
 
@@ -624,15 +647,35 @@ Render a request as a runnable snippet in another HTTP client or language — fo
 a README, a colleague on a different stack, or pasting into a terminal.
 
 ```
-truspec codegen <request.tspec.yaml> [--lang <target>] [--env <name>] [--output <file>] [--list]
+truspec codegen <request.tspec.yaml> [--lang <target>] [--env <name>] [--with-secrets]
+                [--output <file>] [--list]
 ```
 
 | Flag | Alias | Description |
 |---|---|---|
 | `--lang <target>` | `-l` | Snippet target. Default `curl`. |
 | `--env <name>` | `-e` | Environment whose variables to substitute. |
+| `--with-secrets` | | Also inline the values of declared **secrets**. Off by default — see below. |
 | `--output <file>` | `-o` | Write to a file instead of stdout. |
 | `--list` | | Print every supported target id and exit. |
+
+**A declared secret keeps its `{{placeholder}}`, even with `--env`.** A snippet's whole purpose is
+being shared — a bug report, a README, a colleague — and every other output surface
+([run reporters](#reporters), [`env`](#env)) masks secret values. This one used to bake the resolved
+credential into the URL, the `Authorization` header and the body:
+
+```bash
+$ truspec codegen api/me.tspec.yaml --env local
+Note: apiToken left as {{placeholder}} — declared secret(s), and a snippet is made to be shared.
+      Pass --with-secrets to inline the real value(s).
+
+curl -X GET 'https://api.example.com/me' \
+  -H 'Authorization: Bearer {{apiToken}}'
+```
+
+Variables that are *not* declared secrets still resolve normally, so the snippet is complete apart
+from the credential. The note goes to **stderr**, so `-o snippet.sh` or a redirect gets clean
+output. `--with-secrets` inlines them when you genuinely want a paste-and-run command.
 
 The snippet is built through the **same resolution the runner uses**: the folder chain's
 `baseUrl`, inherited headers, and auth are applied, and the environment's variables (including

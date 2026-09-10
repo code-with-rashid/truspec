@@ -3346,3 +3346,22 @@ select:focus {
   border-radius: 4px;
   padding: 0 4px;
 }
+
+/* An operation whose request exists but asserts nothing. Distinct from `untested` (no request at
+   all) because the fix is the opposite one: open the request you have and give it assertions. */
+.op-badge.unasserted {
+  color: var(--amber);
+  border-color: color-mix(in srgb, var(--amber) 45%, transparent);
+}
+.op-why {
+  color: var(--dim);
+  font-size: 10.5px;
+}
+.op.as-button {
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+.op.as-button:hover {
+  border-color: var(--amber);
+}

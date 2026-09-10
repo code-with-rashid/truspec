@@ -3636,3 +3636,373 @@ any entry whose file has since been renamed, deleted, or left behind on another 
 
 **Verification.** 1224 unit tests, **132 Playwright tests** (4 new) including the axe-core pass,
 typecheck 8/8.
+
+### 95 — the seam with no compiler
+
+**The desktop app was the last shipped artifact this campaign had never looked at.** It cannot be
+built here (no Rust toolchain), but building it is not where its risk lives. The risk is that it is
+**a Rust process spawning a bundled Node runtime on a bundled script**, and *five* artifacts have to
+agree for an installer to work:
+
+| Artifact | What it decides |
+|---|---|
+| `prepare-sidecar.mjs` | where the node binary and resources are staged |
+| `tauri.conf.json` | which staged paths get bundled, and where they land |
+| `sidecar.rs` | the resource names resolved at runtime, and the flags passed |
+| `cli-entry.ts` | which flags are accepted |
+| both ends | the JSON handshake printed on stdout |
+
+**They agree today** — I checked all five by hand, and that is the honest finding: no bug here.
+`--dir`, `--client-dir`, `--port` match; `server/cli-entry.cjs` and `client` are staged, bundled and
+resolved under the same names; `externalBin: ["binaries/node"]` matches `node-${target.triple}` and
+`sidecar("node")`; `struct Ready { url: String }` matches the `{"url":…,"port":…}` line.
+
+**What is missing is anything that keeps them agreeing.** Rename `--client-dir` in the TypeScript
+and *both languages still compile*. `tsc` does not read Rust; `cargo` does not read the TS. The app
+breaks for whoever installs the next release, and every test in the repo stays green. Of all the
+seams this campaign has crossed, this is the only one with **no compiler on either side of it**.
+
+So there is now a gate — six assertions driven off the artifacts themselves, including one that
+actually **starts the sidecar** and checks its stdout line carries every field the Rust `Ready`
+struct declares, and that it prints exactly one line (Rust parses each line as JSON and navigates
+on the first that fits).
+
+**Checked against real breaks**, one per language, rather than trusting it:
+
+```
+TS flag renamed        -> 2 failures
+Rust resource renamed  -> 1 failure
+externalBin renamed    -> 1 failure
+restored               -> 0 failures
+```
+
+The flag check also refuses to pass vacuously: it asserts it found flags in `sidecar.rs` at all
+before comparing them — a regex that silently matches nothing is the way this kind of test rots.
+That guard earned itself immediately: my first version of the accepted-flags regex dropped the
+first entry in the options object (it required a preceding comma), so the test failed loudly on
+`--dir` instead of quietly under-checking.
+
+**Verification.** 1230 unit tests (6 new), coverage 96.01% lines / 88.04% branches / 96.75%
+functions, typecheck 8/8.
+
+### 96 — two different problems wearing the same badge
+
+**Opened the spec view**, the last dashboard this campaign had not looked at. It is good: a coverage
+percentage, drift counters, a per-operation list, and a "what to resolve" section with actionable
+buttons. Then I set up the case that matters and looked again:
+
+```
+untested:
+  ✗ GET /pets            ← a request EXISTS (listPets, right there in the sidebar) and asserts nothing
+  ✗ POST /pets           ← no request at all
+
+OPERATIONS
+  GET  /pets      UNTESTED
+  POST /pets      UNTESTED     ← identical
+
+WHAT TO RESOLVE
+  Untracked in collection   in the spec, no test yet
+    + POST /pets
+```
+
+**Two completely different problems, rendered identically** — and the only remedy offered is
+"create a request", which for `GET /pets` would send someone to write a *second* request for an
+operation that already has one. The unasserted operation gets no action and no explanation at all;
+a reader sees "GET /pets untested" while staring at `listPets` in the sidebar with nothing
+connecting them.
+
+**The report has told them apart for a long time.** `CoverageReport.unasserted` exists, the CLI
+prints it —
+
+```
+✗ GET /pets  — "listPets" (api/listpets.tspec.yaml) has no assertions; a request that asserts nothing tests nothing
+```
+
+— and `unasserted` is even declared in the web client's own `api.ts`. The view simply never read it.
+The most common shape this campaign has found: **the data is already there, and the surface
+withholds it.**
+
+**Now, in all three places:**
+
+```
+untested:
+  ✗ GET /pets — "listPets" asserts nothing
+  ✗ POST /pets
+
+OPERATIONS
+  GET  /pets      UNASSERTED
+  POST /pets      UNTESTED
+
+WHAT TO RESOLVE
+  Untracked in collection                       in the spec, no test yet
+    + POST /pets
+  Tested by a request that asserts nothing      the request exists — give it assertions
+    ✎ GET /pets — listPets          ← clicking opens that request
+```
+
+The second group is separate rather than a footnote precisely because **its fix is the opposite
+one**, and its button opens the existing file instead of starting a new request.
+
+**Verification.** 1230 unit tests, **137 Playwright tests** (5 new, including one asserting the
+click lands on the existing request rather than a create flow, and one asserting the view says
+nothing at all when every request asserts something), typecheck 8/8.
+
+### 97 — the agent guide's own example did not parse
+
+**Followed the documented onboarding path literally**, as a new user would, executing every command
+in `docs/getting-started.md` verbatim and checking every claim it makes. It all holds:
+
+| The guide says | Actual |
+|---|---|
+| `run` reports 3 passing | ✓ 3 passed, 0 failed |
+| `drift` flags `GET /users/{id}` as untracked | ✓ 1 untracked |
+| `coverage` shows 75% (3/4) | ✓ `Coverage: 75% (3/4 operations tested)` |
+| `contract` confirms all 3 conform | ✓ `All 3 tested operation(s) conform to the spec.` |
+
+The hand-written "your first collection" walkthrough works too, including its files that **omit
+`tspec:`** entirely — which is correct, the field defaults. Worth recording that this still holds
+*after* iterations 90 and 92 tightened response and request validation: the examples did not quietly
+start failing.
+
+**But the commands are not the only thing people copy.** The prose carries 49 fenced YAML blocks,
+and nothing has ever checked that any of them parse. The schema is `.strict()` and has moved a great
+deal in 97 iterations; a block written against an older shape sits in the docs looking
+authoritative. So I parsed every one that is a whole collection file — and found this:
+
+```
+FAIL CLAUDE.md:51 (request) — Invalid TruSpec request: options: Expected object, received null
+```
+
+**`CLAUDE.md`.** The file whose stated purpose is *"tells an AI agent how to author **valid**
+TruSpec files"*, and whose own header says *"Keep it accurate as the format evolves; agents rely on
+it."* Its canonical request example listed:
+
+```yaml
+options:                           # transport: timeoutMs / retries / followRedirects / maxRedirects
+```
+
+A key with a trailing comment and no value is `null` in YAML, and the schema rejects it. An agent
+copying the canonical example produced a file that would not parse. Now it carries a real value.
+
+**The gate identifies examples by shape, not by a marker** — a new example is covered the moment
+someone writes it, because an opt-in marker is a marker someone forgets. Verified both ways: the
+original `options:` line fails its block, and a typo'd field inside a detected block fails on
+`.strict()`. It also asserts it found at least ten examples spanning more than one file kind, so it
+cannot pass by matching nothing.
+
+**Verification.** 1247 unit tests (17 new — one per example, so a failure names the file and line),
+coverage 96.01% lines / 88.04% branches / 96.75% functions, typecheck 8/8, docs site builds.
+
+**Postscript: the guard caught itself, one CI run later.** Windows portability went red on exactly
+the assertion above:
+
+```
+× finds examples to check, so this suite cannot pass vacuously
+  → expected 0 to be greater than or equal to 10
+```
+
+Git for Windows checks these files out with **CRLF**, so a fence regex anchored on `` ```yaml\n ``
+matches nothing there. Without the vacuity assertion this suite would have found zero examples on
+Windows and reported **green while checking nothing** — the precise rot it was written to prevent,
+demonstrated on its own first run against a different platform. Reproduced locally by converting a
+copy of the docs to CRLF (0 blocks before normalising, 6 after), and fixed by normalising line
+endings on read. The other two doc-scanning gates were checked against CRLF and are unaffected —
+`documented-flags` finds the same 63 invocations either way, which the Windows log independently
+confirms.
+
+### 98 — a bailed run reported a one-test suite
+
+**Probed the JUnit reporter**, which is how this tool talks to CI — the integration the README
+leads with. First I tried to break its XML with hostile request names: angle brackets, ampersands,
+quotes, apostrophes, a tab, a form feed, a `0x01`. All correctly escaped or stripped, with a comment
+in the source already explaining that XML 1.0 forbids C0 controls outright. A previous iteration
+did that work properly; the probe **clears**.
+
+**Then I ran five requests with `--bail`:**
+
+```
+$ truspec run . --bail --reporter junit
+<testsuites tests="1" failures="1">
+```
+
+**Four requests vanished.** They were selected to run, the bail stopped before them, and the CI
+report simply does not mention them — a dashboard reads a one-test suite and shows a sliver of the
+truth. The human report says it plainly (`4 skipped (bailed)`); the machine one, which is the one CI
+actually consumes, said nothing.
+
+The file already contained the exact principle, three lines below where this needed fixing:
+
+> *"A file that did not parse has to appear as a failing case: a CI report that simply omits it
+> reads as clean, which is the one outcome a gate must never produce."*
+
+**Why it could not just be fixed in the reporter.** `skipped` was a *count*. The identities were
+never recorded — the run loop broke out the moment it bailed. It now keeps walking and `continue`s
+past each remaining request, recording name, file and iteration without sending anything (a test
+counts `fetch` calls to prove that). JUnit gets real `<skipped>` cases and the schema's own
+`skipped` attribute, distinct from `failures`:
+
+```xml
+<testsuites tests="5" failures="1" skipped="4">
+```
+
+**A contradiction fixed on the way.** The human summary read
+`1 failed, 4 skipped (bailed), 1 total` — one total, four skipped. Skipped requests are now counted
+in the total, because they are part of what the run was asked to do.
+
+**And a line I deliberately did not cross:** a request excluded by `--grep`/`--tag` is *not* listed.
+That is a selection the user asked for, not something that failed to happen — the summary's
+`deselected` count already says how many.
+
+**A guard the test suite earned.** My first version made the total `NaN` for a result built without
+`skipped`. The type says it is required, but a saved `--json` from an older version piped back in
+would not have it — the same reasoning `coverage.ts` gives for its own optional field. `?? 0`, and a
+test that asserts no `NaN` reaches the screen.
+
+**Verification.** 1260 unit tests (13 new), coverage 96.02% lines / 88.07% branches / 96.75%
+functions, typecheck 8/8, docs site builds. The emitted XML parses under a real parser, with
+`tests=5, failures=1, skipped=4` and four `<skipped>` elements.
+
+### 99 — the usage text shipped inside the binary
+
+**Probed the CLI's own `--help`**, which is the usage documentation people read most: it ships in
+the binary, needs no network, and is the first thing anyone types. Iteration 86 gated the flags
+named in the *docs*, in both directions. Nothing has ever checked the help.
+
+Three probes, and the first two clear:
+
+1. **Does help list every command?** Yes — all 13 appear in both the `Usage:` block and the
+   `Commands` list. Nothing ships undiscoverable.
+2. **Does it advertise a flag that does not exist?** No — every `--flag` in every usage block is
+   one that command accepts.
+3. **Does it match what people actually type?** **No.** Iteration 85 moved `gen`, `mock` and
+   `serve` to a positional main argument and updated nineteen usages across eight documentation
+   files — and never touched `--help`, which went on saying:
+
+```
+truspec mock --spec <openapi> [--port <n>]
+truspec serve [--dir <collection>] [--port <n>] …
+truspec gen --spec <openapi> --out <dir>
+```
+
+Not *wrong* — the flags still work — but the binary's own help was the last place still leading
+with the form the docs had moved away from. Now:
+
+```
+truspec gen <openapi> --out <dir> [--base-url-var <name>]
+truspec mock <openapi> [--port <n>] [--delay <ms>] [--validate]
+truspec serve [<dir>] [--port <n>] …
+```
+
+**The gate is five assertions**, and one of them is written specifically to catch the miss iteration
+85 made: *a command that reads a positional must show one*. It handles wrapped multi-line usage
+blocks, and refuses to pass having checked fewer than ten commands.
+
+**I got that check wrong the first time, in the way this campaign keeps finding.** My initial regex
+looked for `<something>` anywhere in the usage line — which matches `<openapi>` in
+`truspec mock --spec <openapi>`, i.e. **the flag's own argument**, so the stale form passed. The
+bite-test caught it: reverting `mock` produced zero failures. It now strips `--flag <arg>` pairs
+first and looks at what remains. That is the third time in this campaign a check tested something
+*adjacent* to its real requirement — iteration 86 gated on `curl` when the premise was a POSIX
+shell, iteration 97 anchored on a line ending rather than a fence. **Always test the guard by
+breaking the thing it guards.**
+
+**One thing deliberately not built.** `exportPostman` exists in core and the web UI has an export
+button, but there is no `truspec export` command. `docs/importing.md` describes that surface as
+intentional — web UI plus programmatic API — so adding a user-facing command at iteration 99 would
+be widening scope on my own initiative rather than fixing a defect. Recorded as an observation for
+a human to decide.
+
+**Verification.** 1265 unit tests (5 new), coverage 96.02% lines / 88.07% branches / 96.75%
+functions, typecheck 8/8. Each assertion verified against a deliberate break: a stale positional
+form, a phantom flag, and a command dropped from the help.
+
+### 100 — the one surface that printed the secret
+
+**For the last iteration I checked a claim the tool makes about itself.** `truspec --help` says the
+`env` command *"never prints secret values"*, and the run reporters mask them. So I declared a
+secret, used it in a URL, a header and a body, gave it a value only in the OS environment, and
+grepped **every output surface** for it:
+
+```
+  clean  run --json
+  clean  run --reporter junit
+  clean  run --reporter html
+  clean  env --json
+  clean  env local
+  clean  docs
+  clean  lint
+  LEAKS  codegen --env
+      curl -X POST 'http://127.0.0.1:47320/echo?t=SUPERSECRETVALUE123' \
+        -H 'Authorization: Bearer SUPERSECRETVALUE123' \
+        "token": "SUPERSECRETVALUE123"
+```
+
+**One surface out of eight**, and it is the worst one to pick. A snippet's documented purpose, in
+this repo's own words, is *"for a bug report, a README, a colleague on a different stack"* — its
+whole reason to exist is **being pasted somewhere else**. `codegen --env` put the live credential in
+three places and said nothing about it.
+
+**The fix keeps the feature and removes the hazard.** A declared secret keeps its `{{placeholder}}`,
+exactly as it does without `--env`; every other variable still resolves, so the snippet is complete
+apart from the credential. A note names what was held back — on **stderr**, so `-o snippet.sh` and
+shell redirection still get clean output — and `--with-secrets` inlines them for someone who
+genuinely wants a paste-and-run command.
+
+**One existing test asserted the old behaviour**, which is how the leak survived: *"resolves a
+declared secret from the environment for the snippet."* That is a test codifying a bug. It is
+rewritten, with a comment saying so — a behaviour change should be visible in the diff, not quietly
+absorbed.
+
+**And a smaller thing the test surfaced, deliberately not fixed:** `emit` writes `--output` relative
+to `process.cwd()` rather than the injected `cwd`. In the shipped binary those are the same
+directory; only an embedder can tell. Noted in the test rather than expanded into scope on the last
+iteration.
+
+**Verification.** 1275 unit tests (11 new), coverage 96.02% lines / 88.08% branches / 96.75%
+functions, typecheck 8/8, docs site builds. All eight surfaces re-swept and clean, and disabling the
+fix turns three of the new tests red.
+
+---
+
+## What a hundred iterations actually taught
+
+Three habits produced most of the findings, and they are worth more than the list of fixes.
+
+**1. Run the thing. Do not read the thing.** Iterations 81, 82, 83, 85, 90, 92, 93, 94 and 100 were
+all found by *executing* a documented path and looking at the bytes — never by reading code. The
+multipart body that went out as the eleven characters `[object FormData]`, the generated `curl`
+that would not run, the `console.log` that wrote nowhere, the mock that violated its own spec, the
+import that produced a collection which could not run: every one of them had passing tests and
+plausible-looking source.
+
+**2. A mock standing in for the thing under test proves only that the mock works.** Eleven multipart
+tests inspected a `FormData` object; none put a body on a socket. Every `--ca` test checked that
+reading a file did not throw; none checked that verification happened. The fix in both cases was a
+test at the seam, and a **negative control** — `--ca` with a *different* certificate must still
+reject — because a passing test without one is consistent with the feature being off.
+
+**3. Ask what a surface knows and is not saying.** Lint knew the line. The tab strip knew the body
+type. The flow view knew which variable travelled along each edge. The spec view knew the difference
+between "no request" and "a request that asserts nothing" — a distinction with *opposite* fixes,
+rendered identically. The palette knew the shortcuts it was teaching. None of these were missing
+data; they were withheld data.
+
+**And the lesson I had to learn three times, at my own expense.** A check that tests something
+*adjacent* to its requirement is worse than no check, because it looks like coverage:
+
+| Iteration | The check tested | The requirement was |
+|---|---|---|
+| 86 | `curl` exists | a POSIX shell exists — Windows CI went red |
+| 97 | a `\n` after the fence | a fence, however the line ends — Windows CI went red |
+| 99 | `<something>` in the usage line | a positional, not a flag's argument — the gate never fired |
+
+Two of the three shipped and broke CI. All three were caught only by **deliberately breaking the
+thing the check guards** and confirming it goes red. That is now the habit: no gate is finished
+until it has failed on purpose. Every gate this campaign added — the published entry-point surface,
+the documented CLI flags, the request fields reaching generated docs, the cross-language desktop
+contract, the doc examples, the help text, the secret sweep — was verified that way, and the results
+are recorded in each entry.
+
+The gates earned their keep during the campaign itself: iteration 70's result contract blocked three
+undocumented fields, iteration 97's vacuity guard caught **itself** one CI run later, and iteration
+99 found a miss iteration 85 had made in a file its own gate did not cover.
