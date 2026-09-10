@@ -3,6 +3,7 @@ import { SCHEMA_VERSION } from "../format/schema";
 import type { TruSpecAuth, TruSpecBody, TruSpecMethod, TruSpecRequest } from "../format/types";
 import { safeDecodeURIComponent } from "../util/uri";
 import { assertionsFromPostmanTest } from "./postman-assertions";
+import { environmentFile } from "./environment";
 import { asRecord, type ImportedFile, type ImportResult, normalizeMethod, portedScript, slug } from "./types";
 
 /** Pull Postman `prerequest`/`test` event scripts (preserved as comments to port to the tr API). */
@@ -240,6 +241,24 @@ export function importPostman(input: unknown): ImportResult {
   const warnings: string[] = [];
   const files: ImportedFile[] = [];
   const stats = { requests: 0, folders: 0 };
+
+  // A collection's `variable` array is where `{{baseUrl}}` is declared. Dropping it left every
+  // imported request referencing variables nothing defined — an import that could not run.
+  const vars: Record<string, string> = {};
+  for (const raw of Array.isArray(root.variable) ? root.variable : []) {
+    const v = asRecord(raw);
+    // Postman keeps disabled rows in the file, same as it does for headers.
+    if (!v || typeof v.key !== "string" || !v.key || v.disabled === true) continue;
+    if (v.value !== null && typeof v.value === "object") continue;
+    vars[v.key] = String(v.value ?? "");
+  }
+  if (Object.keys(vars).length > 0) {
+    // Postman scopes these to the collection rather than naming an environment, so the file is
+    // named for the collection when it says its name, and `imported` when it does not.
+    const envName = typeof asRecord(root.info)?.name === "string" ? String(asRecord(root.info)?.name) : "imported";
+    const file = environmentFile(envName, vars, warnings);
+    if (file) files.push(file);
+  }
 
   // Bound folder recursion so a hostile/malformed collection can't stack-overflow the import.
   const MAX_FOLDER_DEPTH = 100;

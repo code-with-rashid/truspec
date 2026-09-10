@@ -3532,3 +3532,56 @@ functions, typecheck 8/8, docs site builds. The `gen` → `drift` round trip sta
 collection must not report itself as drifted), and the bundled examples still show `0 changed`.
 Disabling the body check turns 7 tests red; disabling the template guard turns 5 red — so both the
 finding and the restraint are pinned.
+
+### 93 — the on-ramp led to a dead end
+
+**Probed the importers, which are the first thing a real user touches.** Imported a realistic
+Insomnia export — workspace, base environment, sub-environment, a folder, two requests — and then
+linted what came out:
+
+```
+pets/create-pet.tspec.yaml
+  4  ! warning undeclared-var: {{baseUrl}} is not declared in any environment…
+pets/list-pets.tspec.yaml
+  4  ! warning undeclared-var: {{baseUrl}} …
+  4  ! warning undeclared-var: {{apiVersion}} …
+     ! warning undeclared-var: {{_.token}} …
+```
+
+**The environments were dropped entirely.** The export declares `baseUrl`, `apiVersion` and
+`token`; two files of requests came out and nothing else. So `truspec run` on a fresh import fails
+immediately on unresolved variables — the on-ramp leaves you at a dead end. Postman has the same
+gap: its collection-level `variable` array went nowhere either. Neither importer had ever written
+an environment.
+
+**And that last warning is a second bug.** `{{_.token}}` — Insomnia's `{{ _.var }}` form was
+normalized *inline in the URL handling*, so a request came out with a clean
+`url: "{{baseUrl}}/pets"` next to an untouched `token: "{{ _.token }}"`: a variable name with a
+`_.` prefix that nothing declares and nothing will ever resolve. Headers, query, auth and body were
+all missed. Normalization is now a named function applied deeply to the converted result — one
+place, rather than a dozen call sites to forget.
+
+**The environment emitter is shared** between both importers, and three decisions in it matter:
+
+- **A credential-named variable becomes a secret NAME ONLY.** `CLAUDE.md` states it plainly —
+  *never inline secrets into request or environment files* — and an import is precisely where that
+  rule would be broken at scale: a Postman collection routinely carries a live `token` value, and
+  writing it into a file the user is about to commit is the failure this whole format exists to
+  prevent. The value is dropped, the name is declared so it resolves from the OS or a `.env`, and a
+  warning names it so nothing vanishes silently. A test asserts the value appears **nowhere** in
+  the file.
+- **An Insomnia sub-environment is written flattened.** Insomnia's sub-environment inherits from
+  the one above and overrides what it redeclares, so a `local` that only sets `baseUrl` is written
+  carrying the base's `apiVersion` too. That is both what TruSpec's model expects (one file,
+  self-contained) and what Insomnia actually does when you select it.
+- **Names are slugged for `--env`.** `Base Environment` → `base-environment`; a name that slugs to
+  nothing becomes `imported`.
+
+**Where I stopped fighting the tooling.** I first omitted `secrets: []` as noise — then found
+`serialize` re-parses before stringifying, so the schema's `.default([])` puts it back regardless.
+Rather than doing string surgery on generated YAML, the comment now says why the line is there.
+
+**Verification.** 1224 unit tests (15 new), coverage 96.01% lines / 88.05% branches / 96.75%
+functions, typecheck 8/8, docs site builds. End to end: the imported Insomnia collection now
+**lints with no findings at all** and *runs* — two requests passing against a local server, with
+the token supplied from the environment exactly as the format intends.

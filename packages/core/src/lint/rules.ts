@@ -84,7 +84,7 @@ export interface Located {
  * as committed. What gives it away is the name, which is the one thing an opaque token cannot
  * hide.
  */
-const CREDENTIAL_NAME =
+export const CREDENTIAL_NAME =
   /(?:^|[._-])(?:api[_-]?keys?|apikey|access[_-]?tokens?|refresh[_-]?tokens?|id[_-]?token|tokens?|secrets?|client[_-]?secret|passwords?|passwd|pwd|authorization|auth[_-]?token|credentials?|private[_-]?key|session[_-]?id|sessionid|cookie|x[_-]?api[_-]?key)(?:[._-]|$)/i;
 
 /** Values that are obviously placeholders rather than a real credential someone committed. */
