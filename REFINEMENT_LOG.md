@@ -3370,3 +3370,63 @@ An action with no binding stays unadorned rather than being given an invented on
   Reverting the fix turns exactly that test red.
 
 **Verification.** 4 new Playwright tests, full suite 128 passing, 1157 unit tests, typecheck 8/8.
+
+### 90 — the contract checker did not check the constraints
+
+**A self-consistency probe.** A mock generated from a spec is a stand-in for that API, so what it
+serves must satisfy the very document it came from. I wrote a demanding spec, ran the documented
+`gen` → `mock` → `contract` workflow, and looked at both ends:
+
+```
+$ curl .../items
+[{"id":0,"name":"string","status":"active", ... }]
+
+$ truspec contract api --spec openapi.yaml --env local
+All 2 tested operation(s) conform to the spec.
+```
+
+The spec says `minItems: 2` on that array and `minimum: 1` on `id`. **The mock returned one item
+with `id: 0`, and `contract` called it conforming.** Two bugs meeting in the middle.
+
+**What the validator actually covered:** `type`, `properties`, `required`, `items`, `enum`,
+`nullable`, `allOf`/`oneOf`/`anyOf`, `$ref`, `additionalProperties: false`. Honestly documented as a
+subset — but the missing half is not exotic. It is `minimum`, `maxLength`, `pattern`, `minItems`:
+the everyday constraints of a real OpenAPI document. This product's headline claim is *"fail the
+build when code drifts from your OpenAPI spec"*, and a response of the right shape carrying
+out-of-range values passed in silence.
+
+**Both halves fixed.**
+
+*The validator* now checks: `minimum`/`maximum`/`exclusiveMinimum`/`exclusiveMaximum`/`multipleOf`,
+`minLength`/`maxLength`/`pattern`, `minItems`/`maxItems`/`uniqueItems`, `minProperties`/
+`maxProperties`. Details worth stating:
+
+- **Both spellings of exclusivity.** OpenAPI 3.0 writes `exclusiveMinimum: true` as a modifier on
+  `minimum`; JSON Schema 2020-12 and OpenAPI 3.1 write `exclusiveMinimum: 1` as a bound of its own.
+  Both appear in real documents, so both are read.
+- **Checked before the type dispatch**, all of which `return`. Every keyword present in a schema is
+  an independent constraint, so `minimum` applies whether or not the schema also says
+  `type: integer` — and a keyword meant for another type is *inapplicable*, never a violation.
+- **`multipleOf` with a relative epsilon**, because `0.3 / 0.1` is `2.9999999999999996`. A zero
+  divisor is ignored rather than divided by.
+- **String length in code points**, so `"👍"` is one character, not two.
+- **An uncompilable `pattern` blames the schema**, once, rather than failing every response
+  against it.
+
+*The generator* now respects those bounds — starting a number at its `minimum`, emitting `minItems`
+elements, padding a plain string to `minLength` (but leaving a *formatted* one alone: a date-time
+padded to 40 characters is no longer a date-time). Fixing only the validator would have left the
+documented workflow failing out of the box.
+
+**The test that would have caught all of it** is now there as a property: *a generated example
+conforms to the schema that produced it*, over a schema using every constraint the validator
+knows. Disabling the new checks turns 16 of the 29 new tests red.
+
+A small one found on the way: `Math.ceil(0 / 5 - 1e-9) * 5` is `-0`, so a `multipleOf` schema could
+generate a negative zero. Normalised.
+
+**Verification.** 1186 unit tests (29 new), coverage 95.95% lines / 87.96% branches / 96.71%
+functions, typecheck 8/8, docs site builds. The live round trip now passes for the right reason:
+the mock serves `id: 1` and two items, and `contract` is genuinely checking. `docs/spec-sync.md`
+carries the full keyword table and a note that a spec using these keywords should expect `contract`
+to report violations it previously missed.

@@ -225,10 +225,28 @@ You don't need the `contract` command to get response validation. Two lighter pa
 - **`{ type: schema }` assertion** — opt a single request in (or pin a `status` /
   `contentType`). See [File format → schema](./file-format.md#schema).
 
-The validator covers the OpenAPI 3 schema subset (`type`, `properties`, `required`,
-`items`, `enum`, `nullable`, `allOf`/`oneOf`/`anyOf`, `$ref`, `additionalProperties: false`)
-and reports the JSON path of every violation. `format` is treated as an annotation (not
-enforced).
+The validator covers the OpenAPI 3 schema subset below and reports the JSON path of every
+violation.
+
+| Group | Keywords |
+|---|---|
+| Shape | `type` (including a 3.1 type array), `properties`, `required`, `items`, `nullable`, `additionalProperties: false` |
+| Values | `enum` |
+| Numbers | `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum` (both the OpenAPI 3.0 boolean spelling and the JSON Schema numeric one), `multipleOf` |
+| Strings | `minLength`, `maxLength` (counted in code points, so an emoji is one character), `pattern` |
+| Arrays | `minItems`, `maxItems`, `uniqueItems` |
+| Objects | `minProperties`, `maxProperties` |
+| Composition | `allOf`, `oneOf`, `anyOf`, `$ref` |
+
+Every keyword present is an independent constraint, so `minimum` is checked whether or not the
+schema also says `type: integer`, and a keyword that does not apply to the value's type is
+inapplicable rather than a violation. `format` is treated as an annotation (not enforced), matching
+JSON Schema's default.
+
+> The bound, length and count keywords were added in a later release. Before that, a response of
+> the right *shape* carrying out-of-range *values* — `id: 0` against `minimum: 1`, a one-element
+> list against `minItems: 2` — passed silently. If you have a spec using them, expect `contract`
+> to start reporting violations it previously missed.
 
 ### JSON shape
 

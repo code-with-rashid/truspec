@@ -19,21 +19,72 @@ export interface MockResponse {
   body: string;
 }
 
+/** A schema keyword read as a finite number, or undefined when absent or not numeric. */
+function num(v: unknown): number | undefined {
+  return typeof v === "number" && Number.isFinite(v) ? v : undefined;
+}
+
 function stringExample(schema: Record<string, unknown>): string {
+  let out: string;
   switch (schema.format) {
     case "date-time":
-      return "2026-01-01T00:00:00Z";
+      out = "2026-01-01T00:00:00Z";
+      break;
     case "date":
-      return "2026-01-01";
+      out = "2026-01-01";
+      break;
     case "uuid":
-      return "00000000-0000-0000-0000-000000000000";
+      out = "00000000-0000-0000-0000-000000000000";
+      break;
     case "email":
-      return "user@example.com";
+      out = "user@example.com";
+      break;
     case "uri":
-      return "https://example.com";
+      out = "https://example.com";
+      break;
     default:
-      return "string";
+      out = "string";
   }
+  // A formatted placeholder is a fixed length, so honour the bounds only for the plain case —
+  // padding a date-time to `minLength: 40` would produce something that is no longer a date-time.
+  if (schema.format === undefined) {
+    const min = num(schema.minLength);
+    const max = num(schema.maxLength);
+    if (min !== undefined && out.length < min) out = out.padEnd(min, "x");
+    if (max !== undefined && out.length > max) out = out.slice(0, max);
+  }
+  return out;
+}
+
+/**
+ * A number inside the schema's bounds.
+ *
+ * The generator returned a flat `0`, which violates the extremely ordinary `minimum: 1` — and
+ * since the response validator did not check bounds either, `truspec mock` and `truspec contract`
+ * agreed on a response that the spec forbids. Fixing only the validator would have left the
+ * documented `gen` → `mock` → `contract` workflow failing out of the box.
+ */
+function numberExample(schema: Record<string, unknown>): number {
+  const isInt = schema.type === "integer";
+  const step = isInt ? 1 : 0;
+  let out = 0;
+  const min = num(schema.minimum);
+  const max = num(schema.maximum);
+  const exMin = num(schema.exclusiveMinimum);
+  const exMax = num(schema.exclusiveMaximum);
+  if (min !== undefined) out = schema.exclusiveMinimum === true ? min + (step || 1e-6) : min;
+  if (exMin !== undefined) out = Math.max(out, exMin + (step || 1e-6));
+  if (max !== undefined && out > max) out = schema.exclusiveMaximum === true ? max - (step || 1e-6) : max;
+  if (exMax !== undefined && out >= exMax) out = exMax - (step || 1e-6);
+  const multiple = num(schema.multipleOf);
+  if (multiple !== undefined && multiple > 0) {
+    // Round *up* to the next multiple so a `minimum` is never undercut by the rounding itself.
+    const rounded = Math.ceil(out / multiple - 1e-9) * multiple;
+    if (max === undefined || rounded <= max) out = rounded;
+  }
+  const result = isInt ? Math.round(out) : out;
+  // `Math.ceil(0 / 5 - 1e-9) * 5` is -0, and a generated example should not carry a negative zero.
+  return Object.is(result, -0) ? 0 : result;
 }
 
 /** Generate a deterministic example value from a JSON Schema (OpenAPI subset). */
@@ -69,10 +120,14 @@ export function generateExample(schema: Record<string, unknown>, doc: Record<str
     return obj;
   }
   if (schema.type === "array") {
-    return [generateExample(asRecord(schema.items) ?? {}, doc, depth + 1)];
+    // One item satisfied the old generator and violates any `minItems` above 1.
+    const count = Math.max(1, num(schema.minItems) ?? 1);
+    const capped = Math.min(count, num(schema.maxItems) ?? count);
+    const items = asRecord(schema.items) ?? {};
+    return Array.from({ length: capped }, () => generateExample(items, doc, depth + 1));
   }
   if (schema.type === "string") return stringExample(schema);
-  if (schema.type === "integer" || schema.type === "number") return 0;
+  if (schema.type === "integer" || schema.type === "number") return numberExample(schema);
   if (schema.type === "boolean") return true;
   return null;
 }
