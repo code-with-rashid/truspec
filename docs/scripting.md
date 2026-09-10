@@ -101,6 +101,41 @@ up in the run report alongside declarative assertion failures.
 
 ---
 
+## Printing from a script
+
+`console.log`, `.info`, `.warn`, `.error` and `.debug` work in both phases, and their output is
+**collected into the run result** rather than written to a stream:
+
+```yaml
+script:
+  pre: |
+    const sig = tr.hmac("sha256", tr.env("API_SECRET"), tr.vars.ts)
+    console.log("signing with", { ts: tr.vars.ts, sig })
+    tr.set("sig", sig)
+```
+
+```
+✓ PASS  Signed  (api/signed.tspec.yaml)  200 41ms
+      › signing with { ts: '2026-09-09T12:00:00.000Z', sig: '98755ce7…' }
+```
+
+The same lines appear as `scriptLogs` in `truspec run --json`, and in the response pane of the web
+UI. Collecting them rather than printing them directly is what makes them work everywhere: the
+[MCP server](./mcp.md) speaks JSON-RPC over stdout, where a stray line corrupts the protocol, and
+the browser client has no stdout at all.
+
+Two details worth knowing:
+
+- **Output from a script that threw is kept**, and is shown with the error. A script fails at the
+  line after the one you were trying to inspect more often than not.
+- **A runaway loop is capped** at 100 lines and 2,000 characters per line. The cap announces
+  itself as a final line rather than quietly dropping the rest.
+
+Values are formatted the way Node's own console formats them, so an object prints as
+`{ a: 1, b: [ 1, 2 ] }` rather than `[object Object]`.
+
+---
+
 ## When to reach for a script
 
 | Need | Prefer | Script only if… |

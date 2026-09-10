@@ -135,6 +135,9 @@ headers:
 Node vm context with a `tr` API (no response yet): `tr.vars` (read), `tr.set(name, value)`
 (set a variable used by this request), `tr.uuid()`, `tr.base64(s)`,
 `tr.hmac(algo, key, data, enc?)` (`enc` = `"hex"` default | `"base64"`), `tr.env(name)`.
+`console.log`/`.warn`/`.error` work in both phases; the lines are collected into the result as
+`scriptLogs` (never written to stdout — the MCP server speaks JSON-RPC there) and printed under the
+request in the run report.
 A script error fails the request without sending it. It sets *variables* (not the request
 object directly), so build any computed body/header value as a variable and reference it.
 

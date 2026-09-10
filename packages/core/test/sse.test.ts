@@ -153,3 +153,54 @@ describe("a server-sent event stream", () => {
     expect(r.error).toMatch(/Timed out/);
   });
 });
+
+describe("the sse assertion", () => {
+  const events = (path: string, assertion: Record<string, unknown>) =>
+    runRequest(
+      {
+        tspec: "0.1",
+        name: "s",
+        method: "GET",
+        url: `${base}${path}`,
+        assertions: [assertion],
+      } as never,
+      {},
+    );
+
+  it("counts the events, and the named ones", async () => {
+    expect((await events("/finite", { type: "sse", count: 4 })).ok).toBe(true);
+    expect((await events("/finite", { type: "sse", event: "token", count: 3 })).ok).toBe(true);
+    expect((await events("/finite", { type: "sse", event: "token", count: 4 })).ok).toBe(false);
+    expect((await events("/finite", { type: "sse", minCount: 2, maxCount: 10 })).ok).toBe(true);
+  });
+
+  it("looks inside the data", async () => {
+    expect((await events("/finite", { type: "sse", contains: "[DONE]" })).ok).toBe(true);
+    expect((await events("/finite", { type: "sse", event: "token", contains: "[DONE]" })).ok).toBe(false);
+    expect((await events("/finite", { type: "sse", matches: "\\[DONE\\]" })).ok).toBe(true);
+  });
+
+  it("selects with a jsonpath inside each event, since every event is its own document", async () => {
+    expect((await events("/finite", { type: "sse", event: "token", jsonpath: "$.i", equals: 3 })).ok).toBe(true);
+    expect((await events("/finite", { type: "sse", event: "token", jsonpath: "$.i", equals: 9 })).ok).toBe(false);
+    expect((await events("/finite", { type: "sse", jsonpath: "$.i", exists: true })).ok).toBe(true);
+    // `[DONE]` is not JSON, and an unparseable event is skipped rather than failing the whole path.
+    expect((await events("/finite", { type: "sse", event: "done", jsonpath: "$.i", exists: false })).ok).toBe(true);
+  });
+
+  it("with no condition, asserts that any event arrived at all", async () => {
+    expect((await events("/finite", { type: "sse" })).ok).toBe(true);
+  });
+
+  it("fails clearly when the response is not a stream", async () => {
+    const r = await events("/json", { type: "sse", minCount: 1 });
+    expect(r.ok).toBe(false);
+    expect(r.assertions[0]?.message).toMatch(/not a text\/event-stream/);
+  });
+
+  it("names what it checked in the message", async () => {
+    const r = await events("/finite", { type: "sse", event: "token", count: 9 });
+    expect(r.assertions[0]?.message).toContain("sse 3 `token` events");
+    expect(r.assertions[0]?.message).toContain("count == 9");
+  });
+});

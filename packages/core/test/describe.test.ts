@@ -22,6 +22,11 @@ describe("an assertion, in the words a person would use", () => {
     ['{ type: body, matches: "^ok" }', "body matches /^ok/"],
     ["{ type: body, empty: false }", "body is not empty"],
     ["{ type: schema }", "body matches the spec's response schema"],
+    ["{ type: sse }", "at least one of the events"],
+    ["{ type: sse, count: 4 }", "events: exactly 4"],
+    ["{ type: sse, event: token, minCount: 2 }", "`token` events: at least 2"],
+    ['{ type: sse, contains: "[DONE]" }', 'events: one containing "[DONE]"'],
+    ['{ type: sse, event: token, jsonpath: "$.i", equals: 3 }', "`token` events: one whose `$.i` is 3"],
     ['{ type: schema, status: 201, contentType: "application/json" }', "body matches the spec's response schema for status 201 as application/json"],
   ])("%s → %s", (yaml, expected) => {
     expect(describeAssertion(assertion(yaml))).toBe(expected);

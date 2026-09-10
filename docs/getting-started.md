@@ -46,7 +46,7 @@ copy-paste-safe.
 git clone https://github.com/code-with-rashid/truspec
 cd truspec
 
-truspec mock --spec examples/blog/openapi.yaml > /tmp/truspec-mock.log 2>&1 &   # mock on :4000
+truspec mock examples/blog/openapi.yaml > /tmp/truspec-mock.log 2>&1 &   # mock on :4000
 truspec run examples/blog --env local                   # run requests + assertions
 truspec drift examples/blog --spec examples/blog/openapi.yaml
 truspec coverage examples/blog --spec examples/blog/openapi.yaml
@@ -101,7 +101,7 @@ variables:
 spec that serves `/pets/{id}`, so mock it on port 4000 (run from the cloned repo root):
 
 ```bash
-truspec mock --spec examples/petstore/openapi.yaml > /tmp/truspec-mock.log 2>&1 &   # mock on :4000
+truspec mock examples/petstore/openapi.yaml > /tmp/truspec-mock.log 2>&1 &   # mock on :4000
 ```
 
 The `> /tmp/truspec-mock.log 2>&1` keeps the server's startup banner out of your prompt so
@@ -135,7 +135,7 @@ That's the whole flow: a request file, an environment that fills its variables, 
 what makes it CI-ready.
 
 > This hand-written request mirrors [`examples/petstore/get-pet.tspec.yaml`](https://github.com/code-with-rashid/truspec/blob/main/examples/petstore/get-pet.tspec.yaml).
-> Generate a mock from any OpenAPI spec the same way — `truspec mock --spec openapi.yaml`
+> Generate a mock from any OpenAPI spec the same way — `truspec mock openapi.yaml`
 > (see the [mock server guide](./mocking.md)).
 
 ---

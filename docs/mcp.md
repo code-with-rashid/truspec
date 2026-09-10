@@ -65,7 +65,7 @@ files **validate against the schema before writing**, so an agent can't land a m
 | `truspec_mock_stop` | — | Stop the running mock server, if any. |
 | `truspec_environments` | `dir?`, `diff?` | List or diff environments. Secret values are never returned. |
 | `truspec_docs` | `dir?`, `lang?`, `title?` | Render a collection as deterministic Markdown documentation. |
-| `truspec_lint` | `dir?`, `disable?` | Static checks over a collection; findings carry stable rule ids. |
+| `truspec_lint` | `dir?`, `disable?` | Static checks over a collection; findings carry stable rule ids and the `line` they are on. |
 | `truspec_import_insomnia` | `path`, `out?` | Convert an Insomnia export into request files. |
 | `truspec_import_har` | `path`, `out?`, `filter?`, `baseUrlVar?` | Convert a HAR export into request files. |
 | `truspec_import_curl` | `command`, `out?`, `name?` | Convert pasted curl command(s) into request files. |

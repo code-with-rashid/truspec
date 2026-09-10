@@ -8,6 +8,7 @@ import { discoverRequests } from "../workspace/discover";
 import { findWorkspaceRoot } from "../workspace/run";
 import { walkDirSafe } from "../workspace/walk";
 import { toPosixPath } from "../workspace/paths";
+import { lineContaining, locator } from "./locate";
 import {
   credentialLiterals,
   folderCredentialLiterals,
@@ -66,11 +67,39 @@ export const LINT_RULES: Array<{ id: string; severity: Severity; description: st
  * machine-readable rule ids, not prose) and a reviewer reading a diff (who wants a committed
  * credential caught before it merges, not after).
  */
+/**
+ * The path a credential finding's `where` corresponds to *in the file*.
+ *
+ * `credentialLiterals` names a JSON body field `body.a.b`, but the file writes it under
+ * `body.content.a.b` — the wrapper the schema uses. Everything else already matches.
+ */
+function fieldPath(req: TruSpecRequest, where: string): string {
+  if (!where.startsWith("body.")) return where;
+  const kind = req.body?.type;
+  if (kind !== "json" && kind !== "form") return where;
+  return `body.content.${where.slice("body.".length)}`;
+}
+
 export function lintWorkspace(dir: string, opts: LintOptions = {}): LintReport {
   const disabled = new Set(opts.disable ?? []);
   const findings: LintFinding[] = [];
-  const add = (path: string, severity: Severity, rule: string, message: string): void => {
-    if (!disabled.has(rule)) findings.push({ path, severity, rule, message });
+  /** Per-file `field path -> line` lookups, so a finding can point at the line it is about. */
+  const locators = new Map<string, ReturnType<typeof locator>>();
+  const sources = new Map<string, string>();
+  const lineFor = (path: string, at: string | undefined): number | undefined =>
+    at === undefined ? undefined : locators.get(path)?.(at);
+
+  const add = (
+    path: string,
+    severity: Severity,
+    rule: string,
+    message: string,
+    /** The field this finding is about — a dotted path into the file, or the line itself. */
+    at?: string | number,
+  ): void => {
+    if (disabled.has(rule)) return;
+    const line = typeof at === "number" ? at : lineFor(path, at);
+    findings.push({ path, severity, rule, message, ...(line !== undefined ? { line } : {}) });
   };
 
   const files = discoverRequests(dir);
@@ -79,9 +108,12 @@ export function lintWorkspace(dir: string, opts: LintOptions = {}): LintReport {
 
   for (const file of files) {
     const path = toPosixPath(relative(dir, file));
+    const text = readFileSync(file, "utf8");
+    sources.set(path, text);
+    locators.set(path, locator(text));
     let req: TruSpecRequest;
     try {
-      req = parse.request.parse(readFileSync(file, "utf8"));
+      req = parse.request.parse(text);
     } catch (e) {
       add(path, "error", "parse", (e as Error).message);
       continue;
@@ -89,7 +121,7 @@ export function lintWorkspace(dir: string, opts: LintOptions = {}): LintReport {
     parsed.push({ path, req });
 
     if (req.assertions.length === 0) {
-      add(path, "warning", "no-assertions", "No assertions — this request can never fail a run.");
+      add(path, "warning", "no-assertions", "No assertions — this request can never fail a run.", "name");
     }
     // Query parameters written into the URL are linted by name too: a credential in a query
     // string is the worst place for one — it lands in every access log along the way.
@@ -101,6 +133,7 @@ export function lintWorkspace(dir: string, opts: LintOptions = {}): LintReport {
           "error",
           "inline-secret",
           `${where} looks like ${what}. Reference it as {{name}} and declare it under an environment's \`secrets\`.`,
+          fieldPath(req, where),
         );
         continue;
       }
@@ -112,6 +145,7 @@ export function lintWorkspace(dir: string, opts: LintOptions = {}): LintReport {
           "warning",
           "literal-credential-field",
           `${where} holds a literal value. If it is a credential, reference it as {{name}} and declare it under an environment's \`secrets\`.`,
+          fieldPath(req, where),
         );
       }
     }
@@ -121,7 +155,7 @@ export function lintWorkspace(dir: string, opts: LintOptions = {}): LintReport {
       try {
         jsonpath({}, expr);
       } catch (e) {
-        add(path, "error", "bad-jsonpath", `capture.${name}: ${(e as Error).message}`);
+        add(path, "error", "bad-jsonpath", `capture.${name}: ${(e as Error).message}`, `capture.${name}`);
       }
     }
     for (const a of req.assertions) {
@@ -129,7 +163,7 @@ export function lintWorkspace(dir: string, opts: LintOptions = {}): LintReport {
       try {
         jsonpath({}, a.path);
       } catch (e) {
-        add(path, "error", "bad-jsonpath", `assertion on "${a.path}": ${(e as Error).message}`);
+        add(path, "error", "bad-jsonpath", `assertion on "${a.path}": ${(e as Error).message}`, "assertions");
       }
     }
     // `fetch` refuses a GET/HEAD body outright, so this request can never be sent — an error, not
@@ -140,14 +174,15 @@ export function lintWorkspace(dir: string, opts: LintOptions = {}): LintReport {
         "error",
         "body-on-bodiless-method",
         `${req.method} with a ${req.body.type} body — the HTTP client refuses to send it ("Request with GET/HEAD method cannot have body").`,
+        "body",
       );
     }
     const conflict = contentTypeConflict(req);
     if (conflict) {
-      add(path, "warning", "content-type-conflict", conflict);
+      add(path, "warning", "content-type-conflict", conflict, "headers");
     }
     if (isInsecureUrl(req.url)) {
-      add(path, "warning", "insecure-url", `${req.url} is plaintext http:// to a remote host.`);
+      add(path, "warning", "insecure-url", `${req.url} is plaintext http:// to a remote host.`, "url");
     }
     if (/^https?:\/\//i.test(req.url) && folderBaseUrl(dir, path)) {
       add(
@@ -155,6 +190,7 @@ export function lintWorkspace(dir: string, opts: LintOptions = {}): LintReport {
         "warning",
         "absolute-url",
         "Absolute URL under a folder that sets baseUrl — switching environments will not change where this request goes.",
+        "url",
       );
     }
   }
@@ -170,7 +206,13 @@ export function lintWorkspace(dir: string, opts: LintOptions = {}): LintReport {
   for (const [name, paths] of byName) {
     if (paths.length < 2) continue;
     for (const path of paths) {
-      add(path, "warning", "duplicate-name", `Name "${name}" is also used by ${paths.filter((p) => p !== path).join(", ")}.`);
+      add(
+        path,
+        "warning",
+        "duplicate-name",
+        `Name "${name}" is also used by ${paths.filter((p) => p !== path).join(", ")}.`,
+        "name",
+      );
     }
   }
 
@@ -193,6 +235,8 @@ export function lintWorkspace(dir: string, opts: LintOptions = {}): LintReport {
       usedNames.add(name);
       if (!available.has(name)) {
         const later = capturedIn.get(name);
+        // A variable can appear anywhere in the file, so its line comes from where it is written
+        // rather than from a field path — the first use is the one to look at.
         add(
           path,
           "warning",
@@ -200,6 +244,7 @@ export function lintWorkspace(dir: string, opts: LintOptions = {}): LintReport {
           later
             ? `{{${name}}} is captured by ${later}, but that request runs later — raise this request's \`order\`, or lower that one's.`
             : `{{${name}}} is not declared in any environment, .env, or captured by an earlier request.`,
+          lineContaining(sources.get(path) ?? "", `{{${name}}}`),
         );
       }
     }
@@ -210,7 +255,7 @@ export function lintWorkspace(dir: string, opts: LintOptions = {}): LintReport {
   for (const { path, req } of ordered) {
     for (const name of Object.keys(req.capture ?? {})) {
       if (usedNames.has(name)) continue;
-      add(path, "warning", "capture-never-used", `capture.${name} is referenced by no later request.`);
+      add(path, "warning", "capture-never-used", `capture.${name} is referenced by no later request.`, `capture.${name}`);
     }
   }
 
@@ -228,6 +273,7 @@ export function lintWorkspace(dir: string, opts: LintOptions = {}): LintReport {
       "warning",
       "script-runs-unsandboxed",
       `script.${which.join(" and script.")} runs with the same access as the truspec process (no sandbox) — review it before running a collection you did not write.`,
+      "script",
     );
   }
 

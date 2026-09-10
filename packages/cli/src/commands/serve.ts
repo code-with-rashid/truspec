@@ -1,8 +1,9 @@
+import { existsSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { buildFetch, mergeTransport, transportFromEnv } from "../transport";
 import { type CommandDeps, num, resolveDeps } from "./deps";
-import { argError } from "../args";
+import { argError, mainArg } from "../args";
 
 interface WebServerHandle {
   url: string;
@@ -16,7 +17,9 @@ export interface ServeDeps extends Partial<CommandDeps> {
   block?: boolean;
 }
 
-/** `truspec serve [--dir <collection>] [--port <n>]` — local web UI over the engine. */
+const USAGE = "Usage: truspec serve [<dir>] [--port <n>]\n";
+
+/** `truspec serve [<dir>] [--port <n>]` — local web UI over the engine. */
 export async function serveCommand(argv: string[], deps: ServeDeps = {}): Promise<number> {
   const d = resolveDeps(deps);
   // The same transport flags `run` takes. Without them the UI could not reach a host the CLI
@@ -45,11 +48,41 @@ export async function serveCommand(argv: string[], deps: ServeDeps = {}): Promis
     "client-key"?: string;
     "client-key-passphrase"?: string;
   };
+  let positionals: string[];
   try {
-    values = parseArgs({ args: argv, allowPositionals: true, options }).values;
+    const parsed = parseArgs({ args: argv, allowPositionals: true, options });
+    values = parsed.values;
+    positionals = parsed.positionals;
   } catch (e) {
     d.stderr(argError(e, "serve", options));
     return 2;
+  }
+
+  // `run`, `lint`, `docs`, `drift`, `coverage`, `contract` and `init` all take the collection as a
+  // positional, so `truspec serve examples` is what anyone types. It used to be *accepted and
+  // discarded*: the server came up on the current directory instead, said so in one line nobody
+  // reads twice, and the wrong collection was on screen.
+  const collection = mainArg(positionals, values.dir, {
+    what: "collection directory",
+    flag: "--dir",
+    usage: USAGE,
+  });
+  if (collection.error) {
+    d.stderr(collection.error);
+    return 2;
+  }
+  const dir = collection.value ?? ".";
+  // A directory that is not there produced a server on it anyway, and the UI's empty state said
+  // "no requests yet" — which reads as a fact about the collection rather than as the typo it is.
+  // `lint` and `run` both refuse first; so does this now.
+  const abs = resolve(d.cwd, dir);
+  if (!existsSync(abs)) {
+    d.stderr(`Path not found: ${dir}\n${USAGE}`);
+    return 1;
+  }
+  if (!statSync(abs).isDirectory()) {
+    d.stderr(`Not a directory: ${dir}\n${USAGE}`);
+    return 1;
   }
 
   let transportFetch: typeof globalThis.fetch | undefined;
@@ -93,7 +126,7 @@ export async function serveCommand(argv: string[], deps: ServeDeps = {}): Promis
   let handle: WebServerHandle;
   try {
     handle = await mod.startWebServer({
-      dir: resolve(d.cwd, values.dir ?? "."),
+      dir: abs,
       port: num(values.port) ?? 4100,
       ...(transportFetch ? { fetch: transportFetch } : {}),
     });

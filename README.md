@@ -62,7 +62,7 @@ never out of date with the collections they describe.
 ```bash
 git clone https://github.com/code-with-rashid/truspec
 cd truspec
-truspec mock --spec examples/blog/openapi.yaml &
+truspec mock examples/blog/openapi.yaml &
 truspec run examples/blog --env local
 truspec drift examples/blog --spec examples/blog/openapi.yaml
 truspec coverage examples/blog --spec examples/blog/openapi.yaml
@@ -76,10 +76,10 @@ Point the same commands at **your own** collection — a folder of `.tspec.yaml`
 - `truspec drift --spec <openapi.yaml> <dir> [--live <baseUrl>]` — fail CI on drift vs the spec (and a live API)
 - `truspec coverage --spec <openapi.yaml> <dir> --min 80` — gate on tested-operation coverage
 - `truspec contract --spec <openapi.yaml> <dir> --env <name>` — run + validate responses against the spec's schemas
-- `truspec gen --spec <openapi.yaml> --out <dir>` — scaffold a request stub per operation
-- `truspec mock --spec <openapi.yaml> --port 4000` — offline mock server from your spec
+- `truspec gen <openapi.yaml> --out <dir>` — scaffold a request stub per operation
+- `truspec mock <openapi.yaml> --port 4000` — offline mock server from your spec
 - `truspec import postman <file.json> --out <dir>` — migrate existing collections (or `truspec import bruno <dir>`)
-- `truspec serve --dir <dir>` — open the local web UI
+- `truspec serve <dir>` — open the local web UI
 
 **Chaining:** a request can `capture` a value for later requests in the same run (ordered by `order`) — e.g. log in, capture the token, use it downstream. No scripting required:
 

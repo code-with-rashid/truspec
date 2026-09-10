@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { lintCommand } from "../src/commands/lint";
+import { formatLint, lintCommand } from "../src/commands/lint";
 
 const repoRoot = resolve(import.meta.dirname, "..", "..", "..");
 
@@ -106,6 +106,45 @@ describe("truspec lint", () => {
     expect(r.code).toBe(0);
     expect(r.out).toMatch(/inline-secret\s+error/);
     expect(r.out).toMatch(/no-assertions\s+warning/);
+  });
+
+  it("prints each finding's line in a gutter, ordered down the file", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "truspec-lint-cli-"));
+    try {
+      const key = `AKIA${"IOSFODNN7EXAMPLE"}`;
+      writeFileSync(
+        join(dir, "bad.tspec.yaml"),
+        `tspec: "0.1"\nname: Bad\nurl: "http://api.example.com/x"\nheaders:\n  X-Api-Key: "${key}"\nassertions:\n  - { type: status, equals: 200 }\n`,
+      );
+      const r = await run([dir]);
+      const gutters = r.out
+        .split("\n")
+        .filter((l) => /warning|error/.test(l) && l.startsWith("  "))
+        .map((l) => l.trim().split(" ")[0]);
+      // insecure-url is on line 3, inline-secret on line 5, and they print in that order.
+      expect(gutters).toEqual(["3", "5"]);
+      expect(r.out).toMatch(/^ {2}5 {2}✗ error inline-secret:/m);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("leaves the gutter blank for a finding with no line", async () => {
+    const report = {
+      ok: true,
+      dir: "/tmp/x",
+      files: 1,
+      errors: 0,
+      warnings: 2,
+      findings: [
+        { path: "a.tspec.yaml", severity: "warning" as const, rule: "whole-file", message: "no line here" },
+        { path: "a.tspec.yaml", severity: "warning" as const, rule: "somewhere", message: "line 12", line: 12 },
+      ],
+    };
+    const out = formatLint(report, "/tmp");
+    // The located finding comes first; the unlocated one sorts last with an empty, padded gutter.
+    expect(out.split("\n")[1]).toBe("  12  ! warning somewhere: line 12");
+    expect(out.split("\n")[2]).toBe("      ! warning whole-file: no line here");
   });
 
   it("exits 1 for a missing path", async () => {

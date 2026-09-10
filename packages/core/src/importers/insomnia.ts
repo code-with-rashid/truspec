@@ -1,6 +1,7 @@
 import { parse } from "../format";
 import { SCHEMA_VERSION } from "../format/schema";
 import type { TruSpecAuth, TruSpecBody, TruSpecMethod, TruSpecRequest } from "../format/types";
+import { environmentFile } from "./environment";
 import { asRecord, type ImportedFile, type ImportResult, normalizeMethod, slug } from "./types";
 
 /**
@@ -45,6 +46,8 @@ export function importInsomnia(input: unknown): ImportResult {
   }
   for (const r of byId.values()) if (r._type === "request_group") stats.folders++;
 
+  for (const file of environmentFiles(byId, warnings)) files.push(file);
+
   const used = new Map<string, number>();
   for (const resource of byId.values()) {
     if (resource._type !== "request") continue;
@@ -69,6 +72,69 @@ export function importInsomnia(input: unknown): ImportResult {
   files.sort((a, b) => a.path.localeCompare(b.path));
   if (files.length === 0) warnings.push("No requests found in the Insomnia export");
   return { files, warnings, stats };
+}
+
+/**
+ * Insomnia writes `{{ _.var }}` (v5) or `{{ var }}` (v4); both mean the same thing here.
+ *
+ * Applied to **every** templated field, not just the URL. It used to be inline in the URL handling
+ * alone, so an imported request came out with a normalized `url: "{{baseUrl}}/pets"` next to an
+ * untouched `token: "{{ _.token }}"` — a variable name with a `_.` prefix that nothing declares and
+ * nothing will ever resolve.
+ */
+export function normalizeVars(text: string): string {
+  return text.replace(/\{\{\s*_\.([\w.-]+)\s*\}\}/g, "{{$1}}").replace(/\{\{\s*([\w.-]+)\s*\}\}/g, "{{$1}}");
+}
+
+/**
+ * One `environments/<name>.env.yaml` per Insomnia environment.
+ *
+ * An Insomnia sub-environment inherits from the one above it and overrides what it redeclares, so
+ * each file is emitted **flattened** — a `local` that only sets `baseUrl` still carries the base's
+ * `apiVersion`. That matches how TruSpec resolves an environment (one file, self-contained) and how
+ * Insomnia actually behaves when that environment is selected.
+ */
+function environmentFiles(byId: Map<string, Resource>, warnings: string[]): ImportedFile[] {
+  const out: ImportedFile[] = [];
+  const taken = new Set<string>();
+  for (const resource of byId.values()) {
+    if (resource._type !== "environment") continue;
+    // Walk up the parent chain, nearest last, so a child's own value wins.
+    const chain: Resource[] = [];
+    let node: Resource | undefined = resource;
+    const seen = new Set<string>();
+    while (node && !seen.has(node._id)) {
+      seen.add(node._id);
+      if (node._type === "environment") chain.unshift(node);
+      node = node.parentId ? byId.get(node.parentId) : undefined;
+    }
+    const vars: Record<string, string> = {};
+    for (const link of chain) {
+      const data = asRecord(link.raw.data);
+      if (!data) continue;
+      for (const [k, v] of Object.entries(data)) {
+        // Only scalars: an Insomnia environment can hold nested objects, which have no meaning as
+        // a `{{var}}` substitution.
+        if (v !== null && typeof v === "object") continue;
+        vars[k] = normalizeVars(String(v));
+      }
+    }
+    const file = environmentFile(resource.name ?? "imported", vars, warnings);
+    if (!file || taken.has(file.path)) continue;
+    taken.add(file.path);
+    out.push(file);
+  }
+  return out;
+}
+
+/** Apply `f` to every string in a value, preserving its shape. */
+function mapStrings<T>(value: T, f: (s: string) => string): T {
+  if (typeof value === "string") return f(value) as unknown as T;
+  if (Array.isArray(value)) return value.map((v) => mapStrings(v, f)) as unknown as T;
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, mapStrings(v, f)])) as unknown as T;
+  }
+  return value;
 }
 
 /** Reassemble the folder path by walking `parentId` up to the workspace. */
@@ -100,8 +166,7 @@ function toRequest(resource: Resource, warnings: string[]): TruSpecRequest | und
     warnings.push(`Skipped "${name}": no URL`);
     return undefined;
   }
-  // Insomnia writes `{{ _.var }}` (v5) or `{{ var }}` (v4); both mean the same thing here.
-  const url = rawUrl.replace(/\{\{\s*_\.([\w.-]+)\s*\}\}/g, "{{$1}}").replace(/\{\{\s*([\w.-]+)\s*\}\}/g, "{{$1}}");
+  const url = normalizeVars(rawUrl);
 
   const headers: Record<string, string> = {};
   if (Array.isArray(r.headers)) {
@@ -110,7 +175,7 @@ function toRequest(resource: Resource, warnings: string[]): TruSpecRequest | und
       // Insomnia keeps disabled rows in the file; importing them would send headers the user
       // explicitly turned off.
       if (!h || typeof h.name !== "string" || h.disabled === true || !h.name) continue;
-      headers[h.name] = String(h.value ?? "");
+      headers[h.name] = normalizeVars(String(h.value ?? ""));
     }
   }
   const query: Record<string, string> = {};
@@ -118,12 +183,14 @@ function toRequest(resource: Resource, warnings: string[]): TruSpecRequest | und
     for (const raw of r.parameters) {
       const p = asRecord(raw);
       if (!p || typeof p.name !== "string" || p.disabled === true || !p.name) continue;
-      query[p.name] = String(p.value ?? "");
+      query[p.name] = normalizeVars(String(p.value ?? ""));
     }
   }
 
-  const auth = convertAuth(asRecord(r.authentication), warnings, name);
-  const body = convertBody(asRecord(r.body), headers, warnings, name);
+  // Deeply, after conversion: auth and body each have several templated fields across several
+  // shapes, and normalizing the result once is one place instead of a dozen call sites to miss.
+  const auth = mapStrings(convertAuth(asRecord(r.authentication), warnings, name), normalizeVars);
+  const body = mapStrings(convertBody(asRecord(r.body), headers, warnings, name), normalizeVars);
 
   return {
     tspec: SCHEMA_VERSION,

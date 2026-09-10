@@ -25,7 +25,8 @@ export function loadCollectionOperations(dir: string): CollectionOp[] {
 }
 
 export function driftReport(dir: string, specPath: string): DriftReport {
-  return computeDrift(loadOpenApi(specPath).operations, loadCollectionOperations(dir));
+  const summary = loadOpenApi(specPath);
+  return computeDrift(summary.operations, loadCollectionOperations(dir), summary.document);
 }
 
 /** Drift report that also probes a running API for missing operations. */
@@ -36,7 +37,7 @@ export async function liveDriftReport(
   opts: LiveProbeOptions = {},
 ): Promise<DriftReport> {
   const summary = loadOpenApi(specPath);
-  const report = computeDrift(summary.operations, loadCollectionOperations(dir));
+  const report = computeDrift(summary.operations, loadCollectionOperations(dir), summary.document);
   const probe = await probeLiveOperations(summary.operations, baseUrl, opts);
   report.liveMissing = probe.missing;
   report.ok = report.ok && probe.missing.length === 0;

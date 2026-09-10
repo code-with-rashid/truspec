@@ -37,12 +37,23 @@ import { startMockServer } from "@truspec/core/mock";
 | `@truspec/core/runner` | Execute one request; interpolation, auth, assertions, scripts. | browser-safe |
 | `@truspec/core/workspace` | Discovery, folder inheritance, env + secret resolution, run a path. | Node |
 | `@truspec/core/spec` | OpenAPI parsing, drift, coverage, scaffold, live probe. | Node |
-| `@truspec/core/importers` | Postman & Bruno → `.tspec.yaml`. | Node |
+| `@truspec/core/importers` | Postman, Bruno, Insomnia, curl & HAR → `.tspec.yaml`. | Node |
+| `@truspec/core/exporters` | `.tspec.yaml` → a Postman collection. | browser-safe |
+| `@truspec/core/codegen` | One request → a runnable snippet in 17 clients/languages. | browser-safe |
+| `@truspec/core/lint` | Static checks over a collection. | Node |
+| `@truspec/core/docs` | A collection → deterministic Markdown. | browser-safe |
+| `@truspec/core/jsonpath` | The JSONPath subset assertions and captures use. | browser-safe |
 | `@truspec/core/mock` | Local mock server from a spec. | Node |
+| `@truspec/core/http` | Shared HTTP-server lifecycle (a shutdown that always terminates). | Node |
+| `@truspec/core/schema/*.json` | The published JSON Schema files, importable directly. | any |
 
 The main entry (`@truspec/core`) re-exports `format` and `runner` as namespaces; prefer the
 subpaths above so bundlers can tree-shake and you don't pull Node modules into a browser
 build.
+
+Every row of that table is checked against `package.json`'s `exports` map by a test, in both
+directions — a subpath that ships undocumented and a documented subpath that does not ship are
+both failures.
 
 ---
 
@@ -164,6 +175,7 @@ all read, so treat it as a contract: a field is added, never repurposed.
 | `redirects` | `string[]?` | hops followed, with `options.followRedirects` |
 | `redirectLimitHit` | `boolean?` | the chain stopped at `maxRedirects`, not at the server |
 | `retries` | `number?` | re-sends, with `options.retries` |
+| `scriptLogs` | `{ level, message }[]?` | lines `script.pre`/`script.post` printed with `console.*` — present on a failure result too |
 | `iteration` | `number?` | 1-based row/repeat index, for `--data` / `--repeat` |
 
 `response`:

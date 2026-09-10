@@ -166,6 +166,23 @@ export function FlowView({ env, running, onRun, getResult, onImported }: FlowVie
 
   const steps = flow?.steps ?? [];
   const edges = useMemo(() => buildEdges(steps), [steps]);
+  /**
+   * What each step takes from an earlier one, by step index.
+   *
+   * The rail draws these as curves, but a curve is 1.5px of border colour with the variable name
+   * hidden in an SVG `<title>` — so the one question this whole view exists to answer ("which
+   * request feeds which, with what") needed hovering a hairline, and before any step was selected
+   * the graph read as decoration. The edges were already computed; only the naming was missing.
+   */
+  const incoming = useMemo(() => {
+    const map = new Map<number, Array<{ name: string; from: string }>>();
+    for (const e of edges) {
+      const list = map.get(e.to) ?? [];
+      list.push({ name: e.name, from: steps[e.from]?.name ?? `step ${e.from + 1}` });
+      map.set(e.to, list);
+    }
+    return map;
+  }, [edges, steps]);
   const laneCount = edges.reduce((m, e) => Math.max(m, e.lane + 1), 0);
   const railWidth = RAIL_PAD * 2 + Math.max(laneCount, 1) * LANE_W;
   const selectedIdx = selected ? steps.findIndex((s) => s.path === selected) : -1;
@@ -423,6 +440,26 @@ export function FlowView({ env, running, onRun, getResult, onImported }: FlowVie
                         <code className="flow-node-url">{s.url}</code>
                       )}
                     </span>
+                    {/* Which earlier step's values this one runs on. The rail already draws the
+                        edges; this says what travels along them, without a hover. */}
+                    {(incoming.get(i)?.length ?? 0) > 0 && (
+                      <span
+                        className="flow-needs"
+                        title={incoming
+                          .get(i)
+                          ?.map((d) => `{{${d.name}}} from ${d.from}`)
+                          .join("\n")}
+                      >
+                        <span className="flow-needs-arrow" aria-hidden="true">
+                          ↳
+                        </span>
+                        {incoming.get(i)?.map((d) => (
+                          <code key={d.name} className="flow-needs-var">
+                            {d.name}
+                          </code>
+                        ))}
+                      </span>
+                    )}
                     {/* A step whose capture matched nothing passes, and breaks the edge leaving
                         it. This is the view of the chain, so the break has to be visible on the
                         step that caused it, not only on the one that failed later. */}

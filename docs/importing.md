@@ -189,6 +189,15 @@ The importer maps the common surface of each format onto TruSpec's
   back as `pm.test` and `pm.environment.set`, so a collection survives the round trip with its
   chain intact.
 
+- **Variables** — a Postman collection's `variable` array and each Insomnia
+  `_type: "environment"` become an [environment file](./file-format.md#environment-files), so an
+  imported collection *runs*: before this, every request referenced `{{baseUrl}}` and nothing
+  declared it. An Insomnia sub-environment is written **flattened** — it carries what it inherits
+  from the one above it, which is what Insomnia does when you select it — and is named for
+  `truspec run --env <name>` (`Base Environment` → `base-environment`). A Postman file is named
+  for the collection.
+- **Insomnia's `{{ _.var }}` form** — normalized to `{{var}}` in *every* field, not just the URL.
+
 Everything is run through the schema and **validated before it's written**, so an import
 never produces a file that won't parse.
 
@@ -202,8 +211,13 @@ about it. Watch the **warnings** printed during conversion:
 - **Imperative test scripts** (Postman `pm.test(...)`, Bruno JS) don't map onto TruSpec's
   [declarative assertions](./file-format.md#assertions). Re-express the important checks as
   assertions, or — as a last resort — a [post-response script](./scripting.md).
-- **Environment/secret values** are not imported into your files; TruSpec
-  [references secrets by name](./file-format.md#environment-files) rather than storing them.
+- **Secret values.** Variable *names* are imported; a credential-named one (`token`,
+  `api_key`, `client_secret`, `password`, …) is written under `secrets:` as a **name only** and its
+  value is dropped, with a warning naming it. Postman collections routinely carry a live token, and
+  writing it into a file you are about to commit is the failure this format exists to prevent —
+  so the name is declared and the value resolves from your OS environment or a `.env`.
+- **Vendor-specific environment features** — Insomnia's nested (non-scalar) environment values have
+  no meaning as a `{{var}}` substitution and are skipped.
 - **Vendor-specific settings** (proxies, certificates, visualizers, etc.) are dropped.
 
 Each skipped or partially-converted item produces a `warning:` line so nothing is lost

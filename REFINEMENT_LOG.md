@@ -2838,3 +2838,801 @@ platform than it was before it started failing.
 
 **Verification.** 1075 unit tests, watcher suite 11/11 in 345ms (faster than the fixed sleep it
 replaced), typecheck 8/8.
+
+### 79 — an `sse` assertion, so a stream can be tested the way everything else is
+
+**The half iteration 77 left.** Events are parsed and reported, but the only way to assert on them
+was `body contains "[DONE]"` against the concatenated stream text. That works and says nothing
+useful: not how many events arrived, not in what order, not under which name — which is the entire
+question about a streaming endpoint. Declarative assertions are this product's core, and streams
+were outside them.
+
+```yaml
+assertions:
+  - { type: sse, minCount: 1 }
+  - { type: sse, event: token, minCount: 2 }
+  - { type: sse, contains: "[DONE]" }
+  - { type: sse, event: token, jsonpath: "$.delta", exists: true }
+  - { type: sse, event: done, jsonpath: "$.usage.total_tokens", equals: 42 }
+```
+
+`event` narrows every other condition; counts apply after that filter; conditions are AND-ed like
+every other assertion type.
+
+**The design decision worth stating.** `jsonpath` parses **each event's `data` as its own JSON
+document**, and holds if *any* event satisfies it. An SSE stream is many small documents, not one —
+treating it as a single body would mean either concatenating invalid JSON or picking an event
+arbitrarily. An event whose data is not JSON at all (`[DONE]`, which is exactly what OpenAI-shaped
+streams send last) is skipped rather than failing the assertion, so `{ event: token, jsonpath: … }`
+is not broken by the terminator.
+
+Against a response that is not a stream the assertion fails and says so, naming the content type —
+rather than passing vacuously because there were no events to contradict it.
+
+**Where it cannot go.** The Postman exporter warns instead of translating: Postman buffers a stream
+as one body and has no notion of an individual event, so any translation would be a weaker
+assertion wearing the same name — the same judgement made for `schema` assertions in iteration 43.
+
+The JSON Schema regenerates with the new variant (41 lines), the shared `describeAssertion` speaks
+it (`` `token` events: at least 2 ``), and the docs carry the type table row plus a worked section.
+
+**Verification.** 1086 unit tests (11 new for the assertion, 5 more for its description), coverage
+95.95% lines / 87.69% branches / 96.62% functions, typecheck 8/8, docs site builds, schema
+committed.
+
+### 80 — a lint finding that points at the line it is about
+
+**The gap, found by re-asking iteration 74's question.** *"For every line this tool prints, does it
+know something more specific it is withholding?"* `truspec lint` prints:
+
+```
+api/bad.tspec.yaml
+  ✗ error inline-secret: headers.X-Api-Key looks like an AWS access key id…
+```
+
+It knows the field. It parsed the file. It does not say **where** — so the reader scrolls, in an
+editor, in a CI log, and worst of all in a review, where the finding and the code are in two
+different windows. Every other linter a developer uses has printed a line number for thirty years.
+
+**Now:**
+
+```
+api/bad.tspec.yaml
+   4  ! warning literal-credential-field: url?api_key holds a literal value…
+   4  ! warning insecure-url: http://api.example.com/things?api_key=… is plaintext http://…
+   7  ✗ error inline-secret: headers.X-Api-Key looks like an AWS access key id…
+  11  ! warning literal-credential-field: body.password holds a literal value…
+  12  ! warning undeclared-var: {{missingVar}} is not declared in any environment…
+  14  ✗ error bad-jsonpath: capture.id: invalid path near index 1
+  14  ! warning capture-never-used: capture.id is referenced by no later request.
+```
+
+Findings now sort by line, so the report reads **down the file** instead of in rule-discovery order.
+The gutter shape is `eslint --format stylish`'s, because that is the one every reader of a lint log
+already knows how to scan. `line` is on each finding in `--json` too, so the MCP tool and any CI
+script get it for free.
+
+**How the line is found.** `yaml`'s `parseDocument` keeps CST ranges on every node, so a rule that
+already names a field — `headers.X-Api-Key`, `body.password`, `capture.id` — resolves to a real
+offset rather than a text search. Two decisions worth stating:
+
+- **The longest resolvable prefix wins.** `body.content.nope` is not in the document; `body.content`
+  is. Pointing at the nearest ancestor is both more useful and more honest than guessing at an exact
+  position — and it is what makes the fallback safe to apply everywhere.
+- **`undeclared-var` is located by its text, not by a path.** A `{{var}}` can appear in any field,
+  and the first use is the one to look at. That is a different question from "which field is this",
+  so it gets a different mechanism rather than a fake path.
+
+**Two mismatches the field paths exposed.** `credentialLiterals` reports a JSON body field as
+`body.password`, but the file writes it under `body.content.password` — the schema's wrapper. And a
+credential in a query string is reported as `url?api_key`, which is not a path at all. Both are now
+translated on the way to the locator, so the rule keeps the name a *reader* wants while the locator
+gets the path the *file* has.
+
+**Where it stays quiet.** A file that does not parse gets no line — there is no document to locate
+in, and the parse error already carries its own position. A rule about the request as a whole prints
+a blank gutter rather than an invented `1`.
+
+**Verification.** 1101 unit tests (13 new for the locator, 2 for the rendering), coverage 95.92%
+lines / 87.72% branches / 96.64% functions, typecheck 8/8, `lint examples --strict` clean, docs site
+builds.
+
+### 81 — every multipart upload was going out as the string `[object FormData]`
+
+**Found by sending one.** Iteration 80 finished, so I picked a surface the log had never probed
+end-to-end — `body.type: multipart` — stood up an echo server, and looked at the wire:
+
+```
+ct: text/plain;charset=UTF-8
+[object FormData]
+```
+
+Not a formatting problem. The file was never sent. Neither was any other part. The request returned
+**200 and passed its assertions**, because the echo server accepted anything — which is exactly how
+this survived: a real API would have rejected it, but nothing in the repo ever sent one.
+
+**The cause is a realm boundary, and the code comment asserted the opposite.** `packages/cli/src/transport.ts`
+imports `fetch` from the standalone `undici` package to attach a TLS/proxy dispatcher, and said:
+
+> the same implementation Node's own global `fetch` is built on, just with a dispatcher attached.
+
+Same implementation, **different copy**. Undici recognises a multipart body by `instanceof` against
+*its own* `FormData` class; the runner builds a `globalThis.FormData`, from Node's bundled copy. The
+check fails, and the fetch body spec says an unrecognised value is stringified — so `String(form)`
+went out as `text/plain`. Silently, with no error anywhere.
+
+**And it fired far more often than "when you pass `--proxy`."** `buildFetch` returns undici's fetch
+whenever *any* transport option is set, and `transportFromEnv` reads `HTTPS_PROXY`, `http_proxy` and
+`NODE_EXTRA_CA_CERTS` from the environment. Every CI runner behind a proxy, every corporate laptop,
+every container with a CA bundle — all of them uploaded nothing, and were told it worked.
+
+**The fix** re-creates the form as the class *this* copy of undici knows, at the one place the
+boundary is crossed. `Blob` needs no such treatment: undici uses `node:buffer`'s, which *is* the
+global one — the mismatch is `FormData` alone. (Two- and three-argument `append` are different
+overloads, so a string value must not be passed a `undefined` filename; it selects the file overload
+and is then rejected for not being a Blob.)
+
+**Why no test saw it.** There are eleven multipart tests. Every one injects a capturing `fetch` and
+inspects the `FormData` *object* — which is the correct unit test and structurally cannot observe
+what leaves the socket. The single `buildFetch` test sent a bodiless GET. The gap was not a missing
+assertion; it was a **seam nobody crossed**: body assembly is core's, the dispatcher is the CLI's,
+and no test held both. The new test is at that seam — a real loopback POST through `buildFetch`,
+asserting the bytes on the wire — and it fails against the old code, which I checked by reverting
+the fix.
+
+**The generalised lesson**, worth keeping: *a mock that stands in for the thing you are testing the
+boundary of proves the boundary works with the mock.* Every capturing-fetch test in this repo is
+sound, and all of them together could not see this.
+
+**Verification.** 1103 unit tests (2 new at the seam), coverage 95.92% lines / 87.74% branches /
+96.65% functions, typecheck 8/8; a live multipart POST now sends all four part shapes — plain value,
+coerced number, file from disk, typed inline text — with correct per-part headers.
+
+### 82 — the generated `curl` command did not run
+
+**Same method as 81, pointed at the next mock-shaped seam.** `codegen` renders a request as a
+snippet in 17 clients. Twenty tests assert what the snippet *says*. None had ever run one. So I ran
+one:
+
+```
+$ truspec codegen api/post.tspec.yaml --lang curl > snip.sh && sh snip.sh
+curl: (3) URL rejected: Malformed input to a URL function
+```
+
+**The cause.** The request's URL contained a space — `?q=a b`. `truspec run` sends it happily,
+because it hands the authored URL to `fetch`, which normalizes it to `%20` on the way out. The
+runner never had to encode anything itself, so nothing in the codebase did, so codegen emitted the
+URL exactly as typed. `curl` refuses it. `wget` and the JS/Python clients each encode it themselves,
+which is worse in its way: the snippet runs and there is no guarantee they all encode it the same.
+
+A space in a URL is not an exotic authoring mistake. `{{query}}` expanding to a value with a space
+in it produces exactly this, and that is the normal way this format is used.
+
+**The fix** is one line in `toHttpShape` — emit the URL as it will actually be sent, via `new URL`.
+Two cases stay verbatim, and they are the interesting ones:
+
+- A URL still carrying `{{placeholder}}`. Braces are themselves illegal in a URL, so normalizing
+  would percent-encode the very thing the reader is meant to fill in.
+- A relative URL. There is no base to resolve it against — the same thing the runner passes through.
+
+**Two tests, at two different depths.** The unit test pins the encoding. The other one *executes the
+snippet*: it stands up a loopback recorder, runs the request through the runner, runs the generated
+javascript-fetch snippet in a real Node process, and asserts the two arrivals match — target,
+headers, and body. That is the promise codegen actually makes, checked rather than assumed.
+
+**And a real limit, worth naming.** The executed snippet test passes against the *old* code, because
+`fetch` normalizes the URL itself. Only a client that refuses can see this defect — so there is a
+third test that shells out to `curl` and asserts the request arrives, skipping (not failing) where
+`curl` is absent. Reverting the fix turns both URL tests red and leaves the fetch one green, which is
+the honest picture: **executing one client proves one client.**
+
+**Verification.** 1108 unit tests (5 new), coverage 95.93% lines / 87.77% branches / 96.66%
+functions, typecheck 8/8, `lint examples --strict` clean. A live comparison now shows the curl
+snippet and `truspec run` arriving at the same server with the same target, the same headers, and
+the same body.
+
+### 83 — `console.log` in a script wrote to nowhere at all
+
+**How it turned up.** I was probing the MCP server over real stdio (it works — `initialize` and all
+23 tools answer a spawned process correctly) and went looking for the classic failure of a stdio
+MCP server: something writing to stdout that is not JSON-RPC. Nothing in `core` or `mcp-server`
+does. But scripts run in a Node vm, and a *user's* `console.log` would — so I checked where it goes:
+
+```
+$ node -e 'runInContext("console.log(\"HI\")", createContext({tr:1}))' 1>out 2>err
+stdout: []
+stderr: []
+```
+
+**Node injects a `console` into every new vm context, and it writes nowhere.** So a script's
+`console.log` was not an error the author could see, and not a line anywhere. The single most
+common thing anyone does to debug a script — every competitor's scripting API has it, and it is the
+first thing a Postman user reaches for — was a **silent no-op**. Someone debugging an HMAC
+signature had no output channel at all: the script either worked or threw.
+
+**The design is forced by where this engine runs.** Writing to stdout is the obvious fix and is
+wrong: the MCP server speaks JSON-RPC there, and one stray line corrupts the protocol; the browser
+client has no stdout at all. So the lines are **collected into the run result** as `scriptLogs`,
+and each surface renders them:
+
+```
+✗ FAIL  Failing script  (b.tspec.yaml)
+      error: Pre-request script error: nope is not defined
+      › about to fail with { a: 1, b: [ 1, 2 ] }
+      ! careful
+      ✗ bad
+```
+
+Three decisions inside that:
+
+- **Output from a script that threw is kept**, and shown with the error. A script fails at the line
+  *after* the one you were trying to inspect more often than not, so the throw path is where the
+  output matters most — and is exactly where it would have been easiest to drop.
+- **Objects format the way Node's console formats them**, via `util.inspect`. `{ a: 1, b: [ 1, 2 ] }`,
+  not `[object Object]`.
+- **A runaway loop is capped** — 100 lines, 2,000 characters each — and the cap *announces itself*
+  as a final line. Keeping the first hundred silently would misreport what happened.
+
+**Iteration 70's contract gate fired again**, refusing the new result field until it was documented
+in both `docs/api.md` and `docs/cli.md`. Third time that gate has paid for itself.
+
+**Verification.** 1119 unit tests (11 new), 2 new Playwright tests — one asserting both phases'
+output renders in the response pane, one asserting a *pre* script's output renders when there is no
+response at all, which required putting the panel outside the `response` branch. Coverage 95.90%
+lines / 87.79% branches / 96.67% functions, typecheck 8/8, docs site builds, `docs/scripting.md`
+carries a worked section and `CLAUDE.md` the one-line rule.
+
+### 84 — the published surface, and the four places that had to agree by hand
+
+**Probed the thing a user does first.** Iterations 81–83 all came from crossing a seam no test
+crossed, so I crossed the biggest one: `npm pack` the core package, install the tarball into an
+empty directory *outside* the workspace, and import every subpath the way a consumer would.
+
+Good news, and worth recording because it is the kind of thing that is usually broken: all 13
+subpaths resolve, the `./schema/*` wildcard serves the JSON Schema files as JSON imports, and the
+generated `.d.ts` files typecheck cleanly under `moduleResolution: nodenext`. Nothing to fix there.
+
+**What was wrong was discoverability.** `docs/api.md` — the programmatic API page, the only place a
+consumer looks — listed **6 of the 13**. `exporters`, `codegen`, `lint`, `docs`, `jsonpath`, `http`
+and the schema files all shipped, worked, and were undiscoverable. And `src/index.ts` still opened
+with a comment saying `spec` and `importers` were "coming"; both shipped many iterations ago.
+
+**The durable half.** Adding an entry point means editing **four** things that nothing forced to
+agree:
+
+| Place | What breaks if it is missed |
+|---|---|
+| `package.json` `exports` | the import fails for every user |
+| `tsup.config.ts` `entry` | it is exported but never built — a 404 on import, only after publish |
+| `vitest.config.ts` aliases | tests silently resolve to a stale `dist` instead of `src` |
+| `docs/api.md` | it exists and nobody can find it — which was the actual state |
+
+So there is now a gate, in the shape of iteration 70's result contract: eight assertions driven off
+the `exports` map itself, checking each of those four and going the other way too — a subpath named
+in the docs that is not in `exports` fails as well. One more asserts the browser-safe entry never
+re-exports a Node-only module, which is a rule `CLAUDE.md` states and nothing enforced.
+
+**Checked that it bites**, rather than trusting it: a phantom `./ghost` export fails 4 assertions
+(source, build, alias, docs), a phantom documented subpath fails 1, and
+`export * as workspace from "./workspace"` in the browser entry fails 1. Not a vacuous gate.
+
+**Verification.** 1127 unit tests (8 new), coverage 95.90% lines / 87.79% branches / 96.67%
+functions, typecheck 8/8, docs site builds, and a packed-tarball install imports all 13 subpaths
+and typechecks against the shipped types.
+
+### 85 — three commands accepted the argument you typed and threw it away
+
+**Turned to UI/UX, and the CLI is the UI most people meet first.** So I typed the obvious thing:
+
+```
+$ truspec serve examples --port 47391
+TruSpec web UI on http://127.0.0.1:47391  (serving /home/user/truspec)
+```
+
+**It served the wrong directory.** No error, no warning — `examples` was parsed as a positional and
+then never read, so the server came up on `.` instead, and the wrong collection was on screen with
+nothing anywhere to explain it.
+
+`serve` was the outlier: `run`, `lint`, `docs`, `drift`, `coverage`, `contract` and `init` all take
+the collection as `[<dir>]`. Positional is what anyone types.
+
+**Then I checked whether it was a class rather than an instance**, by asking which commands allow
+positionals and never read them:
+
+```
+gen:   allows positionals but never reads them
+mock:  allows positionals but never reads them
+serve: allows positionals but never reads them
+```
+
+Three of thirteen. `mock` and `gen` at least *failed* — but only with a usage line, which never says
+the path you typed was discarded.
+
+**What changed.** All three now take their main argument as a positional, with the flag still
+accepted because that is what the docs have always said. `truspec mock openapi.yaml` and
+`truspec gen openapi.yaml --out ./api` work, which is what anyone would type for a command whose
+only path argument is the spec. Giving both forms with *different* values is refused by name rather
+than resolved silently — the same reasoning as the format's `.strict()`:
+
+```
+Conflicting OpenAPI spec: "a.yaml" and --spec "b.yaml". Give one.
+```
+
+**And a second bug in the same command, found while testing the first.** `serve` never checked its
+directory existed:
+
+```
+$ truspec serve nope
+TruSpec web UI on ... (serving /cwd/nope)     ← a directory that is not there
+```
+
+The UI then showed its empty state — "no requests yet" — which reads as a fact about the collection
+rather than as the typo it is. It now refuses first, with `lint`'s wording, and refuses a file
+where a directory belongs.
+
+**The gate is for the class.** Beyond the fourteen behavioural tests, one asserts that **no**
+command module allows positionals without reading them. Removing `serve`'s handling again turns
+three tests red, so it is not vacuous.
+
+**Nineteen doc usages updated** across eight files to the positional form, including three flag
+tables.
+
+**Verification.** 1141 unit tests (14 new), coverage 95.90% lines / 87.86% branches / 96.67%
+functions, typecheck 8/8, docs site builds. Live: `serve examples` serves `examples`,
+`serve nope` refuses, `serve README.md` refuses, `mock <spec>` and `gen <spec>` both work
+positionally and by flag.
+
+### 86 — the security-relevant flags were tested for not throwing
+
+**Three probes cleared before this one, which is worth recording as much as the fix.**
+
+1. **Documented CLI invocations.** Having hand-corrected nineteen of them in iteration 85, I
+   extracted every `truspec …` line from the docs, the README and `CLAUDE.md`, and cross-checked
+   all 63 flag mentions against each command's real option set. **All 63 are real.** The reverse
+   too: **no flag ships undocumented.**
+2. **Network failure messages** — the errors people actually hit most. They are already excellent,
+   and a previous iteration clearly did this work well:
+   ```
+   error: Host not found: no-such-host-xyzzy.invalid — check the hostname, or the variable that produced it
+   error: Refusing to connect to 127.0.0.1:1: the HTTP client blocks that port number outright
+   error: TLS certificate for 127.0.0.1:47390 is self-signed (use --insecure, or --ca <file> to trust it)
+   error: Invalid URL: ht!tp://nope
+   ```
+   (Getting these required `NO_PROXY='*'` and a local self-signed HTTPS server — the sandbox's own
+   proxy answers for a remote host, and would have had me "fixing" its 403 instead.)
+3. **`--ca` end to end.** Generated a cert, served HTTPS, and confirmed `--ca` trusts it while the
+   default run refuses. It works. There is even a nice progression: a cert whose SAN does not
+   cover the host you asked for reports *"not valid for that hostname"* rather than repeating
+   "self-signed", so trusting the CA and matching the host read as the two different problems
+   they are.
+
+**So the defect is in the tests, not the code — and it is the iteration-81 class again.** The
+transport tests asserted that `buildFetch({ ca: [...] })` *does not throw*. Nothing asserted it
+actually verifies anything. A `--ca` that quietly did what `--insecure` does would have passed
+every test in the repo, and is a genuine security failure: a user who reaches for `--ca` instead of
+`--insecure` is choosing verification, and would have got none.
+
+**Five tests against a real HTTPS server** with a real self-signed certificate: default rejects,
+`--insecure` accepts, `--ca <that cert>` accepts, a relative `--ca` path resolves against the
+working directory — and the one that makes the others mean anything:
+
+> **`--ca` naming a *different* certificate must still reject.**
+
+Without that control, "`--ca` passed" is consistent with `--ca` disabling verification. Checked by
+making it do exactly that: only the control turns red.
+
+`openssl` generates the fixture at test time rather than committing a private key to the repo, and
+the suite skips where `openssl` is absent — the same judgement as iteration 82's curl test.
+
+**A break I caught by reading my own diff against the matrix, not by waiting for CI.** The
+portability job runs `pnpm test` on **windows-latest**, and two of these skip guards were wrong
+there:
+
+- Iteration 82's curl test gated on `curl --version`. Windows ships `curl.exe`, so the guard would
+  pass — and then `/bin/sh -c` does not exist, so the test would *fail* rather than skip. It now
+  gates on a POSIX shell as well, which is the actual premise: the snippet is a shell command.
+- This iteration's cert fixture gated on `openssl version`. A build without `-addext` would pass
+  that and fail at generation. It now gates by **generating a certificate**, so any platform where
+  any part of it misbehaves skips instead of going red.
+
+A skip guard that tests something adjacent to the real requirement is the same mistake as a mock
+standing in for the thing under test.
+
+**And the cleared probe still left a gate**, since it costs nothing: three assertions that every
+documented flag is real, that every real flag is documented, and that the option sets were actually
+parsed (so neither check can pass vacuously). A misspelled flag in the docs and an undocumented new
+flag each turn one red.
+
+**Verification.** 1149 unit tests (8 new), coverage 95.90% lines / 87.87% branches / 96.67%
+functions, typecheck 8/8.
+
+### 87 — the three tabs that told you nothing
+
+**Found by looking at the app, not the code.** I opened the web UI on a request with a three-part
+multipart body, bearer auth and a pre-request script, and read the tab strip:
+
+```
+params 0   headers 0   body   auth   script   capture 0   assertions 1
+```
+
+`params`, `headers`, `capture` and `assertions` have always carried a count — so the tab strip is a
+request's table of contents. **Except for the three that matter most.** A request with a four-part
+multipart body looked exactly like one with no body at all. Bearer auth looked exactly like none.
+And a request carrying a **script** was completely silent about it.
+
+That last one is not just a convenience. A script runs with the same access as the `truspec`
+process — every environment variable, every readable file — which is why `truspec lint` has a
+`script-runs-unsandboxed` warning at all. The UI is where someone opens a collection they did not
+write, and it gave no sign.
+
+**Now:**
+
+```
+params 0   headers 0   body [multipart 3]   auth [bearer]   script [pre]   capture 0   assertions 1
+```
+
+Three judgements in that:
+
+- **Count for the keyed body types, name for the rest.** `multipart 3` and `form 2` — the count is
+  the useful part. `json`, `text`, `graphql` — the type is; a count would be meaningless.
+- **An absent thing shows nothing.** `params 0` reads fine as a count; `body none` would read worse
+  than a bare tab. So no body, no auth and no script each render exactly as before.
+- **The script badge is styled apart** — amber in both themes, measured as a different computed
+  colour, with a title saying why. It is the one that should catch the eye.
+
+Everything needed was already on the client. The tab strip simply never asked.
+
+**Verification.** 1157 unit tests (8 new for the badge functions, including that an *empty*
+multipart body still reports `multipart 0` — the type is a fact even when the count is zero — and
+that an empty script string is not a script), 3 new Playwright tests, and the **full 120-test e2e
+suite green including the axe-core accessibility pass**. Coverage 95.90% lines / 87.87% branches /
+96.67% functions, typecheck 8/8.
+
+### 88 — the flow view drew the chain and refused to name it
+
+**Opened the Flow view on a three-step chain** — log in, capture `token` and `userId`, then two
+requests that use them — and this is what it showed:
+
+```
+     1  POST  Log in                                            not run
+ (   2  GET   Get me     {{baseUrl}}/users/{{userId}}            not run
+     3  GET   List things                                       not run
+```
+
+A stray squiggle on the left, and three steps that look like an unrelated list. **The one question
+this view exists to answer** — which request feeds which, and with what — was not on screen.
+
+**The data was all there.** `buildEdges` already computes every dependency, correctly: the
+*nearest preceding* producer wins, matching how the runner forward-chains `vars`, and the edges are
+lane-packed git-log style so they never overlap. Three edges were being drawn. They were:
+
+- **1.5px of `--line-2`** at 0.6 opacity — literally panel-border colour, on a panel.
+- **Labelled only in an SVG `<title>`** — so the variable name required hovering a hairline inside
+  an `aria-hidden` element.
+- **Legible only after selecting a step**, which highlights its edges in lime. Before that, nothing.
+
+**Now:**
+
+```
+     1  POST  Log in                                              not run
+ (   2  GET   Get me                        ↳ userId  token       not run
+     3  GET   List things                   ↳ token               not run
+```
+
+Each step names what it takes from an earlier one, with the producing request in the title
+(`{{userId}} from Log in`) since the chips cannot fit it. The edge stroke moved from border colour
+to `--dim`, so the rail reads as a graph rather than as decoration.
+
+**What I deliberately did not do.** The obvious fix is to label the curves themselves — that is the
+honest graph metaphor. The rail is `RAIL_PAD * 2 + lanes * LANE_W` = **38px** for two lanes, and
+widening it enough for text would push labels into collision the moment a collection has several
+overlapping chains, which is exactly when the view matters most. The step card has room, is already
+where the eye is, and scales.
+
+**Verification.** 4 new Playwright tests: the chips appear on the consumers and not on the
+producer, the title names the producing request, the three edges are still drawn (the change adds
+naming, it does not replace the rail), and a collection of independent steps says nothing at all.
+1157 unit tests, typecheck 8/8, full e2e suite green.
+
+### 89 — a palette that hid the shortcuts it was teaching
+
+**The command palette is in good shape** — eleven actions, request search, a `local-first · no
+telemetry` footer, `↵ open`. Every action is there. And every action is listed **without its
+keyboard binding**, while a `keyboard shortcuts` row sits two lines below implying they exist.
+
+A palette is the one list where people browse *everything they can do*, which makes it the place
+they learn the bindings. Listing "run the open request" with no sign that it is `⌘↵` leaves that
+discoverable only by opening a second modal.
+
+The bindings already lived in one registry — `shortcutGroups()`, deliberately single-sourced so
+"the reference and the bindings can't drift apart". The palette just never read it. It does now, so
+it cannot advertise a binding the app does not have:
+
+```
+→  run all requests
+→  run the open request                          [Ctrl] [↵]
+→  save the open request                         [Ctrl] [S]
+→  keyboard shortcuts                            [?]
+```
+
+An action with no binding stays unadorned rather than being given an invented one.
+
+**And a plural bug found while looking at it:** the footer read **"1 requests"**. Now `1 request`.
+
+**Two testing notes, both about not fooling myself.**
+
+- My first version of "actions with no binding are unadorned" **passed vacuously**. It asserted
+  `kbd` count 0 — which is trivially true of a palette that never opened, and the palette *was*
+  never opening, because the fixture needs `waitUntil: "networkidle"` before the window handler is
+  bound. The two positive tests failing is what exposed it. It now asserts the row exists first.
+- The singular is only reachable with exactly one request, and the fixture seeds two — so the test
+  **removes one** rather than settling for asserting the plural and calling the ternary obvious.
+  Reverting the fix turns exactly that test red.
+
+**Verification.** 4 new Playwright tests, full suite 128 passing, 1157 unit tests, typecheck 8/8.
+
+### 90 — the contract checker did not check the constraints
+
+**A self-consistency probe.** A mock generated from a spec is a stand-in for that API, so what it
+serves must satisfy the very document it came from. I wrote a demanding spec, ran the documented
+`gen` → `mock` → `contract` workflow, and looked at both ends:
+
+```
+$ curl .../items
+[{"id":0,"name":"string","status":"active", ... }]
+
+$ truspec contract api --spec openapi.yaml --env local
+All 2 tested operation(s) conform to the spec.
+```
+
+The spec says `minItems: 2` on that array and `minimum: 1` on `id`. **The mock returned one item
+with `id: 0`, and `contract` called it conforming.** Two bugs meeting in the middle.
+
+**What the validator actually covered:** `type`, `properties`, `required`, `items`, `enum`,
+`nullable`, `allOf`/`oneOf`/`anyOf`, `$ref`, `additionalProperties: false`. Honestly documented as a
+subset — but the missing half is not exotic. It is `minimum`, `maxLength`, `pattern`, `minItems`:
+the everyday constraints of a real OpenAPI document. This product's headline claim is *"fail the
+build when code drifts from your OpenAPI spec"*, and a response of the right shape carrying
+out-of-range values passed in silence.
+
+**Both halves fixed.**
+
+*The validator* now checks: `minimum`/`maximum`/`exclusiveMinimum`/`exclusiveMaximum`/`multipleOf`,
+`minLength`/`maxLength`/`pattern`, `minItems`/`maxItems`/`uniqueItems`, `minProperties`/
+`maxProperties`. Details worth stating:
+
+- **Both spellings of exclusivity.** OpenAPI 3.0 writes `exclusiveMinimum: true` as a modifier on
+  `minimum`; JSON Schema 2020-12 and OpenAPI 3.1 write `exclusiveMinimum: 1` as a bound of its own.
+  Both appear in real documents, so both are read.
+- **Checked before the type dispatch**, all of which `return`. Every keyword present in a schema is
+  an independent constraint, so `minimum` applies whether or not the schema also says
+  `type: integer` — and a keyword meant for another type is *inapplicable*, never a violation.
+- **`multipleOf` with a relative epsilon**, because `0.3 / 0.1` is `2.9999999999999996`. A zero
+  divisor is ignored rather than divided by.
+- **String length in code points**, so `"👍"` is one character, not two.
+- **An uncompilable `pattern` blames the schema**, once, rather than failing every response
+  against it.
+
+*The generator* now respects those bounds — starting a number at its `minimum`, emitting `minItems`
+elements, padding a plain string to `minLength` (but leaving a *formatted* one alone: a date-time
+padded to 40 characters is no longer a date-time). Fixing only the validator would have left the
+documented workflow failing out of the box.
+
+**The test that would have caught all of it** is now there as a property: *a generated example
+conforms to the schema that produced it*, over a schema using every constraint the validator
+knows. Disabling the new checks turns 16 of the 29 new tests red.
+
+A small one found on the way: `Math.ceil(0 / 5 - 1e-9) * 5` is `-0`, so a `multipleOf` schema could
+generate a negative zero. Normalised.
+
+**Verification.** 1186 unit tests (29 new), coverage 95.95% lines / 87.96% branches / 96.71%
+functions, typecheck 8/8, docs site builds. The live round trip now passes for the right reason:
+the mock serves `id: 1` and two items, and `contract` is genuinely checking. `docs/spec-sync.md`
+carries the full keyword table and a note that a spec using these keywords should expect `contract`
+to report violations it previously missed.
+
+### 91 — the generated documentation described everything except what the request does
+
+**Ran `truspec docs` on a rich collection and read it as a user would.** It is good: assertions in
+prose rather than as JSON objects, captures, the linked spec operation, tags, query parameters, a
+runnable cURL example with folder inheritance applied, the source file. Every field a request can
+carry is there — except **two**, and the request I wrote happened to use both:
+
+```yaml
+options: { timeoutMs: 3000, retries: 2 }
+script:
+  post: |
+    tr.expect(tr.response.json.length > 0, "at least one item")
+```
+
+Neither appeared anywhere in the document.
+
+**The `script` omission is the one that matters**, and not only for completeness:
+
+- A `post` script's `tr.expect(...)` calls **are assertions**. The document prints an **Asserts**
+  list, which a reader takes as the definition of what this request checks — and for any request
+  with a script, that list was *wrong*, not merely short.
+- A script runs with the same access as the `truspec` process. `truspec lint` warns about that
+  (`script-runs-unsandboxed`) and iteration 87 put a badge on it in the UI for the same reason.
+  Documentation for a collection you did not write is exactly where that belongs, and it said
+  nothing.
+
+Both now appear. Transport reads as behaviour rather than as a settings dump —
+`times out after 3000ms · re-sends up to 2 time(s) on a transient failure, first after 250ms` — and
+says nothing at all for a request on the defaults, or for `retries: 0` / `followRedirects: false`,
+which are the defaults spelled out and not facts worth a line. The script is collapsed behind a
+`<details>`, because it is usually longer than everything else on the page and is not what most
+readers came for, with the warning *outside* the fold where it will be read.
+
+**The gate is for the class, not the two instances.** A test builds a request that sets *every*
+field the format has and asserts each one reaches the document — then checks its own list against
+`RequestSchema.shape`, so a new field in the schema fails the test until it is either documented or
+explicitly classified structural (`tspec`, `order`, `method`, `url` — the last two covered together
+by the `\`POST /things\`` line). Adding a `newField` to the schema turns it red; removing the script
+section turns four tests red.
+
+**Verification.** 1195 unit tests (9 new), coverage 95.95% lines / 87.96% branches / 96.71%
+functions, typecheck 8/8, docs site builds, and `truspec docs` output confirmed byte-identical
+across two runs — the determinism the command promises.
+
+### 92 — drift checked that a body existed, never what was in it
+
+**Probed the other half of the spec-sync promise.** Iteration 90 fixed the *response* side. So I
+took a spec, tightened it the way a real API tightens — a query param became required, and a body
+property became required — and asked `truspec drift` what changed:
+
+```
+Changed (1):
+  ~ GET /pets: missing required query param 'limit'  (api/list.tspec.yaml)
+```
+
+It caught the parameter. It missed that **`POST /pets` now requires a `species` field** while the
+collection sends `{ id, name }` — a request that will 400 against a conforming server.
+
+**`drift` compared two things:** required query params, and whether a required body *exists*. Not
+what is in it. So **a field becoming required — the most ordinary breaking change an API makes —
+was reported by nothing**: `contract` validates responses, and the mock's `--validate` needs a
+server running. The `requestBodySchema` was already extracted for `gen` to scaffold from; drift
+simply never read it.
+
+**Now** the body is validated against the operation's schema with the same validator iteration 90
+strengthened, so every keyword in its table applies:
+
+```
+~ POST /pets: body missing required property 'species'
+~ POST /pets: body/id expected integer, got string
+~ POST /pets: body/tags array has 0 item(s), fewer than minItems 1
+```
+
+Required **header** parameters are checked too, case-insensitively as HTTP does — common for API
+keys and versioning, and previously unchecked.
+
+**The hard part is that a body is authored with variables still in it.** Validating it literally
+reports `id: "{{petId}}"` as failing `type: integer` — and a drift check that cries wolf is one
+someone turns off. So a violation is kept only when neither the offending value nor any *ancestor*
+of it is a template string:
+
+| Body | Reported? |
+|---|---|
+| `{ id: "{{petId}}" }` vs `type: integer` | no — a template could be anything |
+| `{ tags: "{{tagList}}" }` vs `minItems: 1` | no — the container is a template |
+| `"{{wholeBody}}"` | no |
+| `{ id: "not-a-number" }` vs `type: integer` | **yes** — a literal is a fact |
+| `{ id: "{{petId}}", name: "R" }` vs `minLength: 2` | **yes** — a literal sibling |
+| missing `species` | **yes** — and this one survives the rule *by construction*: the violation's path names a key that is not there, so there is no template to find, and none could supply one |
+
+That last row is the point. The check most worth having is exactly the one templates cannot
+obscure.
+
+A non-JSON body is not inspected at all — guessing at a text or multipart body against a JSON schema
+would be worse than silence.
+
+**Verification.** 1209 unit tests (14 new), coverage 95.97% lines / 88.00% branches / 96.72%
+functions, typecheck 8/8, docs site builds. The `gen` → `drift` round trip stays clean (a scaffolded
+collection must not report itself as drifted), and the bundled examples still show `0 changed`.
+Disabling the body check turns 7 tests red; disabling the template guard turns 5 red — so both the
+finding and the restraint are pinned.
+
+### 93 — the on-ramp led to a dead end
+
+**Probed the importers, which are the first thing a real user touches.** Imported a realistic
+Insomnia export — workspace, base environment, sub-environment, a folder, two requests — and then
+linted what came out:
+
+```
+pets/create-pet.tspec.yaml
+  4  ! warning undeclared-var: {{baseUrl}} is not declared in any environment…
+pets/list-pets.tspec.yaml
+  4  ! warning undeclared-var: {{baseUrl}} …
+  4  ! warning undeclared-var: {{apiVersion}} …
+     ! warning undeclared-var: {{_.token}} …
+```
+
+**The environments were dropped entirely.** The export declares `baseUrl`, `apiVersion` and
+`token`; two files of requests came out and nothing else. So `truspec run` on a fresh import fails
+immediately on unresolved variables — the on-ramp leaves you at a dead end. Postman has the same
+gap: its collection-level `variable` array went nowhere either. Neither importer had ever written
+an environment.
+
+**And that last warning is a second bug.** `{{_.token}}` — Insomnia's `{{ _.var }}` form was
+normalized *inline in the URL handling*, so a request came out with a clean
+`url: "{{baseUrl}}/pets"` next to an untouched `token: "{{ _.token }}"`: a variable name with a
+`_.` prefix that nothing declares and nothing will ever resolve. Headers, query, auth and body were
+all missed. Normalization is now a named function applied deeply to the converted result — one
+place, rather than a dozen call sites to forget.
+
+**The environment emitter is shared** between both importers, and three decisions in it matter:
+
+- **A credential-named variable becomes a secret NAME ONLY.** `CLAUDE.md` states it plainly —
+  *never inline secrets into request or environment files* — and an import is precisely where that
+  rule would be broken at scale: a Postman collection routinely carries a live `token` value, and
+  writing it into a file the user is about to commit is the failure this whole format exists to
+  prevent. The value is dropped, the name is declared so it resolves from the OS or a `.env`, and a
+  warning names it so nothing vanishes silently. A test asserts the value appears **nowhere** in
+  the file.
+- **An Insomnia sub-environment is written flattened.** Insomnia's sub-environment inherits from
+  the one above and overrides what it redeclares, so a `local` that only sets `baseUrl` is written
+  carrying the base's `apiVersion` too. That is both what TruSpec's model expects (one file,
+  self-contained) and what Insomnia actually does when you select it.
+- **Names are slugged for `--env`.** `Base Environment` → `base-environment`; a name that slugs to
+  nothing becomes `imported`.
+
+**Where I stopped fighting the tooling.** I first omitted `secrets: []` as noise — then found
+`serialize` re-parses before stringifying, so the schema's `.default([])` puts it back regardless.
+Rather than doing string surgery on generated YAML, the comment now says why the line is there.
+
+**Verification.** 1224 unit tests (15 new), coverage 96.01% lines / 88.05% branches / 96.75%
+functions, typecheck 8/8, docs site builds. End to end: the imported Insomnia collection now
+**lints with no findings at all** and *runs* — two requests passing against a local server, with
+the token supplied from the environment exactly as the format intends.
+
+### 94 — the send log followed the browser, not the collection
+
+**Probed the history rail**, the last major UI surface untouched by this campaign. It is a decent
+feature — persisted, 50-entry cap, relative times, clickable to reopen. Then I noticed the storage
+key:
+
+```ts
+const HISTORY_KEY = "truspec.history";
+```
+
+One key, and `truspec serve` always answers on the **same origin**. So I served project A, sent a
+request, killed the server, served project B on the same port in the same browser:
+
+```
+A history: GET | Alpha only in A | 200 | just now · 18ms
+B history: GET | Alpha only in A | 200 | 7s ago  · 18ms   ← A's request, in B
+B requests in sidebar: [ 'Beta only in B' ]
+```
+
+**Project B listed a request that does not exist in it.** The log followed the *browser*, not the
+collection.
+
+**And clicking that row did nothing at all** — no tab, no message, no console error. A dead UI
+element. Which is a second, more general bug: the same silence applies *within* one workspace to
+any entry whose file has since been renamed, deleted, or left behind on another branch.
+
+**Both fixed.**
+
+- The key is now `truspec.history:<dir>`, loaded when the served directory becomes known (the
+  client only learns it from the first `/api/workspace` response, so it can no longer be read at
+  mount). Anyone upgrading has an unscoped log: it is **adopted once** by the first workspace to
+  open and the old key deleted, which is right for the ordinary single-project case and no worse
+  than the behaviour it replaces for anyone with several.
+- A row naming a path the workspace no longer has is **marked `gone`, disabled, and titled with
+  why**. The entry stays — history is a log of what you did, and deleting a file does not un-send
+  the request — it just stops pretending to be a link.
+
+**Two notes on process, since both cost me time and one nearly misled me.**
+
+- My probe started failing with "waiting for locator('.req')" right after the fix, which looked
+  like I had broken the app. It had not: a leftover `serve` from an earlier probe still held the
+  port, so the new server never bound. Capturing the spawned server's **stderr** said
+  `EADDRINUSE` in one line. A probe that swallows its subprocess's output is a probe that lies to
+  you.
+- I replaced the ad-hoc probe with four Playwright tests that seed `localStorage` directly, since
+  the fixture serves one directory per test and "two workspaces, same port" is not expressible in
+  it. Making `historyKey` return the legacy constant again turns all four red.
+
+**Verification.** 1224 unit tests, **132 Playwright tests** (4 new) including the axe-core pass,
+typecheck 8/8.

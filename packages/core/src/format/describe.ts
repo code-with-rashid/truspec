@@ -28,6 +28,21 @@ export function describeAssertion(a: TruSpecAssertion): string {
       const conditions = valueConditions(a);
       return `\`${a.path}\` ${conditions.length > 0 ? joinConditions(conditions) : "is present"}`;
     }
+    case "sse": {
+      const scope = a.event === undefined ? "events" : `\`${a.event}\` events`;
+      const parts: string[] = [];
+      if (a.count !== undefined) parts.push(`exactly ${a.count}`);
+      if (a.minCount !== undefined) parts.push(`at least ${a.minCount}`);
+      if (a.maxCount !== undefined) parts.push(`at most ${a.maxCount}`);
+      if (a.contains !== undefined) parts.push(`one containing ${show(a.contains)}`);
+      if (a.matches !== undefined) parts.push(`one matching /${a.matches}/`);
+      if (a.jsonpath !== undefined) {
+        if (a.equals !== undefined) parts.push(`one whose \`${a.jsonpath}\` is ${show(a.equals)}`);
+        else if (a.exists === false) parts.push(`none with \`${a.jsonpath}\``);
+        else parts.push(`one with \`${a.jsonpath}\``);
+      }
+      return parts.length === 0 ? `at least one of the ${scope}` : `${scope}: ${joinConditions(parts)}`;
+    }
     case "schema": {
       const parts: string[] = [];
       if (a.status !== undefined) parts.push(`for status ${a.status}`);

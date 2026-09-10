@@ -3,9 +3,11 @@ import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { scaffoldFromSpec, writeScaffold } from "@truspec/core/spec";
 import { type CommandDeps, resolveDeps } from "./deps";
-import { argError } from "../args";
+import { argError, mainArg } from "../args";
 
-/** `truspec gen --spec <openapi> --out <dir>` — scaffold a request stub per operation. */
+const USAGE = "Usage: truspec gen <openapi> --out <dir> [--base-url-var <name>]\n";
+
+/** `truspec gen <openapi> --out <dir>` — scaffold a request stub per operation. */
 export async function genCommand(argv: string[], deps: Partial<CommandDeps> = {}): Promise<number> {
   const d = resolveDeps(deps);
   const options = {
@@ -15,20 +17,29 @@ export async function genCommand(argv: string[], deps: Partial<CommandDeps> = {}
   } as const;
 
   let values: { spec?: string; out?: string; "base-url-var"?: string };
+  let positionals: string[];
   try {
-    values = parseArgs({ args: argv, allowPositionals: true, options }).values;
+    const parsed = parseArgs({ args: argv, allowPositionals: true, options });
+    values = parsed.values;
+    positionals = parsed.positionals;
   } catch (e) {
     d.stderr(argError(e, "gen", options));
     return 2;
   }
-  if (!values.spec || !values.out) {
-    d.stderr("Usage: truspec gen --spec <openapi> --out <dir> [--base-url-var <name>]\n");
+  const arg = mainArg(positionals, values.spec, { what: "OpenAPI spec", flag: "--spec", usage: USAGE });
+  if (arg.error) {
+    d.stderr(arg.error);
+    return 2;
+  }
+  const spec = arg.value;
+  if (!spec || !values.out) {
+    d.stderr(USAGE);
     return 2;
   }
 
-  const specPath = resolve(d.cwd, values.spec);
+  const specPath = resolve(d.cwd, spec);
   if (!existsSync(specPath)) {
-    d.stderr(`Spec not found: ${values.spec}\n`);
+    d.stderr(`Spec not found: ${spec}\n`);
     return 1;
   }
   let result: ReturnType<typeof scaffoldFromSpec>;

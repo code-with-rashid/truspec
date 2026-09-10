@@ -71,7 +71,7 @@ the requests introduce:
 
 ```bash
 truspec init --spec openapi.yaml
-truspec mock --spec openapi.yaml --port 3000 &
+truspec mock openapi.yaml --port 3000 &
 truspec run api --env local     # passes
 ```
 
@@ -297,6 +297,7 @@ it applies:
 | `missedCaptures` | a `capture` matched nothing — `{ name, source, reason? }` |
 | `redirects`, `redirectLimitHit` | hops followed, and whether `maxRedirects` stopped the chain |
 | `retries` | re-sends performed under `options.retries` — also printed in the human report (`↻ re-sent 2 time(s)`), because a 200 the server only gave on the third try is not a clean 200 |
+| `scriptLogs` | what a `script` printed with `console.*` — `{ level, message }`, also printed in the human report under the request that produced it. Collected rather than written to stdout, so it works identically under the MCP server and in the browser |
 | `iteration` | 1-based row index under `--data` / `--repeat` |
 | `response.bytes` | body size as it arrived (not `bodyText.length`, which counts characters) |
 | `response.binary`, `response.bodyBase64` | the body is not text; its real bytes, base64-encoded |
@@ -463,12 +464,12 @@ Scaffold a request stub for every operation in an OpenAPI spec. Each stub gets a
 collection starts at full drift-tracking with zero hand-wiring.
 
 ```
-truspec gen --spec <openapi> --out <dir> [--base-url-var <name>]
+truspec gen <openapi> --out <dir> [--base-url-var <name>]
 ```
 
 | Flag | Alias | Description |
 |---|---|---|
-| `--spec <openapi>` | `-s` | **Required.** Path to the OpenAPI document. |
+| `<openapi>` | | **Required.** Path to the OpenAPI document (YAML or JSON). Also accepted as `--spec` / `-s`. |
 | `--out <dir>` | `-o` | **Required.** Directory to write the stubs into. |
 | `--base-url-var <name>` | | Variable used for the base URL in generated URLs. Default `baseUrl`. |
 
@@ -476,7 +477,7 @@ Path parameters become template variables (`/pets/{id}` → `{{baseUrl}}/pets/{{
 Operations with an unsupported method are skipped and reported on stderr.
 
 ```bash
-truspec gen --spec openapi.yaml --out ./api
+truspec gen openapi.yaml --out ./api
 # Generated 4 request(s) in ./api
 ```
 
@@ -517,8 +518,10 @@ Differing *values* never fail: environments are supposed to differ that way.
 
 ## `docs`
 
-Render a collection as Markdown — endpoints, parameters, headers, bodies, assertions, captures,
-the linked spec operation, and a runnable example per request.
+Render a collection as Markdown — endpoints, parameters, headers, bodies, auth, assertions,
+captures, transport options, scripts, the linked spec operation, and a runnable example per
+request. Every field a request file can carry reaches the document; a test holds that, so a new
+field cannot ship undocumented.
 
 ```
 truspec docs [<dir>] [--out <file>] [--title <text>] [--lang <target>|none] [--base-level <n>]
@@ -540,6 +543,12 @@ docs stop being regenerated.
 truspec docs ./api -o docs/api.md
 git diff --exit-code docs/api.md   # CI: docs are up to date with the collection
 ```
+
+A request carrying a [script](./scripting.md) gets a collapsed **Script** section with the source
+and a warning, for two reasons: a `post` script's `tr.expect(...)` calls are assertions, so leaving
+it out would make the **Asserts** list an incomplete account of what the request checks; and a
+script runs with the same access as the `truspec` process, which is what a reader of a collection
+they did not write needs to know before running it.
 
 An unreadable file is reported *in* the document and on stderr, and does not fail the command —
 [`lint`](#lint) is the command whose job it is to fail on a broken file.
@@ -586,6 +595,20 @@ truspec lint ./api              # warnings are informational
 truspec lint ./api --strict     # CI gate: nothing at all may be wrong
 truspec lint ./api --json | jq '.findings[] | select(.severity=="error")'
 ```
+
+Findings are grouped by file and carry the **line** they are about, so a report points at the code
+rather than describing it:
+
+```
+api/things.tspec.yaml
+   4  ! warning insecure-url: http://api.example.com/things is plaintext http:// to a remote host.
+   7  ✗ error inline-secret: headers.X-Api-Key looks like an AWS access key id. Reference it as {{name}} and declare it under an environment's `secrets`.
+  11  ! warning literal-credential-field: body.password holds a literal value…
+```
+
+They print in file order, and the same number is on each finding as `line` in `--json`. A rule that
+is about the file as a whole rather than one field leaves the gutter blank and omits the field,
+rather than pointing somewhere invented.
 
 The `undeclared-var` rule understands the run's own ordering: a variable a request captures counts
 as declared for every request that runs **after** it, and names a pre-request script sets with
@@ -681,12 +704,12 @@ Start a local HTTP mock server that serves generated responses from an OpenAPI s
 fully offline, no cloud. See the [Mock server guide](./mocking.md).
 
 ```
-truspec mock --spec <openapi> [--port <n>] [--delay <ms>] [--validate]
+truspec mock <openapi> [--port <n>] [--delay <ms>] [--validate]
 ```
 
 | Flag | Alias | Description |
 |---|---|---|
-| `--spec <openapi>` | `-s` | **Required.** Path to the OpenAPI document. |
+| `<openapi>` | | **Required.** Path to the OpenAPI document (YAML or JSON). Also accepted as `--spec` / `-s`. |
 | `--port <n>` | `-p` | Port to listen on. Default `4000`. |
 | `--delay <ms>` | | Artificial response latency, in milliseconds. |
 | `--validate` | | Validate incoming requests against the spec (responds `400` on mismatch). |
@@ -697,8 +720,8 @@ methods that are defined. `HEAD` is served from the matching `GET` operation —
 headers, no body — so you don't have to declare it in the spec.
 
 ```bash
-truspec mock --spec openapi.yaml                  # http://127.0.0.1:4000
-truspec mock --spec openapi.yaml --port 5000 --delay 150 --validate
+truspec mock openapi.yaml                        # http://127.0.0.1:4000
+truspec mock openapi.yaml --port 5000 --delay 150 --validate
 ```
 
 ---
@@ -710,14 +733,14 @@ engine (no CORS), and the UI is served from `@truspec/web`. See
 [Editors](./editors.md#web-ui).
 
 ```
-truspec serve [--dir <collection>] [--port <n>]
+truspec serve [<dir>] [--port <n>]
              [--insecure] [--proxy <url>] [--no-proxy <list>] [--ca <file>]
              [--client-cert <file>] [--client-key <file>] [--client-key-passphrase <s>]
 ```
 
 | Flag | Alias | Description |
 |---|---|---|
-| `--dir <collection>` | `-d` | Collection directory to serve. Default `.`. |
+| `<dir>` | | Collection directory to serve. Default `.`. Also accepted as `--dir` / `-d`. |
 | `--port <n>` | `-p` | Port. Default `4100`. |
 
 It also accepts every [transport flag](#transport-flags) `run` takes, and reads the same
@@ -726,8 +749,8 @@ this, a collection that passes in CI against a self-signed staging box would fai
 browser client, with nothing on screen to explain the difference.
 
 ```bash
-truspec serve --dir ./api       # opens http://localhost:4100
-truspec serve --dir ./api --ca ./corp-root.pem
+truspec serve ./api            # opens http://localhost:4100
+truspec serve ./api --ca ./corp-root.pem
 ```
 
 > Requires the web UI to be built. If you installed `truspec` from npm it's bundled; from

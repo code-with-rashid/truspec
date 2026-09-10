@@ -10,7 +10,7 @@ const linked = (operation: string, name: string, hasAssertions: boolean, filePat
   ...(filePath ? { filePath } : {}),
   ref: { operation },
   hasAssertions,
-  queryParams: [],
+  queryParams: [], headerNames: [],
   hasBody: false,
 });
 

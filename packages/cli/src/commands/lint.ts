@@ -68,7 +68,14 @@ export async function lintCommand(argv: string[], deps: Partial<CommandDeps> = {
   return values.strict && report.warnings > 0 ? 1 : 0;
 }
 
-/** Human output: grouped by file, with the rule id shown so a finding can be looked up or disabled. */
+/**
+ * Human output: grouped by file, with the rule id shown so a finding can be looked up or disabled,
+ * and the line it is about in a gutter — the shape `eslint --format stylish` uses, because that is
+ * the one every reader of a lint log already knows how to scan.
+ *
+ * Findings are ordered by line so the report reads down the file. A finding with no line (one about
+ * the request as a whole) sorts last rather than being given a made-up position.
+ */
 export function formatLint(report: LintReport, cwd: string): string {
   const lines: string[] = [];
   const byFile = new Map<string, LintReport["findings"]>();
@@ -79,8 +86,11 @@ export function formatLint(report: LintReport, cwd: string): string {
   }
   for (const [path, findings] of [...byFile].sort((a, b) => a[0].localeCompare(b[0]))) {
     lines.push(path);
-    for (const f of findings) {
-      lines.push(`  ${f.severity === "error" ? "✗" : "!"} ${f.severity} ${f.rule}: ${f.message}`);
+    const width = Math.max(0, ...findings.map((f) => (f.line === undefined ? 0 : String(f.line).length)));
+    const ordered = [...findings].sort((a, b) => (a.line ?? Infinity) - (b.line ?? Infinity));
+    for (const f of ordered) {
+      const gutter = (f.line === undefined ? "" : String(f.line)).padStart(width);
+      lines.push(`  ${gutter}  ${f.severity === "error" ? "✗" : "!"} ${f.severity} ${f.rule}: ${f.message}`);
     }
     lines.push("");
   }

@@ -47,7 +47,7 @@ import { FolderTree, type RowAction, type RowActionsController, type RowKind } f
 import { NewFolderModal } from "./components/NewFolderModal";
 import { NewRequestModal, type NewRequestPayload } from "./components/NewRequestModal";
 import { contractInfo, RequestWorkspace, specRefOf, type ReqTab, type RespTab } from "./components/RequestWorkspace";
-import { ShortcutsModal } from "./components/ShortcutsModal";
+import { modKey, ShortcutsModal } from "./components/ShortcutsModal";
 import { TabStrip } from "./components/TabStrip";
 import { statusClass } from "./format-utils";
 import { FlowView } from "./FlowView";
@@ -72,17 +72,45 @@ interface HistoryEntry {
   at: number;
 }
 
-const HISTORY_KEY = "truspec.history";
+/**
+ * History is stored **per workspace**.
+ *
+ * `truspec serve` always answers on the same origin, so a single key made the send log follow the
+ * *browser*, not the collection: serve one project, send a request, serve a different project on
+ * the same port, and the history rail listed a request that does not exist there — a row that
+ * silently did nothing when clicked, because there was no such file to open.
+ */
+const HISTORY_KEY_PREFIX = "truspec.history:";
+/** The key used before history was scoped. Adopted once by the first workspace to load. */
+const LEGACY_HISTORY_KEY = "truspec.history";
 const HISTORY_LIMIT = 50;
 
-function loadHistory(): HistoryEntry[] {
+const historyKey = (dir: string): string => `${HISTORY_KEY_PREFIX}${dir}`;
+
+function loadHistory(dir: string): HistoryEntry[] {
+  const read = (key: string): HistoryEntry[] | undefined => {
+    try {
+      const raw = window.localStorage.getItem(key);
+      const parsed: unknown = raw ? JSON.parse(raw) : undefined;
+      return Array.isArray(parsed) ? (parsed as HistoryEntry[]) : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+  const own = read(historyKey(dir));
+  if (own) return own;
+  // One-time migration for anyone upgrading: the unscoped log belongs to whichever workspace
+  // opens first, which is right for the ordinary single-project case and no worse than the
+  // behaviour it replaces for anyone with several.
+  const legacy = read(LEGACY_HISTORY_KEY);
+  if (!legacy) return [];
   try {
-    const raw = window.localStorage.getItem(HISTORY_KEY);
-    const parsed: unknown = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? (parsed as HistoryEntry[]) : [];
+    window.localStorage.setItem(historyKey(dir), JSON.stringify(legacy));
+    window.localStorage.removeItem(LEGACY_HISTORY_KEY);
   } catch {
-    return [];
+    // private mode / storage disabled — the entries are still shown for this session.
   }
+  return legacy;
 }
 
 function relativeTime(at: number): string {
@@ -234,7 +262,16 @@ export function App() {
       .catch(() => setEnvReport(null));
   }, []);
   const [ranResults, setRanResults] = useState<Map<string, RunResult>>(new Map());
-  const [history, setHistory] = useState<HistoryEntry[]>(loadHistory);
+  // Empty until the workspace identifies itself — the log is keyed by directory, which the client
+  // only learns from the first `/api/workspace` response.
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  // The workspace's own log, loaded (and reloaded) whenever the served directory changes.
+  const historyDir = state?.dir;
+  /** Paths the workspace currently has, for telling a live history row from a stale one. */
+  const livePaths = useMemo(() => new Set((state?.requests ?? []).map((r) => r.path)), [state]);
+  useEffect(() => {
+    setHistory(historyDir ? loadHistory(historyDir) : []);
+  }, [historyDir]);
   const [driftRep, setDriftRep] = useState<DriftReport | null>(null);
   const [covRep, setCovRep] = useState<CoverageReport | null>(null);
   const [specErr, setSpecErr] = useState<string | null>(null);
@@ -926,7 +963,7 @@ export function App() {
                 at: Date.now(),
               };
               const next = [entry, ...prev].slice(0, HISTORY_LIMIT);
-              window.localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+              if (state?.dir) window.localStorage.setItem(historyKey(state.dir), JSON.stringify(next));
               return next;
             });
           }
@@ -1230,6 +1267,9 @@ export function App() {
   // The palette's own placeholder ("jump to a request, run, or view…") promised these two things
   // it never actually offered — only request search. Filtered by the same query as requests.
   const paletteCommands = useMemo(() => {
+    // Same source as the shortcuts reference, so the palette cannot advertise a binding the app
+    // does not have.
+    const mod = modKey();
     const q = paletteQ.trim().toLowerCase();
     const all = [
       { id: "view-workspace", label: "go to workspace" },
@@ -1239,13 +1279,13 @@ export function App() {
       { id: "run-all", label: "run all requests" },
       // Every one of these was previously reachable only by knowing where its button lives; the
       // palette is where people look for an action they cannot immediately see.
-      { id: "run-request", label: "run the open request" },
-      { id: "save-request", label: "save the open request" },
+      { id: "run-request", label: "run the open request", keys: [mod, "↵"] },
+      { id: "save-request", label: "save the open request", keys: [mod, "S"] },
       { id: "new-request", label: "new request" },
       { id: "new-folder", label: "new folder" },
       { id: "toggle-theme", label: "toggle light / dark theme" },
       { id: "toggle-rail", label: "show or hide the spec panel" },
-      { id: "shortcuts", label: "keyboard shortcuts" },
+      { id: "shortcuts", label: "keyboard shortcuts", keys: ["?"] },
     ];
     return all.filter((c) => !q || c.label.toLowerCase().includes(q));
   }, [paletteQ]);
@@ -1869,17 +1909,24 @@ export function App() {
                         className="btn ghost small"
                         onClick={() => {
                           setHistory([]);
-                          window.localStorage.removeItem(HISTORY_KEY);
+                          if (state?.dir) window.localStorage.removeItem(historyKey(state.dir));
                         }}
                       >
                         clear
                       </button>
                     </div>
                     <div className="result-list">
-                      {history.map((entry, i) => (
+                      {history.map((entry, i) => {
+                        // A log entry outlives the file it names: renamed, deleted, or on a branch
+                        // you have since switched away from. Clicking such a row used to do
+                        // nothing at all — no tab, no message. It now says why instead.
+                        const present = livePaths.has(entry.path);
+                        return (
                         <button
                           key={`${entry.path}-${entry.at}-${i}`}
-                          className={`rrow ${entry.ok ? "ok" : "bad"}`}
+                          className={`rrow ${entry.ok ? "ok" : "bad"}${present ? "" : " gone"}`}
+                          disabled={!present}
+                          title={present ? entry.path : `${entry.path} — no longer in this collection`}
                           onClick={() => {
                             openTab(entry.path);
                             setView("workspace");
@@ -1888,6 +1935,7 @@ export function App() {
                           <div className="rrow-top">
                             <span className={`m m-${entry.method}`}>{entry.method}</span>
                             <span className="rrow-name">{entry.name}</span>
+                            {!present && <span className="rrow-gone">gone</span>}
                             <span className="rrow-status">
                               {entry.status ?? (entry.error ? "err" : "—")}
                             </span>
@@ -1897,7 +1945,8 @@ export function App() {
                             {entry.durationMs !== undefined ? ` · ${entry.durationMs}ms` : ""}
                           </span>
                         </button>
-                      ))}
+                        );
+                      })}
                     </div>
                   </>
                 ) : (

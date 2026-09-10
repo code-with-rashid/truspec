@@ -135,6 +135,11 @@ function requestSection(
     }
     out.push("");
   }
+  // Transport settings change what the request *does* — a reader could not see that this one
+  // re-sends twice, or gives up after three seconds, in the document that describes it.
+  const transport = describeOptions(req.options);
+  if (transport) out.push(`**Transport:** ${transport}`, "");
+  out.push(...scriptSection(req.script));
 
   if (lang !== "none") {
     try {
@@ -148,6 +153,59 @@ function requestSection(
     }
   }
   out.push(`<sub>\`${path}\`</sub>`, "");
+  return out;
+}
+
+
+/** Transport settings in words. Empty when the request takes the defaults. */
+function describeOptions(options: TruSpecRequest["options"]): string {
+  if (!options) return "";
+  const parts: string[] = [];
+  if (options.timeoutMs !== undefined) parts.push(`times out after ${options.timeoutMs}ms`);
+  if (options.retries !== undefined && options.retries > 0) {
+    const delay = options.retryDelayMs !== undefined ? `, first after ${options.retryDelayMs}ms` : "";
+    parts.push(`re-sends up to ${options.retries} time(s) on a transient failure${delay}`);
+  }
+  if (options.followRedirects) {
+    parts.push(`follows redirects${options.maxRedirects !== undefined ? ` (max ${options.maxRedirects})` : ""}`);
+  }
+  return parts.join(" · ");
+}
+
+/**
+ * The request's scripts, and the warning that comes with them.
+ *
+ * Two reasons this cannot be omitted. A `post` script's `tr.expect(...)` calls *are* assertions, so
+ * leaving it out makes the **Asserts** list above incomplete — the one list a reader takes as the
+ * definition of what this request checks. And a script runs with the same access as the `truspec`
+ * process, which is exactly what someone reading documentation for a collection they did not write
+ * needs to know before running it. `truspec lint` warns about it; the document said nothing.
+ *
+ * Collapsed, because a script is usually longer than everything else on the page and is not what
+ * most readers came for.
+ */
+function scriptSection(script: TruSpecRequest["script"]): string[] {
+  if (!script?.pre && !script?.post) return [];
+  const out: string[] = ["**Script**", ""];
+  out.push(
+    "> This request runs a script, which has the same access as the `truspec` process itself.",
+    "> A `post` script's `tr.expect(...)` calls add assertions beyond the list above.",
+    "",
+  );
+  for (const phase of ["pre", "post"] as const) {
+    const source = script[phase];
+    if (!source) continue;
+    out.push(
+      `<details><summary><code>script.${phase}</code> — runs ${phase === "pre" ? "before the request is sent" : "after the response arrives"}</summary>`,
+      "",
+      "```js",
+      source.trimEnd(),
+      "```",
+      "",
+      "</details>",
+      "",
+    );
+  }
   return out;
 }
 

@@ -49,6 +49,11 @@ describe("mergeTransport", () => {
   });
 });
 
+interface Echo {
+  contentType: string;
+  body: string;
+}
+
 describe("buildFetch", () => {
   it("returns undefined when nothing is configured, so the global fetch is used unchanged", () => {
     expect(buildFetch({}, dir)).toBeUndefined();
@@ -70,6 +75,69 @@ describe("buildFetch", () => {
       expect(await response.text()).toBe('{"ok":true}');
     } finally {
       await new Promise((r) => server.close(() => r(undefined)));
+    }
+  });
+
+  /** A loopback server that echoes back what it was actually sent, headers and bytes. */
+  async function echoServer(): Promise<{ url: string; close: () => Promise<void>; sent: () => Promise<Echo> }> {
+    let resolveSent: (e: Echo) => void;
+    const first = new Promise<Echo>((r) => {
+      resolveSent = r;
+    });
+    const server = createServer((req, res) => {
+      const chunks: Buffer[] = [];
+      req.on("data", (c: Buffer) => chunks.push(c));
+      req.on("end", () => {
+        resolveSent({ contentType: req.headers["content-type"] ?? "", body: Buffer.concat(chunks).toString("utf8") });
+        res.writeHead(204);
+        res.end();
+      });
+    });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
+    const port = (server.address() as { port: number }).port;
+    return {
+      url: `http://127.0.0.1:${port}/`,
+      sent: () => first,
+      close: () => new Promise<void>((r) => server.close(() => r())),
+    };
+  }
+
+  /**
+   * The transport is where a `FormData` assembled by the runner crosses into a *different copy* of
+   * undici, whose `instanceof` check does not recognise it. Every other multipart test injects a
+   * fetch and inspects the object, so none of them can see what actually goes down the socket —
+   * which for a long time was the eleven bytes `[object FormData]` under `Content-Type: text/plain`.
+   */
+  it("sends a multipart body as multipart, not as a stringified object", async () => {
+    const echo = await echoServer();
+    try {
+      const form = new FormData();
+      form.append("title", "My note");
+      form.append("note", new Blob(["hello from a file"], { type: "text/plain" }), "note.txt");
+      const f = buildFetch({ insecure: true }, dir);
+      await f!(echo.url, { method: "POST", body: form });
+      const sent = await echo.sent();
+      expect(sent.contentType).toMatch(/^multipart\/form-data; boundary=/);
+      expect(sent.body).not.toContain("[object FormData]");
+      expect(sent.body).toContain('name="title"');
+      expect(sent.body).toContain("My note");
+      expect(sent.body).toContain('name="note"; filename="note.txt"');
+      expect(sent.body).toContain("hello from a file");
+    } finally {
+      await echo.close();
+    }
+  });
+
+  it("still sends a plain string body untouched", async () => {
+    const echo = await echoServer();
+    try {
+      const f = buildFetch({ insecure: true }, dir);
+      await f!(echo.url, { method: "POST", headers: { "content-type": "application/json" }, body: '{"a":1}' });
+      const sent = await echo.sent();
+      expect(sent.contentType).toBe("application/json");
+      expect(sent.body).toBe('{"a":1}');
+    } finally {
+      await echo.close();
     }
   });
 

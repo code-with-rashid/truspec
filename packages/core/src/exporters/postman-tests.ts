@@ -141,6 +141,11 @@ export function assertionsToPostmanTest(
         // collection does not carry.
         warn(`"${requestName}": \`schema\` assertions need the OpenAPI spec and have no Postman equivalent`);
         continue;
+      case "sse":
+        // Postman buffers a stream as one body and has no notion of individual events, so any
+        // translation would be a weaker assertion wearing the same name.
+        warn(`"${requestName}": \`sse\` assertions have no Postman equivalent and were not exported`);
+        continue;
       default:
         continue;
     }

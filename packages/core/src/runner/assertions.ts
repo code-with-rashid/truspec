@@ -2,6 +2,7 @@ import type { TruSpecAssertion } from "../format/types";
 import { responseSchemaFor, type SpecOperation } from "../spec/openapi";
 import { validateAgainstSchema } from "../spec/validate-response";
 import { explainJsonPathMiss, jsonpath } from "./jsonpath";
+import type { SseEvent } from "./sse";
 
 /** Everything except the spec-aware `schema` assertion, which needs the OpenAPI document. */
 type ResponseAssertion = Exclude<TruSpecAssertion, { type: "schema" }>;
@@ -19,6 +20,8 @@ export interface ResponseView {
   bodyText: string;
   json?: unknown;
   durationMs: number;
+  /** Parsed server-sent events, when the response was a `text/event-stream`. */
+  events?: SseEvent[];
 }
 
 export interface AssertionResult {
@@ -245,6 +248,64 @@ export function evaluateAssertion(a: ResponseAssertion, res: ResponseView): Asse
     case "duration": {
       const ok = res.durationMs < a.ltMs;
       return { type: "duration", ok, message: `duration ${res.durationMs}ms ${ok ? "<" : ">="} ${a.ltMs}ms` };
+    }
+    case "sse": {
+      // A streaming response *is* its events. Asserting on the concatenated stream text works but
+      // cannot say how many arrived or under which name — which is the whole question.
+      const checks: Check[] = [];
+      if (res.events === undefined) {
+        return {
+          type: "sse",
+          ok: false,
+          message: `sse — the response is not a text/event-stream (content-type: ${res.headers["content-type"] ?? "none"})`,
+        };
+      }
+      const matching = a.event === undefined ? res.events : res.events.filter((e) => e.event === a.event);
+      const scope = a.event === undefined ? "events" : `\`${a.event}\` events`;
+      if (a.count !== undefined) checks.push({ ok: matching.length === a.count, desc: `count == ${a.count}` });
+      if (a.minCount !== undefined) checks.push({ ok: matching.length >= a.minCount, desc: `count >= ${a.minCount}` });
+      if (a.maxCount !== undefined) checks.push({ ok: matching.length <= a.maxCount, desc: `count <= ${a.maxCount}` });
+      if (a.contains !== undefined) {
+        const needle = a.contains;
+        checks.push({ ok: matching.some((e) => e.data.includes(needle)), desc: `some data contains ${show(needle)}` });
+      }
+      if (a.matches !== undefined) {
+        const re = new RegExp(a.matches);
+        checks.push({ ok: matching.some((e) => re.test(e.data)), desc: `some data matches /${a.matches}/` });
+      }
+      if (a.jsonpath !== undefined) {
+        const path = a.jsonpath;
+        // Each event's `data` is its own document — an SSE stream is many small JSON values, not
+        // one — so the path is evaluated per event and the assertion holds if any event satisfies it.
+        const selected = matching.flatMap((e) => {
+          let value: unknown;
+          try {
+            value = JSON.parse(e.data);
+          } catch {
+            return [];
+          }
+          try {
+            return jsonpath(value, path);
+          } catch {
+            return [];
+          }
+        });
+        if (a.exists !== undefined) {
+          checks.push({ ok: selected.length > 0 === a.exists, desc: a.exists ? `${path} exists` : `${path} is absent` });
+        }
+        if (a.equals !== undefined) {
+          checks.push({
+            ok: selected.some((v) => deepEqual(v, a.equals)),
+            desc: `${path} == ${show(a.equals)}`,
+          });
+        }
+        if (a.exists === undefined && a.equals === undefined) {
+          checks.push({ ok: selected.length > 0, desc: `${path} selects something` });
+        }
+      }
+      if (checks.length === 0) checks.push({ ok: matching.length > 0, desc: "has at least one event" });
+      const ok = all(checks);
+      return { type: "sse", ok, message: summarize(`sse ${matching.length} ${scope}`, checks, ok) };
     }
     default: {
       const exhaustive: never = a;
