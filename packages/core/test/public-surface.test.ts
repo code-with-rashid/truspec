@@ -84,6 +84,52 @@ describe("the published entry points", () => {
     }
   });
 
+  /**
+   * The table in `docs/api.md` labels each subpath `browser-safe` or `Node`, and that label is a
+   * promise someone builds a bundle on. Nothing checked it — so `exporters` was labelled
+   * browser-safe while importing `node:fs` and `workspace/`, an error the surface gate above could
+   * not see because it only guards the *main* entry.
+   *
+   * "Browser-safe" here means what `CLAUDE.md` means by it: free of the **filesystem and server**
+   * modules. Not free of every `node:` builtin — `runner` uses `node:crypto` and `Buffer`, which
+   * bundlers shim, and calling that a mislabel would be testing something adjacent to the real
+   * requirement rather than the requirement.
+   *
+   * Following one level of local import is enough: every current offender pulls it in directly or
+   * via a single hop, and a deeper walk would trade a real check for a slow one.
+   */
+  it("labels each subpath's platform truthfully in docs/api.md", () => {
+    const docs = readFileSync(join(repoRoot, "docs", "api.md"), "utf8");
+    const nodeish = (file: string, depth = 0): boolean => {
+      if (!existsSync(file)) return false;
+      const src = readFileSync(file, "utf8");
+      if (/from "node:(fs|http|https|net|tls|child_process|os|dns)/.test(src)) return true;
+      if (depth >= 1) return false;
+      for (const m of src.matchAll(/from "(\.[^"]+)"/g)) {
+        const rel = m[1] as string;
+        const base = join(file, "..", rel);
+        for (const candidate of [`${base}.ts`, join(base, "index.ts")]) {
+          if (nodeish(candidate, depth + 1)) return true;
+        }
+      }
+      return false;
+    };
+
+    let checked = 0;
+    for (const p of subpaths) {
+      if (p === "") continue;
+      const row = new RegExp(`\\\`@truspec/core${p}\\\`[^\n]*`).exec(docs);
+      if (!row) continue;
+      checked++;
+      const claimsBrowser = row[0].includes("browser-safe");
+      const isNode = nodeish(join(corePkgDir, "src", p, "index.ts"));
+      if (claimsBrowser) {
+        expect(isNode, `docs/api.md calls @truspec/core${p} browser-safe, but it reaches node:`).toBe(false);
+      }
+    }
+    expect(checked).toBeGreaterThanOrEqual(10);
+  });
+
   it("keeps the browser-safe entry free of the Node-only modules", () => {
     const index = readFileSync(join(corePkgDir, "src", "index.ts"), "utf8");
     for (const nodeOnly of ["workspace", "spec", "importers", "mock", "http"]) {

@@ -741,6 +741,44 @@ truspec import postman ./postman_collection.json          # dry run (preview)
 
 ---
 
+## `export`
+
+Render a collection back out as a **Postman v2.1** collection — for handing it to someone who works
+in Postman, or as a CI artifact.
+
+```
+truspec export postman [<dir>] [--name <text>] [--output <file>]
+```
+
+| Flag | Alias | Description |
+|---|---|---|
+| `<dir>` | | Collection directory. Default `.`. Also accepted as `--dir` / `-d`. |
+| `--name <text>` | | Collection name. Defaults to the root `folder.tspec.yaml`'s `name`, else the directory name. |
+| `--output <file>` | `-o` | Write to a file instead of stdout. |
+
+```bash
+truspec export postman ./api > collection.json
+truspec export postman ./api -o collection.json --name "Shop API"
+```
+
+**The JSON is the only thing on stdout.** Warnings and the request/folder count go to stderr, so a
+redirect gets a clean file.
+
+**Folder inheritance is applied**, so what you hand over is the request as it is actually sent — the
+folder's `baseUrl`, its inherited headers and its auth. `{{vars}}` are deliberately left unresolved:
+TruSpec and Postman spell a variable the same way, so `{{baseUrl}}` arrives as a Postman variable
+rather than as a baked-in literal. Inherited auth becomes Postman's own `auth` block rather than a
+literal `Authorization` header, so the credential is not sent twice.
+
+**Assertions come with it.** Each request's declarative assertions render as a Postman test script
+(`pm.test(...)`), so the exported collection still checks what the TruSpec one checked. `status`,
+`header`, `body` and `duration` map directly; a `jsonpath` maps when it is simple enough for the
+lodash `_.get` Postman ships. What has no Postman equivalent — transport options, the `spec` link,
+an `sse` or `schema` assertion — is reported as a `warning:` rather than translated into something
+weaker wearing the same name.
+
+---
+
 ## `mock`
 
 Start a local HTTP mock server that serves generated responses from an OpenAPI spec —

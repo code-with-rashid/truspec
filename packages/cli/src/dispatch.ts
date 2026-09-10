@@ -5,6 +5,7 @@ import { driftCommand } from "./commands/drift";
 import { docsCommand } from "./commands/docs";
 import { envCommand } from "./commands/env";
 import { genCommand } from "./commands/gen";
+import { exportCommand } from "./commands/export";
 import { importCommand } from "./commands/import";
 import { initCommand } from "./commands/init";
 import { lintCommand } from "./commands/lint";
@@ -32,6 +33,7 @@ Usage:
   truspec lint [<dir>] [--strict] [--json] [--disable <rule>] [--list-rules]
   truspec codegen <request> [--lang <target>] [--env <name>] [--with-secrets] [--list]
   truspec import <postman|bruno|insomnia|curl|har> <path|-> [--out <dir>] [--filter <substr>]
+  truspec export postman [<dir>] [--name <text>] [--output <file>]
   truspec mock <openapi> [--port <n>] [--delay <ms>] [--validate]
   truspec serve [<dir>] [--port <n>] [--insecure] [--proxy <url>] [--no-proxy <list>]
   truspec --help
@@ -49,6 +51,7 @@ Commands:
   lint       Static checks over a collection (inline secrets, dead assertions, undeclared vars).
   codegen    Render a request as a runnable snippet (curl, Python, Go, …); --list for targets.
   import     Convert a Postman/Bruno/Insomnia collection, curl command, or HAR export.
+  export     Render a collection back out as a Postman v2.1 collection.
   mock       Serve generated responses from an OpenAPI spec (local, offline).
   serve      Open the local web UI for a collection (executes requests server-side).
 `;
@@ -66,6 +69,7 @@ export const COMMANDS = [
   "docs",
   "env",
   "import",
+  "export",
   "mock",
   "serve",
 ] as const;
@@ -113,6 +117,8 @@ export async function main(argv: string[], io: MainIo = {}): Promise<number> {
       return envCommand(rest);
     case "import":
       return importCommand(rest);
+    case "export":
+      return exportCommand(rest);
     case "mock":
       return mockCommand(rest);
     case "serve":

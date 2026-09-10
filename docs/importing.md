@@ -262,7 +262,14 @@ See [Programmatic API → importers](./api.md#importers--postman--bruno).
 ## Exporting back to Postman
 
 Going the other way — handing a collection to someone who works in Postman — is available from the
-web UI's export button and from `@truspec/core/exporters`:
+CLI, the web UI's export button, and `@truspec/core/exporters`:
+
+```bash
+truspec export postman ./api > collection.json
+```
+
+See [`truspec export`](./cli.md#export) for the flags and for what does and does not survive the
+conversion. Programmatically:
 
 ```ts
 import { exportPostman } from "@truspec/core/exporters";
