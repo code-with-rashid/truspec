@@ -27,7 +27,11 @@ function collectionExamples(): Block[] {
   ];
   const out: Block[] = [];
   for (const file of files) {
-    const text = readFileSync(file, "utf8");
+    // Normalise line endings first. Git for Windows checks these files out with CRLF, so a fence
+    // regex anchored on "```yaml\n" matches nothing there — and this suite would then find zero
+    // examples and report green while checking nothing. Its own vacuity guard caught exactly that
+    // on the first Windows CI run.
+    const text = readFileSync(file, "utf8").replace(/\r\n/g, "\n");
     for (const m of text.matchAll(/```yaml\n([\s\S]*?)```/g)) {
       const body = m[1] as string;
       const line = text.slice(0, m.index).split("\n").length;

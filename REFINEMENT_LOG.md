@@ -3793,6 +3793,23 @@ cannot pass by matching nothing.
 **Verification.** 1247 unit tests (17 new — one per example, so a failure names the file and line),
 coverage 96.01% lines / 88.04% branches / 96.75% functions, typecheck 8/8, docs site builds.
 
+**Postscript: the guard caught itself, one CI run later.** Windows portability went red on exactly
+the assertion above:
+
+```
+× finds examples to check, so this suite cannot pass vacuously
+  → expected 0 to be greater than or equal to 10
+```
+
+Git for Windows checks these files out with **CRLF**, so a fence regex anchored on `` ```yaml\n ``
+matches nothing there. Without the vacuity assertion this suite would have found zero examples on
+Windows and reported **green while checking nothing** — the precise rot it was written to prevent,
+demonstrated on its own first run against a different platform. Reproduced locally by converting a
+copy of the docs to CRLF (0 blocks before normalising, 6 after), and fixed by normalising line
+endings on read. The other two doc-scanning gates were checked against CRLF and are unaffected —
+`documented-flags` finds the same 63 invocations either way, which the Windows log independently
+confirms.
+
 ### 98 — a bailed run reported a one-test suite
 
 **Probed the JUnit reporter**, which is how this tool talks to CI — the integration the README
