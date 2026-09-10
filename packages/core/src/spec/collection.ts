@@ -8,7 +8,18 @@ export interface CollectionOp {
   hasAssertions: boolean;
   /** Query parameter names the request provides (from `query` and the URL). */
   queryParams: string[];
+  /** Header names the request sets, lowercased. */
+  headerNames: string[];
   hasBody: boolean;
+  /**
+   * The JSON request body, as authored — `{{vars}}` still in it.
+   *
+   * `drift` validates this against the spec's `requestBody` schema, which is how a *newly required
+   * field* is caught: the most common breaking change an API makes, and one that nothing in this
+   * tool used to notice. It stays uninterpolated on purpose; the caller drops any violation a
+   * template could explain rather than resolving values it cannot know at lint time.
+   */
+  jsonBody?: unknown;
 }
 
 function requestQueryParams(req: TruSpecRequest): string[] {
@@ -37,7 +48,9 @@ export function collectionOperations(
       ref: { operationId: req.spec.operationId, operation: req.spec.operation },
       hasAssertions: req.assertions.length > 0,
       queryParams: requestQueryParams(req),
+      headerNames: Object.keys(req.headers ?? {}).map((h) => h.toLowerCase()),
       hasBody: req.body !== undefined && req.body.type !== "none",
+      ...(req.body?.type === "json" ? { jsonBody: req.body.content } : {}),
     });
   }
   return out;

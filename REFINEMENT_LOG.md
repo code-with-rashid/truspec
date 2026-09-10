@@ -3474,3 +3474,61 @@ section turns four tests red.
 **Verification.** 1195 unit tests (9 new), coverage 95.95% lines / 87.96% branches / 96.71%
 functions, typecheck 8/8, docs site builds, and `truspec docs` output confirmed byte-identical
 across two runs — the determinism the command promises.
+
+### 92 — drift checked that a body existed, never what was in it
+
+**Probed the other half of the spec-sync promise.** Iteration 90 fixed the *response* side. So I
+took a spec, tightened it the way a real API tightens — a query param became required, and a body
+property became required — and asked `truspec drift` what changed:
+
+```
+Changed (1):
+  ~ GET /pets: missing required query param 'limit'  (api/list.tspec.yaml)
+```
+
+It caught the parameter. It missed that **`POST /pets` now requires a `species` field** while the
+collection sends `{ id, name }` — a request that will 400 against a conforming server.
+
+**`drift` compared two things:** required query params, and whether a required body *exists*. Not
+what is in it. So **a field becoming required — the most ordinary breaking change an API makes —
+was reported by nothing**: `contract` validates responses, and the mock's `--validate` needs a
+server running. The `requestBodySchema` was already extracted for `gen` to scaffold from; drift
+simply never read it.
+
+**Now** the body is validated against the operation's schema with the same validator iteration 90
+strengthened, so every keyword in its table applies:
+
+```
+~ POST /pets: body missing required property 'species'
+~ POST /pets: body/id expected integer, got string
+~ POST /pets: body/tags array has 0 item(s), fewer than minItems 1
+```
+
+Required **header** parameters are checked too, case-insensitively as HTTP does — common for API
+keys and versioning, and previously unchecked.
+
+**The hard part is that a body is authored with variables still in it.** Validating it literally
+reports `id: "{{petId}}"` as failing `type: integer` — and a drift check that cries wolf is one
+someone turns off. So a violation is kept only when neither the offending value nor any *ancestor*
+of it is a template string:
+
+| Body | Reported? |
+|---|---|
+| `{ id: "{{petId}}" }` vs `type: integer` | no — a template could be anything |
+| `{ tags: "{{tagList}}" }` vs `minItems: 1` | no — the container is a template |
+| `"{{wholeBody}}"` | no |
+| `{ id: "not-a-number" }` vs `type: integer` | **yes** — a literal is a fact |
+| `{ id: "{{petId}}", name: "R" }` vs `minLength: 2` | **yes** — a literal sibling |
+| missing `species` | **yes** — and this one survives the rule *by construction*: the violation's path names a key that is not there, so there is no template to find, and none could supply one |
+
+That last row is the point. The check most worth having is exactly the one templates cannot
+obscure.
+
+A non-JSON body is not inspected at all — guessing at a text or multipart body against a JSON schema
+would be worse than silence.
+
+**Verification.** 1209 unit tests (14 new), coverage 95.97% lines / 88.00% branches / 96.72%
+functions, typecheck 8/8, docs site builds. The `gen` → `drift` round trip stays clean (a scaffolded
+collection must not report itself as drifted), and the bundled examples still show `0 changed`.
+Disabling the body check turns 7 tests red; disabling the template guard turns 5 red — so both the
+finding and the restraint are pinned.

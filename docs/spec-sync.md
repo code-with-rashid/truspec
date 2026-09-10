@@ -57,10 +57,32 @@ Changed (2):
 (`--json` carries the same as `sources`, keyed by the entry text. **Untracked** has no file to
 name: that is the point of it.)
 
-"Changed" currently fires when:
+"Changed" fires when:
 
-- the spec marks a **query parameter as required** and the request doesn't include it, or
-- the spec marks the **request body as required** and the request has no body.
+- the spec marks a **query parameter as required** and the request doesn't include it,
+- the spec marks a **header parameter as required** and the request doesn't set it (matched
+  case-insensitively, as HTTP does),
+- the spec marks the **request body as required** and the request has no body, or
+- the request's **JSON body no longer satisfies** the operation's `requestBody` schema — a property
+  that became required, a literal value of the wrong type, or one that violates a constraint the
+  spec sets. Validated with the same [response validator](#response-contract-validation), so every
+  keyword in its table applies.
+
+```
+Changed (2):
+  ~ POST /pets: body missing required property 'species'   (api/create.tspec.yaml)
+  ~ POST /pets: body/id expected integer, got string       (api/create.tspec.yaml)
+```
+
+That last check is the one that catches **a field becoming required** — the most ordinary breaking
+change an API makes, and one nothing else here reports: `contract` validates *responses*, and the
+mock's `--validate` needs a server running.
+
+> **A `{{template}}` is never drift.** A body is authored with variables still in it, so
+> `id: "{{petId}}"` against `type: integer` is not a finding — nor is anything inside a templated
+> container. A **missing required property** survives that rule by construction: its path names a
+> key that is not there, and no template could supply one. A non-JSON body is not inspected at all;
+> guessing would be worse than silence.
 
 ```bash
 truspec drift --spec openapi.yaml ./api
