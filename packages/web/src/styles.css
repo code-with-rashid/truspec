@@ -3330,3 +3330,19 @@ select:focus {
   margin-left: auto;
   padding-left: 12px;
 }
+
+/* A history row naming a request the collection no longer has — renamed, deleted, or on a branch
+   you switched away from. It used to be a silent dead click; it now says so and is not clickable. */
+.rrow.gone {
+  opacity: 0.55;
+  cursor: default;
+}
+.rrow-gone {
+  font-size: 9.5px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--amber);
+  border: 1px solid color-mix(in srgb, var(--amber) 40%, transparent);
+  border-radius: 4px;
+  padding: 0 4px;
+}

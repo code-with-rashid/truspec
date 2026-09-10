@@ -3585,3 +3585,54 @@ Rather than doing string surgery on generated YAML, the comment now says why the
 functions, typecheck 8/8, docs site builds. End to end: the imported Insomnia collection now
 **lints with no findings at all** and *runs* — two requests passing against a local server, with
 the token supplied from the environment exactly as the format intends.
+
+### 94 — the send log followed the browser, not the collection
+
+**Probed the history rail**, the last major UI surface untouched by this campaign. It is a decent
+feature — persisted, 50-entry cap, relative times, clickable to reopen. Then I noticed the storage
+key:
+
+```ts
+const HISTORY_KEY = "truspec.history";
+```
+
+One key, and `truspec serve` always answers on the **same origin**. So I served project A, sent a
+request, killed the server, served project B on the same port in the same browser:
+
+```
+A history: GET | Alpha only in A | 200 | just now · 18ms
+B history: GET | Alpha only in A | 200 | 7s ago  · 18ms   ← A's request, in B
+B requests in sidebar: [ 'Beta only in B' ]
+```
+
+**Project B listed a request that does not exist in it.** The log followed the *browser*, not the
+collection.
+
+**And clicking that row did nothing at all** — no tab, no message, no console error. A dead UI
+element. Which is a second, more general bug: the same silence applies *within* one workspace to
+any entry whose file has since been renamed, deleted, or left behind on another branch.
+
+**Both fixed.**
+
+- The key is now `truspec.history:<dir>`, loaded when the served directory becomes known (the
+  client only learns it from the first `/api/workspace` response, so it can no longer be read at
+  mount). Anyone upgrading has an unscoped log: it is **adopted once** by the first workspace to
+  open and the old key deleted, which is right for the ordinary single-project case and no worse
+  than the behaviour it replaces for anyone with several.
+- A row naming a path the workspace no longer has is **marked `gone`, disabled, and titled with
+  why**. The entry stays — history is a log of what you did, and deleting a file does not un-send
+  the request — it just stops pretending to be a link.
+
+**Two notes on process, since both cost me time and one nearly misled me.**
+
+- My probe started failing with "waiting for locator('.req')" right after the fix, which looked
+  like I had broken the app. It had not: a leftover `serve` from an earlier probe still held the
+  port, so the new server never bound. Capturing the spawned server's **stderr** said
+  `EADDRINUSE` in one line. A probe that swallows its subprocess's output is a probe that lies to
+  you.
+- I replaced the ad-hoc probe with four Playwright tests that seed `localStorage` directly, since
+  the fixture serves one directory per test and "two workspaces, same port" is not expressible in
+  it. Making `historyKey` return the legacy constant again turns all four red.
+
+**Verification.** 1224 unit tests, **132 Playwright tests** (4 new) including the axe-core pass,
+typecheck 8/8.
