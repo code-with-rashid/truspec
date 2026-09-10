@@ -1,7 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
-import { basename, join, relative, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { parse } from "../format";
 import type { TruSpecAuth, TruSpecBody, TruSpecRequest } from "../format/types";
+import { resolveRequest } from "../runner/resolve";
+import { loadFolderChain } from "../workspace/context";
 import { discoverRequests } from "../workspace/discover";
 import { toPosixPath } from "../workspace/paths";
 import { assertionsToPostmanTest, capturesToPostmanTest } from "./postman-tests";
@@ -136,6 +138,38 @@ function convertEvents(req: TruSpecRequest, warn: (message: string) => void): un
   return events.length > 0 ? events : undefined;
 }
 
+/**
+ * Apply the folder chain the runner would apply, so an exported request is the one that gets sent.
+ *
+ * Without this the export dropped everything `folder.tspec.yaml` contributes — the base URL,
+ * inherited headers, inherited auth — and produced a collection whose requests read `/users` with
+ * no `Authorization`. It parsed, it imported, and it could not run: the one outcome an export
+ * must not produce, since its entire purpose is handing the collection to someone else.
+ *
+ * `{{vars}}` are deliberately *kept*: TruSpec and Postman spell a variable the same way, so an
+ * unresolved `{{baseUrl}}` lands as a Postman variable rather than as a broken literal.
+ */
+function withFolder(req: TruSpecRequest, dir: string, root: string): TruSpecRequest {
+  const folder = loadFolderChain(dir, root);
+  const auth = req.auth ?? folder.auth;
+  // Resolve with auth switched off: `resolveRequest` materialises it into an `Authorization`
+  // header, and Postman's own `auth` block adds one too — a request carrying both sends the
+  // credential twice, or sends the wrong one. The block wins, since that is what a Postman user
+  // edits.
+  const eff = resolveRequest(
+    { ...req, auth: { type: "none" } },
+    { folder: { ...folder, auth: undefined }, vars: {}, onMissing: "keep" },
+  );
+  return {
+    ...req,
+    url: eff.url,
+    headers: eff.headers,
+    // `resolveRequest` folds `query` into the URL, so carrying it too would duplicate every param.
+    query: undefined,
+    ...(auth ? { auth } : {}),
+  };
+}
+
 function convertRequest(req: TruSpecRequest, warn: (message: string) => void): Record<string, unknown> {
   const request: Record<string, unknown> = {
     method: req.method,
@@ -206,7 +240,7 @@ export function exportPostman(dir: string, collectionName?: string): ExportResul
       continue;
     }
     stats.requests++;
-    node.requests.push(convertRequest(result.data, (m) => warnings.push(m)));
+    node.requests.push(convertRequest(withFolder(result.data, dirname(absPath), root), (m) => warnings.push(m)));
   }
 
   const renderNode = (node: ExportNode): unknown[] => {

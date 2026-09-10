@@ -38,10 +38,10 @@ import { startMockServer } from "@truspec/core/mock";
 | `@truspec/core/workspace` | Discovery, folder inheritance, env + secret resolution, run a path. | Node |
 | `@truspec/core/spec` | OpenAPI parsing, drift, coverage, scaffold, live probe. | Node |
 | `@truspec/core/importers` | Postman, Bruno, Insomnia, curl & HAR → `.tspec.yaml`. | Node |
-| `@truspec/core/exporters` | `.tspec.yaml` → a Postman collection. | browser-safe |
+| `@truspec/core/exporters` | `.tspec.yaml` → a Postman collection. | Node |
 | `@truspec/core/codegen` | One request → a runnable snippet in 17 clients/languages. | browser-safe |
 | `@truspec/core/lint` | Static checks over a collection. | Node |
-| `@truspec/core/docs` | A collection → deterministic Markdown. | browser-safe |
+| `@truspec/core/docs` | A collection → deterministic Markdown. | Node |
 | `@truspec/core/jsonpath` | The JSONPath subset assertions and captures use. | browser-safe |
 | `@truspec/core/mock` | Local mock server from a spec. | Node |
 | `@truspec/core/http` | Shared HTTP-server lifecycle (a shutdown that always terminates). | Node |

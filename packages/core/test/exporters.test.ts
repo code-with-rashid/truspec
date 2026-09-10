@@ -77,7 +77,12 @@ describe("exportPostman", () => {
     const usersFolder = items[0] as { item: Array<Record<string, unknown>> };
     const createUser = usersFolder.item[0] as { name: string; request: Record<string, unknown> };
     expect(createUser.name).toBe("Create user");
-    expect(createUser.request.header).toEqual([{ key: "X-Trace", value: "1" }]);
+    // Changed deliberately: the export now applies the folder chain the runner applies, so the
+    // request carries what is actually sent — including the `Content-Type` a JSON body implies.
+    expect(createUser.request.header).toEqual([
+      { key: "X-Trace", value: "1" },
+      { key: "Content-Type", value: "application/json" },
+    ]);
     expect(createUser.request.body).toEqual({
       mode: "raw",
       raw: JSON.stringify({ name: "Rex" }, null, 2),

@@ -78,6 +78,7 @@ Point the same commands at **your own** collection — a folder of `.tspec.yaml`
 - `truspec contract --spec <openapi.yaml> <dir> --env <name>` — run + validate responses against the spec's schemas
 - `truspec gen <openapi.yaml> --out <dir>` — scaffold a request stub per operation
 - `truspec mock <openapi.yaml> --port 4000` — offline mock server from your spec
+- `truspec export postman <dir>` — hand the collection to someone who works in Postman
 - `truspec import postman <file.json> --out <dir>` — migrate existing collections (or `truspec import bruno <dir>`)
 - `truspec serve <dir>` — open the local web UI
 

@@ -39,9 +39,13 @@ describe("exportPostman", () => {
     expect(api.item.map((i) => i.name).sort()).toEqual(["A", "deep"]);
   });
 
-  it("moves query parameters onto the URL, percent-encoded", () => {
+  it("moves query parameters onto the URL, encoded the way the runner encodes them", () => {
     write("a.tspec.yaml", 'tspec: "0.1"\nname: A\nurl: "https://x.test/a"\nquery: { "q u": "a&b" }\nassertions: []\n');
-    expect((onlyItem().request as { url: string }).url).toBe("https://x.test/a?q%20u=a%26b");
+    // Changed deliberately: the export now folds query through `resolveRequest`, the same path the
+    // runner uses, so a space arrives as `+` (URLSearchParams) rather than the exporter's own
+    // `%20`. Both are valid in a query string; agreeing with what TruSpec actually sends is the
+    // whole point of applying the folder chain here.
+    expect((onlyItem().request as { url: string }).url).toBe("https://x.test/a?q+u=a%26b");
   });
 
   it("converts every auth scheme, including oauth2", () => {

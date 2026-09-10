@@ -4006,3 +4006,69 @@ are recorded in each entry.
 The gates earned their keep during the campaign itself: iteration 70's result contract blocked three
 undocumented fields, iteration 97's vacuity guard caught **itself** one CI run later, and iteration
 99 found a miss iteration 85 had made in a file its own gate did not cover.
+
+---
+
+## Follow-up (post-campaign, at the user's request)
+
+### `truspec export postman` — and the two things adding it uncovered
+
+Iteration 99 recorded the absence of a CLI export command as an observation rather than building
+it, since `docs/importing.md` described the web-UI-plus-API surface as intentional and adding a
+user-facing command on my own initiative would have been widening scope. **The user has now asked
+for it**, so here it is — and building it turned up two defects that had been sitting behind the
+existing export path.
+
+**The command** mirrors `import`'s conventions: a target, a positional directory (also `--dir`, with
+a conflict refused by name), `--name`, `--output`. The JSON is the *only* thing on stdout — warnings
+and the request/folder count go to stderr — so `truspec export postman ./api > collection.json`
+writes a clean file.
+
+**First defect: the export dropped the folder chain.** `exportPostman` read `folder.tspec.yaml` for
+its **name** and nothing else, so every request came out with the *authored* URL and headers:
+
+```
+GET /users?limit=10    headers=[]           auth=(none)
+```
+
+No base URL, no inherited `Accept`, no inherited auth. It parsed, it imported into Postman, and it
+**could not run** — the one outcome an export must not produce, since handing the collection to
+someone else is its entire purpose. It now resolves through the same path the runner uses:
+
+```
+GET {{baseUrl}}/users?limit=10    headers=[Accept]    auth=bearer
+```
+
+`{{vars}}` are deliberately kept: TruSpec and Postman spell a variable the same way, so
+`{{baseUrl}}` lands as a Postman variable rather than a baked-in literal. Auth is resolved with the
+auth *switched off* and re-attached as Postman's own `auth` block — resolving normally materialises
+an `Authorization` header, and a request carrying both the header and the block sends the credential
+twice.
+
+Two existing tests asserted the old behaviour and were updated deliberately, with comments: a JSON
+body now carries the `Content-Type` the runner sends, and a query space encodes as `+`
+(`URLSearchParams`, what the runner produces) rather than the exporter's own `%20`. Both are valid;
+agreeing with what TruSpec actually sends is the point.
+
+**Second defect: two wrong platform labels — mine, from iteration 84.** `docs/api.md` labelled
+`@truspec/core/exporters` and `@truspec/core/docs` **browser-safe**. Both import `node:fs` and reach
+into `workspace/`; neither can run in a browser. Iteration 84's gate checks that the *main* entry
+does not re-export a Node-only module, which is a different claim, so it could not see this.
+
+The gate now checks the labels themselves — and getting *that* right took the same correction this
+campaign keeps needing. My first version flagged any `node:` import, which failed `runner` for
+`node:crypto`. But `CLAUDE.md` defines the boundary as the **filesystem and server** modules, not
+every builtin; `node:crypto` and `Buffer` are shimmed by every bundler. Flagging them would have
+been testing something adjacent to the requirement — a fourth instance — so the check looks for
+`node:fs|http|https|net|tls|child_process|os|dns`. That found the second wrong label (`docs`) that
+my hand-audit had missed.
+
+**Also noticed, not fixed:** iteration 86's `documented-flags` gate checks flag names against *all*
+prose globally rather than per command, so a new command's `--name`/`--output` pass because other
+commands document those names. It accepted `export` before I had written a word about it. Real, but
+a change to a gate's semantics rather than a defect, so it is recorded here for a decision.
+
+**Verification.** 1290 unit tests (14 new for the command, plus 6 pinning folder inheritance in the
+export), 137 Playwright tests, coverage 95.93% lines / 87.96% branches / 96.76% functions, typecheck
+8/8, docs site builds. End to end: `export postman` → `import postman` round-trips a collection back
+with its URL, headers, auth and both assertions intact.
