@@ -3430,3 +3430,47 @@ functions, typecheck 8/8, docs site builds. The live round trip now passes for t
 the mock serves `id: 1` and two items, and `contract` is genuinely checking. `docs/spec-sync.md`
 carries the full keyword table and a note that a spec using these keywords should expect `contract`
 to report violations it previously missed.
+
+### 91 — the generated documentation described everything except what the request does
+
+**Ran `truspec docs` on a rich collection and read it as a user would.** It is good: assertions in
+prose rather than as JSON objects, captures, the linked spec operation, tags, query parameters, a
+runnable cURL example with folder inheritance applied, the source file. Every field a request can
+carry is there — except **two**, and the request I wrote happened to use both:
+
+```yaml
+options: { timeoutMs: 3000, retries: 2 }
+script:
+  post: |
+    tr.expect(tr.response.json.length > 0, "at least one item")
+```
+
+Neither appeared anywhere in the document.
+
+**The `script` omission is the one that matters**, and not only for completeness:
+
+- A `post` script's `tr.expect(...)` calls **are assertions**. The document prints an **Asserts**
+  list, which a reader takes as the definition of what this request checks — and for any request
+  with a script, that list was *wrong*, not merely short.
+- A script runs with the same access as the `truspec` process. `truspec lint` warns about that
+  (`script-runs-unsandboxed`) and iteration 87 put a badge on it in the UI for the same reason.
+  Documentation for a collection you did not write is exactly where that belongs, and it said
+  nothing.
+
+Both now appear. Transport reads as behaviour rather than as a settings dump —
+`times out after 3000ms · re-sends up to 2 time(s) on a transient failure, first after 250ms` — and
+says nothing at all for a request on the defaults, or for `retries: 0` / `followRedirects: false`,
+which are the defaults spelled out and not facts worth a line. The script is collapsed behind a
+`<details>`, because it is usually longer than everything else on the page and is not what most
+readers came for, with the warning *outside* the fold where it will be read.
+
+**The gate is for the class, not the two instances.** A test builds a request that sets *every*
+field the format has and asserts each one reaches the document — then checks its own list against
+`RequestSchema.shape`, so a new field in the schema fails the test until it is either documented or
+explicitly classified structural (`tspec`, `order`, `method`, `url` — the last two covered together
+by the `\`POST /things\`` line). Adding a `newField` to the schema turns it red; removing the script
+section turns four tests red.
+
+**Verification.** 1195 unit tests (9 new), coverage 95.95% lines / 87.96% branches / 96.71%
+functions, typecheck 8/8, docs site builds, and `truspec docs` output confirmed byte-identical
+across two runs — the determinism the command promises.

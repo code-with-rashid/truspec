@@ -518,8 +518,10 @@ Differing *values* never fail: environments are supposed to differ that way.
 
 ## `docs`
 
-Render a collection as Markdown — endpoints, parameters, headers, bodies, assertions, captures,
-the linked spec operation, and a runnable example per request.
+Render a collection as Markdown — endpoints, parameters, headers, bodies, auth, assertions,
+captures, transport options, scripts, the linked spec operation, and a runnable example per
+request. Every field a request file can carry reaches the document; a test holds that, so a new
+field cannot ship undocumented.
 
 ```
 truspec docs [<dir>] [--out <file>] [--title <text>] [--lang <target>|none] [--base-level <n>]
@@ -541,6 +543,12 @@ docs stop being regenerated.
 truspec docs ./api -o docs/api.md
 git diff --exit-code docs/api.md   # CI: docs are up to date with the collection
 ```
+
+A request carrying a [script](./scripting.md) gets a collapsed **Script** section with the source
+and a warning, for two reasons: a `post` script's `tr.expect(...)` calls are assertions, so leaving
+it out would make the **Asserts** list an incomplete account of what the request checks; and a
+script runs with the same access as the `truspec` process, which is what a reader of a collection
+they did not write needs to know before running it.
 
 An unreadable file is reported *in* the document and on stderr, and does not fail the command —
 [`lint`](#lint) is the command whose job it is to fail on a broken file.
