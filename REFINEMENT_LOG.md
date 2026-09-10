@@ -3746,3 +3746,49 @@ one**, and its button opens the existing file instead of starting a new request.
 **Verification.** 1230 unit tests, **137 Playwright tests** (5 new, including one asserting the
 click lands on the existing request rather than a create flow, and one asserting the view says
 nothing at all when every request asserts something), typecheck 8/8.
+
+### 97 — the agent guide's own example did not parse
+
+**Followed the documented onboarding path literally**, as a new user would, executing every command
+in `docs/getting-started.md` verbatim and checking every claim it makes. It all holds:
+
+| The guide says | Actual |
+|---|---|
+| `run` reports 3 passing | ✓ 3 passed, 0 failed |
+| `drift` flags `GET /users/{id}` as untracked | ✓ 1 untracked |
+| `coverage` shows 75% (3/4) | ✓ `Coverage: 75% (3/4 operations tested)` |
+| `contract` confirms all 3 conform | ✓ `All 3 tested operation(s) conform to the spec.` |
+
+The hand-written "your first collection" walkthrough works too, including its files that **omit
+`tspec:`** entirely — which is correct, the field defaults. Worth recording that this still holds
+*after* iterations 90 and 92 tightened response and request validation: the examples did not quietly
+start failing.
+
+**But the commands are not the only thing people copy.** The prose carries 49 fenced YAML blocks,
+and nothing has ever checked that any of them parse. The schema is `.strict()` and has moved a great
+deal in 97 iterations; a block written against an older shape sits in the docs looking
+authoritative. So I parsed every one that is a whole collection file — and found this:
+
+```
+FAIL CLAUDE.md:51 (request) — Invalid TruSpec request: options: Expected object, received null
+```
+
+**`CLAUDE.md`.** The file whose stated purpose is *"tells an AI agent how to author **valid**
+TruSpec files"*, and whose own header says *"Keep it accurate as the format evolves; agents rely on
+it."* Its canonical request example listed:
+
+```yaml
+options:                           # transport: timeoutMs / retries / followRedirects / maxRedirects
+```
+
+A key with a trailing comment and no value is `null` in YAML, and the schema rejects it. An agent
+copying the canonical example produced a file that would not parse. Now it carries a real value.
+
+**The gate identifies examples by shape, not by a marker** — a new example is covered the moment
+someone writes it, because an opt-in marker is a marker someone forgets. Verified both ways: the
+original `options:` line fails its block, and a typo'd field inside a detected block fails on
+`.strict()`. It also asserts it found at least ten examples spanning more than one file kind, so it
+cannot pass by matching nothing.
+
+**Verification.** 1247 unit tests (17 new — one per example, so a failure names the file and line),
+coverage 96.01% lines / 88.04% branches / 96.75% functions, typecheck 8/8, docs site builds.
