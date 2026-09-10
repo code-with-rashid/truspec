@@ -47,7 +47,7 @@ import { FolderTree, type RowAction, type RowActionsController, type RowKind } f
 import { NewFolderModal } from "./components/NewFolderModal";
 import { NewRequestModal, type NewRequestPayload } from "./components/NewRequestModal";
 import { contractInfo, RequestWorkspace, specRefOf, type ReqTab, type RespTab } from "./components/RequestWorkspace";
-import { ShortcutsModal } from "./components/ShortcutsModal";
+import { modKey, ShortcutsModal } from "./components/ShortcutsModal";
 import { TabStrip } from "./components/TabStrip";
 import { statusClass } from "./format-utils";
 import { FlowView } from "./FlowView";
@@ -1230,6 +1230,9 @@ export function App() {
   // The palette's own placeholder ("jump to a request, run, or view…") promised these two things
   // it never actually offered — only request search. Filtered by the same query as requests.
   const paletteCommands = useMemo(() => {
+    // Same source as the shortcuts reference, so the palette cannot advertise a binding the app
+    // does not have.
+    const mod = modKey();
     const q = paletteQ.trim().toLowerCase();
     const all = [
       { id: "view-workspace", label: "go to workspace" },
@@ -1239,13 +1242,13 @@ export function App() {
       { id: "run-all", label: "run all requests" },
       // Every one of these was previously reachable only by knowing where its button lives; the
       // palette is where people look for an action they cannot immediately see.
-      { id: "run-request", label: "run the open request" },
-      { id: "save-request", label: "save the open request" },
+      { id: "run-request", label: "run the open request", keys: [mod, "↵"] },
+      { id: "save-request", label: "save the open request", keys: [mod, "S"] },
       { id: "new-request", label: "new request" },
       { id: "new-folder", label: "new folder" },
       { id: "toggle-theme", label: "toggle light / dark theme" },
       { id: "toggle-rail", label: "show or hide the spec panel" },
-      { id: "shortcuts", label: "keyboard shortcuts" },
+      { id: "shortcuts", label: "keyboard shortcuts", keys: ["?"] },
     ];
     return all.filter((c) => !q || c.label.toLowerCase().includes(q));
   }, [paletteQ]);

@@ -3333,3 +3333,40 @@ where the eye is, and scales.
 producer, the title names the producing request, the three edges are still drawn (the change adds
 naming, it does not replace the rail), and a collection of independent steps says nothing at all.
 1157 unit tests, typecheck 8/8, full e2e suite green.
+
+### 89 — a palette that hid the shortcuts it was teaching
+
+**The command palette is in good shape** — eleven actions, request search, a `local-first · no
+telemetry` footer, `↵ open`. Every action is there. And every action is listed **without its
+keyboard binding**, while a `keyboard shortcuts` row sits two lines below implying they exist.
+
+A palette is the one list where people browse *everything they can do*, which makes it the place
+they learn the bindings. Listing "run the open request" with no sign that it is `⌘↵` leaves that
+discoverable only by opening a second modal.
+
+The bindings already lived in one registry — `shortcutGroups()`, deliberately single-sourced so
+"the reference and the bindings can't drift apart". The palette just never read it. It does now, so
+it cannot advertise a binding the app does not have:
+
+```
+→  run all requests
+→  run the open request                          [Ctrl] [↵]
+→  save the open request                         [Ctrl] [S]
+→  keyboard shortcuts                            [?]
+```
+
+An action with no binding stays unadorned rather than being given an invented one.
+
+**And a plural bug found while looking at it:** the footer read **"1 requests"**. Now `1 request`.
+
+**Two testing notes, both about not fooling myself.**
+
+- My first version of "actions with no binding are unadorned" **passed vacuously**. It asserted
+  `kbd` count 0 — which is trivially true of a palette that never opened, and the palette *was*
+  never opening, because the fixture needs `waitUntil: "networkidle"` before the window handler is
+  bound. The two positive tests failing is what exposed it. It now asserts the row exists first.
+- The singular is only reachable with exactly one request, and the fixture seeds two — so the test
+  **removes one** rather than settling for asserting the plural and calling the ternary obvious.
+  Reverting the fix turns exactly that test red.
+
+**Verification.** 4 new Playwright tests, full suite 128 passing, 1157 unit tests, typecheck 8/8.

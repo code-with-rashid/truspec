@@ -3318,3 +3318,15 @@ select:focus {
 .flow-node.active .flow-needs-var {
   color: var(--text);
 }
+
+/* A palette action's keyboard binding. The palette is where people browse every action they can
+   take, which makes it the place they learn the bindings — listing "run the open request" without
+   saying it is ⌘↵ leaves that discoverable only via the `keyboard shortcuts` row below it. */
+.palette-item-keys {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  margin-left: auto;
+  padding-left: 12px;
+}

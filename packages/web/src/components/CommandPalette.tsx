@@ -5,6 +5,14 @@ import { folderOf } from "../tree";
 export interface PaletteCommand {
   id: string;
   label: string;
+  /**
+   * The keyboard binding for this action, when it has one.
+   *
+   * A palette is where people *learn* shortcuts — it is the one place they browse every action
+   * they can take. Listing "run the open request" without saying it is bound to ⌘↵ leaves the
+   * binding discoverable only through the `keyboard shortcuts` entry two rows below it.
+   */
+  keys?: string[];
 }
 
 export function CommandPalette({
@@ -61,6 +69,13 @@ export function CommandPalette({
               <span className="palette-item-main">
                 <span className="palette-item-name">{c.label}</span>
               </span>
+              {c.keys && (
+                <span className="palette-item-keys">
+                  {c.keys.map((k) => (
+                    <kbd key={k}>{k}</kbd>
+                  ))}
+                </span>
+              )}
             </button>
           ))}
           {items.map((r) => (
@@ -77,7 +92,7 @@ export function CommandPalette({
         </div>
         <div className="palette-foot">
           <span>
-            <span className="n">{total}</span> requests
+            <span className="n">{total}</span> {total === 1 ? "request" : "requests"}
           </span>
           <span className="spacer" />
           <span>↵ open</span>
