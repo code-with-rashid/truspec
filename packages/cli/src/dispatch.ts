@@ -16,7 +16,7 @@ import { closest } from "./args";
 declare const __TRUSPEC_VERSION__: string | undefined;
 const VERSION = typeof __TRUSPEC_VERSION__ === "string" ? __TRUSPEC_VERSION__ : "0.0.0";
 
-const HELP = `truspec ${VERSION} — local-first, spec-synced, agent-native API client
+export const HELP = `truspec ${VERSION} — local-first, spec-synced, agent-native API client
 
 Usage:
   truspec init [<dir>] [--spec <openapi>] [--dir <requests>] [--base-url <url>] [--env <name>]
@@ -26,14 +26,14 @@ Usage:
   truspec drift --spec <openapi> [<dir>] [--live <baseUrl>] [--json]
   truspec coverage --spec <openapi> [<dir>] [--min <percent>] [--json]
   truspec contract --spec <openapi> [<dir>] [--env <name>] [--json]
-  truspec gen --spec <openapi> --out <dir> [--base-url-var <name>]
+  truspec gen <openapi> --out <dir> [--base-url-var <name>]
   truspec env [<name>] [--diff <a> <b>] [--strict] [--json]
   truspec docs [<dir>] [--out <file>] [--lang <target>]
   truspec lint [<dir>] [--strict] [--json] [--disable <rule>] [--list-rules]
   truspec codegen <request> [--lang <target>] [--env <name>] [--list]
   truspec import <postman|bruno|insomnia|curl|har> <path|-> [--out <dir>] [--filter <substr>]
-  truspec mock --spec <openapi> [--port <n>] [--delay <ms>]
-  truspec serve [--dir <collection>] [--port <n>] [--insecure] [--proxy <url>] [--no-proxy <list>]
+  truspec mock <openapi> [--port <n>] [--delay <ms>] [--validate]
+  truspec serve [<dir>] [--port <n>] [--insecure] [--proxy <url>] [--no-proxy <list>]
   truspec --help
   truspec --version
 
@@ -54,7 +54,7 @@ Commands:
 `;
 
 /** Every dispatchable command name, in the order the help text lists them. */
-const COMMANDS = [
+export const COMMANDS = [
   "init",
   "run",
   "drift",

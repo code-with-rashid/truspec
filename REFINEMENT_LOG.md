@@ -3861,3 +3861,57 @@ test that asserts no `NaN` reaches the screen.
 **Verification.** 1260 unit tests (13 new), coverage 96.02% lines / 88.07% branches / 96.75%
 functions, typecheck 8/8, docs site builds. The emitted XML parses under a real parser, with
 `tests=5, failures=1, skipped=4` and four `<skipped>` elements.
+
+### 99 — the usage text shipped inside the binary
+
+**Probed the CLI's own `--help`**, which is the usage documentation people read most: it ships in
+the binary, needs no network, and is the first thing anyone types. Iteration 86 gated the flags
+named in the *docs*, in both directions. Nothing has ever checked the help.
+
+Three probes, and the first two clear:
+
+1. **Does help list every command?** Yes — all 13 appear in both the `Usage:` block and the
+   `Commands` list. Nothing ships undiscoverable.
+2. **Does it advertise a flag that does not exist?** No — every `--flag` in every usage block is
+   one that command accepts.
+3. **Does it match what people actually type?** **No.** Iteration 85 moved `gen`, `mock` and
+   `serve` to a positional main argument and updated nineteen usages across eight documentation
+   files — and never touched `--help`, which went on saying:
+
+```
+truspec mock --spec <openapi> [--port <n>]
+truspec serve [--dir <collection>] [--port <n>] …
+truspec gen --spec <openapi> --out <dir>
+```
+
+Not *wrong* — the flags still work — but the binary's own help was the last place still leading
+with the form the docs had moved away from. Now:
+
+```
+truspec gen <openapi> --out <dir> [--base-url-var <name>]
+truspec mock <openapi> [--port <n>] [--delay <ms>] [--validate]
+truspec serve [<dir>] [--port <n>] …
+```
+
+**The gate is five assertions**, and one of them is written specifically to catch the miss iteration
+85 made: *a command that reads a positional must show one*. It handles wrapped multi-line usage
+blocks, and refuses to pass having checked fewer than ten commands.
+
+**I got that check wrong the first time, in the way this campaign keeps finding.** My initial regex
+looked for `<something>` anywhere in the usage line — which matches `<openapi>` in
+`truspec mock --spec <openapi>`, i.e. **the flag's own argument**, so the stale form passed. The
+bite-test caught it: reverting `mock` produced zero failures. It now strips `--flag <arg>` pairs
+first and looks at what remains. That is the third time in this campaign a check tested something
+*adjacent* to its real requirement — iteration 86 gated on `curl` when the premise was a POSIX
+shell, iteration 97 anchored on a line ending rather than a fence. **Always test the guard by
+breaking the thing it guards.**
+
+**One thing deliberately not built.** `exportPostman` exists in core and the web UI has an export
+button, but there is no `truspec export` command. `docs/importing.md` describes that surface as
+intentional — web UI plus programmatic API — so adding a user-facing command at iteration 99 would
+be widening scope on my own initiative rather than fixing a defect. Recorded as an observation for
+a human to decide.
+
+**Verification.** 1265 unit tests (5 new), coverage 96.02% lines / 88.07% branches / 96.75%
+functions, typecheck 8/8. Each assertion verified against a deliberate break: a stale positional
+form, a phantom flag, and a command dropped from the help.
