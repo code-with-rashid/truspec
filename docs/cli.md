@@ -244,7 +244,7 @@ truspec run ./api --delay 200                  # 200ms between requests (rate li
 With `--bail` or a filter, the summary says what did not run:
 
 ```
-1 passed, 1 failed, 2 skipped (bailed), 2 total, 3 deselected
+1 passed, 1 failed, 2 skipped (bailed), 4 total, 3 deselected
 ```
 
 ### HTML report
@@ -314,6 +314,29 @@ it applies:
 `--reporter junit` emits a JUnit `<testsuites>` document — one `<testcase>` per request —
 that CI test reporters (GitHub Actions, GitLab, Jenkins, etc.) understand natively. Pair it
 with `--output` to write a file the reporter can pick up.
+
+**A `--bail`ed run reports every request it selected**, not only the ones that ran: those the bail
+stopped before appear as `<skipped>` cases, and the suite carries a `skipped` count alongside
+`tests` and `failures`.
+
+```xml
+<testsuites tests="5" failures="1" skipped="4">
+  <testsuite name="truspec" tests="5" failures="1" skipped="4">
+    <testcase name="R1" classname="r1.tspec.yaml" time="0.000">
+      <failure message="…"/>
+    </testcase>
+    <testcase name="R2" classname="r2.tspec.yaml" time="0.000">
+      <skipped message="not run — the run bailed at the first failure"/>
+    </testcase>
+    …
+```
+
+Without this a five-request run reported as a one-test suite and the four that never ran were
+absent from the record — a dashboard showing a sliver of the truth. A file that failed to parse
+appears as a failing case for the same reason: a report that omits something reads as clean.
+
+A request excluded by `--grep`/`--tag` is *not* listed. That is a selection you asked for, not
+something that failed to happen; the summary's `deselected` count says how many.
 
 ### Notes
 

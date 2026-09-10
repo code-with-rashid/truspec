@@ -3792,3 +3792,55 @@ cannot pass by matching nothing.
 
 **Verification.** 1247 unit tests (17 new — one per example, so a failure names the file and line),
 coverage 96.01% lines / 88.04% branches / 96.75% functions, typecheck 8/8, docs site builds.
+
+### 98 — a bailed run reported a one-test suite
+
+**Probed the JUnit reporter**, which is how this tool talks to CI — the integration the README
+leads with. First I tried to break its XML with hostile request names: angle brackets, ampersands,
+quotes, apostrophes, a tab, a form feed, a `0x01`. All correctly escaped or stripped, with a comment
+in the source already explaining that XML 1.0 forbids C0 controls outright. A previous iteration
+did that work properly; the probe **clears**.
+
+**Then I ran five requests with `--bail`:**
+
+```
+$ truspec run . --bail --reporter junit
+<testsuites tests="1" failures="1">
+```
+
+**Four requests vanished.** They were selected to run, the bail stopped before them, and the CI
+report simply does not mention them — a dashboard reads a one-test suite and shows a sliver of the
+truth. The human report says it plainly (`4 skipped (bailed)`); the machine one, which is the one CI
+actually consumes, said nothing.
+
+The file already contained the exact principle, three lines below where this needed fixing:
+
+> *"A file that did not parse has to appear as a failing case: a CI report that simply omits it
+> reads as clean, which is the one outcome a gate must never produce."*
+
+**Why it could not just be fixed in the reporter.** `skipped` was a *count*. The identities were
+never recorded — the run loop broke out the moment it bailed. It now keeps walking and `continue`s
+past each remaining request, recording name, file and iteration without sending anything (a test
+counts `fetch` calls to prove that). JUnit gets real `<skipped>` cases and the schema's own
+`skipped` attribute, distinct from `failures`:
+
+```xml
+<testsuites tests="5" failures="1" skipped="4">
+```
+
+**A contradiction fixed on the way.** The human summary read
+`1 failed, 4 skipped (bailed), 1 total` — one total, four skipped. Skipped requests are now counted
+in the total, because they are part of what the run was asked to do.
+
+**And a line I deliberately did not cross:** a request excluded by `--grep`/`--tag` is *not* listed.
+That is a selection the user asked for, not something that failed to happen — the summary's
+`deselected` count already says how many.
+
+**A guard the test suite earned.** My first version made the total `NaN` for a result built without
+`skipped`. The type says it is required, but a saved `--json` from an older version piped back in
+would not have it — the same reasoning `coverage.ts` gives for its own optional field. `?? 0`, and a
+test that asserts no `NaN` reaches the screen.
+
+**Verification.** 1260 unit tests (13 new), coverage 96.02% lines / 88.07% branches / 96.75%
+functions, typecheck 8/8, docs site builds. The emitted XML parses under a real parser, with
+`tests=5, failures=1, skipped=4` and four `<skipped>` elements.

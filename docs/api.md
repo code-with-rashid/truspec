@@ -231,9 +231,11 @@ const summary = await runPath("./api", {
 console.log(summary.passed, summary.failed, summary.ok);
 ```
 
-Returns a `WorkspaceRunResult`: `{ results: RunResult[], passed, failed, ok,
-missingSecrets }`. It parses every request, runs them in `order` (then path) so
-[captures](./file-format.md#chaining-with-capture) chain forward, and
+Returns a `WorkspaceRunResult`: `{ results: RunResult[], passed, failed, skipped, ok,
+missingSecrets }`, plus `skippedRequests` when `bail` stopped the run — `{ name, filePath,
+iteration? }` for each request that was selected but never sent, so a reporter can name them
+rather than leaving them out of the record. It parses every request, runs them in `order` (then
+path) so [captures](./file-format.md#chaining-with-capture) chain forward, and
 [masks declared secrets](./file-format.md#environment-files) in the reported results.
 
 ### Other helpers

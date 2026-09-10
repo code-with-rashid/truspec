@@ -91,6 +91,16 @@ export interface WorkspaceRunResult {
   failed: number;
   /** Requests that were selected but never sent, because `bail` stopped the run first. */
   skipped: number;
+  /**
+   * The requests `--bail` stopped before, in the order they would have run.
+   *
+   * `skipped` alone is a count, which the human report can say ("4 skipped (bailed)") but a
+   * machine reporter cannot act on: the JUnit writer had no identities, so it emitted
+   * `tests="1"` for a five-request run and the four that never ran vanished from the record —
+   * a CI dashboard showing a one-test suite. A report that omits them reads as clean, which is
+   * the one outcome a gate must never produce.
+   */
+  skippedRequests?: Array<{ name: string; filePath: string; iteration?: number }>;
   ok: boolean;
   missingSecrets: string[];
   /** Requests filtered out by `grep`/`tags` before the run started. */
@@ -214,15 +224,25 @@ export async function runPath(target: string, opts: WorkspaceRunOptions = {}): P
   const iterations = dataRows ? dataRows.length : Math.max(1, Math.floor(opts.repeat ?? 1));
   let bailed = false;
   let executed = 0;
+  const skippedRequests: Array<{ name: string; filePath: string; iteration?: number }> = [];
 
-  for (let iteration = 0; iteration < iterations && !bailed; iteration++) {
+  // Note the loop no longer stops on `bailed`: it keeps walking so every request the bail skipped
+  // is *named* in the result. Nothing is sent — the inner loop `continue`s past each one.
+  for (let iteration = 0; iteration < iterations; iteration++) {
     // Each iteration starts from the same variables and a fresh cookie jar: rows must be
     // independent, or row 2 silently inherits row 1's captured ids and session.
     let vars: Vars = { ...baseVars, ...(dataRows?.[iteration] ?? {}) };
     const cookieJar = opts.cookies === false ? undefined : new CookieJar();
 
     for (const [index, { file, req }] of requests.entries()) {
-      if (bailed) break;
+      if (bailed) {
+        skippedRequests.push({
+          name: req.name,
+          filePath: file,
+          ...(iterations > 1 ? { iteration: iteration + 1 } : {}),
+        });
+        continue;
+      }
       // Rate-limited APIs need breathing room between calls; pause *between* requests only, so a
       // single-request run is never slowed down for nothing.
       if (opts.delayMs && opts.delayMs > 0 && (index > 0 || iteration > 0)) await sleep(opts.delayMs);
@@ -253,6 +273,7 @@ export async function runPath(target: string, opts: WorkspaceRunOptions = {}): P
   const passed = results.filter((r) => r.ok).length;
   return {
     results,
+    ...(skippedRequests.length > 0 ? { skippedRequests } : {}),
     ...(iterations > 1 ? { iterations } : {}),
     passed,
     failed: results.length - passed,
