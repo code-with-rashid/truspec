@@ -3684,3 +3684,65 @@ first entry in the options object (it required a preceding comma), so the test f
 
 **Verification.** 1230 unit tests (6 new), coverage 96.01% lines / 88.04% branches / 96.75%
 functions, typecheck 8/8.
+
+### 96 — two different problems wearing the same badge
+
+**Opened the spec view**, the last dashboard this campaign had not looked at. It is good: a coverage
+percentage, drift counters, a per-operation list, and a "what to resolve" section with actionable
+buttons. Then I set up the case that matters and looked again:
+
+```
+untested:
+  ✗ GET /pets            ← a request EXISTS (listPets, right there in the sidebar) and asserts nothing
+  ✗ POST /pets           ← no request at all
+
+OPERATIONS
+  GET  /pets      UNTESTED
+  POST /pets      UNTESTED     ← identical
+
+WHAT TO RESOLVE
+  Untracked in collection   in the spec, no test yet
+    + POST /pets
+```
+
+**Two completely different problems, rendered identically** — and the only remedy offered is
+"create a request", which for `GET /pets` would send someone to write a *second* request for an
+operation that already has one. The unasserted operation gets no action and no explanation at all;
+a reader sees "GET /pets untested" while staring at `listPets` in the sidebar with nothing
+connecting them.
+
+**The report has told them apart for a long time.** `CoverageReport.unasserted` exists, the CLI
+prints it —
+
+```
+✗ GET /pets  — "listPets" (api/listpets.tspec.yaml) has no assertions; a request that asserts nothing tests nothing
+```
+
+— and `unasserted` is even declared in the web client's own `api.ts`. The view simply never read it.
+The most common shape this campaign has found: **the data is already there, and the surface
+withholds it.**
+
+**Now, in all three places:**
+
+```
+untested:
+  ✗ GET /pets — "listPets" asserts nothing
+  ✗ POST /pets
+
+OPERATIONS
+  GET  /pets      UNASSERTED
+  POST /pets      UNTESTED
+
+WHAT TO RESOLVE
+  Untracked in collection                       in the spec, no test yet
+    + POST /pets
+  Tested by a request that asserts nothing      the request exists — give it assertions
+    ✎ GET /pets — listPets          ← clicking opens that request
+```
+
+The second group is separate rather than a footnote precisely because **its fix is the opposite
+one**, and its button opens the existing file instead of starting a new request.
+
+**Verification.** 1230 unit tests, **137 Playwright tests** (5 new, including one asserting the
+click lands on the existing request rather than a create flow, and one asserting the view says
+nothing at all when every request asserts something), typecheck 8/8.
