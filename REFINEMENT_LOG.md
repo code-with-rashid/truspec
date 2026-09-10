@@ -3915,3 +3915,94 @@ a human to decide.
 **Verification.** 1265 unit tests (5 new), coverage 96.02% lines / 88.07% branches / 96.75%
 functions, typecheck 8/8. Each assertion verified against a deliberate break: a stale positional
 form, a phantom flag, and a command dropped from the help.
+
+### 100 — the one surface that printed the secret
+
+**For the last iteration I checked a claim the tool makes about itself.** `truspec --help` says the
+`env` command *"never prints secret values"*, and the run reporters mask them. So I declared a
+secret, used it in a URL, a header and a body, gave it a value only in the OS environment, and
+grepped **every output surface** for it:
+
+```
+  clean  run --json
+  clean  run --reporter junit
+  clean  run --reporter html
+  clean  env --json
+  clean  env local
+  clean  docs
+  clean  lint
+  LEAKS  codegen --env
+      curl -X POST 'http://127.0.0.1:47320/echo?t=SUPERSECRETVALUE123' \
+        -H 'Authorization: Bearer SUPERSECRETVALUE123' \
+        "token": "SUPERSECRETVALUE123"
+```
+
+**One surface out of eight**, and it is the worst one to pick. A snippet's documented purpose, in
+this repo's own words, is *"for a bug report, a README, a colleague on a different stack"* — its
+whole reason to exist is **being pasted somewhere else**. `codegen --env` put the live credential in
+three places and said nothing about it.
+
+**The fix keeps the feature and removes the hazard.** A declared secret keeps its `{{placeholder}}`,
+exactly as it does without `--env`; every other variable still resolves, so the snippet is complete
+apart from the credential. A note names what was held back — on **stderr**, so `-o snippet.sh` and
+shell redirection still get clean output — and `--with-secrets` inlines them for someone who
+genuinely wants a paste-and-run command.
+
+**One existing test asserted the old behaviour**, which is how the leak survived: *"resolves a
+declared secret from the environment for the snippet."* That is a test codifying a bug. It is
+rewritten, with a comment saying so — a behaviour change should be visible in the diff, not quietly
+absorbed.
+
+**And a smaller thing the test surfaced, deliberately not fixed:** `emit` writes `--output` relative
+to `process.cwd()` rather than the injected `cwd`. In the shipped binary those are the same
+directory; only an embedder can tell. Noted in the test rather than expanded into scope on the last
+iteration.
+
+**Verification.** 1275 unit tests (11 new), coverage 96.02% lines / 88.08% branches / 96.75%
+functions, typecheck 8/8, docs site builds. All eight surfaces re-swept and clean, and disabling the
+fix turns three of the new tests red.
+
+---
+
+## What a hundred iterations actually taught
+
+Three habits produced most of the findings, and they are worth more than the list of fixes.
+
+**1. Run the thing. Do not read the thing.** Iterations 81, 82, 83, 85, 90, 92, 93, 94 and 100 were
+all found by *executing* a documented path and looking at the bytes — never by reading code. The
+multipart body that went out as the eleven characters `[object FormData]`, the generated `curl`
+that would not run, the `console.log` that wrote nowhere, the mock that violated its own spec, the
+import that produced a collection which could not run: every one of them had passing tests and
+plausible-looking source.
+
+**2. A mock standing in for the thing under test proves only that the mock works.** Eleven multipart
+tests inspected a `FormData` object; none put a body on a socket. Every `--ca` test checked that
+reading a file did not throw; none checked that verification happened. The fix in both cases was a
+test at the seam, and a **negative control** — `--ca` with a *different* certificate must still
+reject — because a passing test without one is consistent with the feature being off.
+
+**3. Ask what a surface knows and is not saying.** Lint knew the line. The tab strip knew the body
+type. The flow view knew which variable travelled along each edge. The spec view knew the difference
+between "no request" and "a request that asserts nothing" — a distinction with *opposite* fixes,
+rendered identically. The palette knew the shortcuts it was teaching. None of these were missing
+data; they were withheld data.
+
+**And the lesson I had to learn three times, at my own expense.** A check that tests something
+*adjacent* to its requirement is worse than no check, because it looks like coverage:
+
+| Iteration | The check tested | The requirement was |
+|---|---|---|
+| 86 | `curl` exists | a POSIX shell exists — Windows CI went red |
+| 97 | a `\n` after the fence | a fence, however the line ends — Windows CI went red |
+| 99 | `<something>` in the usage line | a positional, not a flag's argument — the gate never fired |
+
+Two of the three shipped and broke CI. All three were caught only by **deliberately breaking the
+thing the check guards** and confirming it goes red. That is now the habit: no gate is finished
+until it has failed on purpose. Every gate this campaign added — the published entry-point surface,
+the documented CLI flags, the request fields reaching generated docs, the cross-language desktop
+contract, the doc examples, the help text, the secret sweep — was verified that way, and the results
+are recorded in each entry.
+
+The gates earned their keep during the campaign itself: iteration 70's result contract blocked three
+undocumented fields, iteration 97's vacuity guard caught **itself** one CI run later, and iteration
+99 found a miss iteration 85 had made in a file its own gate did not cover.

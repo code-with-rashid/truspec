@@ -647,15 +647,35 @@ Render a request as a runnable snippet in another HTTP client or language — fo
 a README, a colleague on a different stack, or pasting into a terminal.
 
 ```
-truspec codegen <request.tspec.yaml> [--lang <target>] [--env <name>] [--output <file>] [--list]
+truspec codegen <request.tspec.yaml> [--lang <target>] [--env <name>] [--with-secrets]
+                [--output <file>] [--list]
 ```
 
 | Flag | Alias | Description |
 |---|---|---|
 | `--lang <target>` | `-l` | Snippet target. Default `curl`. |
 | `--env <name>` | `-e` | Environment whose variables to substitute. |
+| `--with-secrets` | | Also inline the values of declared **secrets**. Off by default — see below. |
 | `--output <file>` | `-o` | Write to a file instead of stdout. |
 | `--list` | | Print every supported target id and exit. |
+
+**A declared secret keeps its `{{placeholder}}`, even with `--env`.** A snippet's whole purpose is
+being shared — a bug report, a README, a colleague — and every other output surface
+([run reporters](#reporters), [`env`](#env)) masks secret values. This one used to bake the resolved
+credential into the URL, the `Authorization` header and the body:
+
+```bash
+$ truspec codegen api/me.tspec.yaml --env local
+Note: apiToken left as {{placeholder}} — declared secret(s), and a snippet is made to be shared.
+      Pass --with-secrets to inline the real value(s).
+
+curl -X GET 'https://api.example.com/me' \
+  -H 'Authorization: Bearer {{apiToken}}'
+```
+
+Variables that are *not* declared secrets still resolve normally, so the snippet is complete apart
+from the credential. The note goes to **stderr**, so `-o snippet.sh` or a redirect gets clean
+output. `--with-secrets` inlines them when you genuinely want a paste-and-run command.
 
 The snippet is built through the **same resolution the runner uses**: the folder chain's
 `baseUrl`, inherited headers, and auth are applied, and the environment's variables (including

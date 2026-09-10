@@ -5,7 +5,7 @@ import { type CommandDeps, emit, resolveDeps } from "./deps";
 import { argError } from "../args";
 
 const USAGE =
-  "Usage: truspec codegen <request.tspec.yaml> [--lang <target>] [--env <name>] [--output <file>] [--list]\n";
+  "Usage: truspec codegen <request.tspec.yaml> [--lang <target>] [--env <name>] [--with-secrets] [--output <file>] [--list]\n";
 
 /** `truspec codegen <file> --lang python-requests` — render a request as a snippet in another client. */
 export async function codegenCommand(
@@ -16,6 +16,7 @@ export async function codegenCommand(
   const options = {
     lang: { type: "string", short: "l" },
     env: { type: "string", short: "e" },
+    "with-secrets": { type: "boolean" },
     output: { type: "string", short: "o" },
     list: { type: "boolean" },
   } as const;
@@ -52,10 +53,23 @@ export async function codegenCommand(
       processEnv: d.processEnv,
       ...(typeof values.env === "string" ? { env: values.env } : {}),
     });
-    const { code } = generateCode(prepared.req, lang, {
-      folder: prepared.folder,
-      vars: prepared.vars,
-    });
+    // A snippet's documented purpose is being shared — "for a bug report" — and `--env` used to
+    // bake the resolved credential into the URL, the Authorization header and the body. Every
+    // other output surface masks declared secrets; this one did not, and nothing said so. They now
+    // keep their `{{placeholder}}`, exactly as they do without `--env`, unless explicitly asked for.
+    const withheld = values["with-secrets"]
+      ? []
+      : prepared.secretNames.filter((n) => prepared.vars[n] !== undefined);
+    const vars = { ...prepared.vars };
+    for (const name of withheld) delete vars[name];
+
+    const { code } = generateCode(prepared.req, lang, { folder: prepared.folder, vars });
+    if (withheld.length > 0) {
+      d.stderr(
+        `Note: ${withheld.join(", ")} left as {{placeholder}} — declared secret(s), and a snippet is made to be shared.\n` +
+          "      Pass --with-secrets to inline the real value(s).\n",
+      );
+    }
     emit(d, code, typeof values.output === "string" ? values.output : undefined);
     return 0;
   } catch (e) {

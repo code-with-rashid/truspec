@@ -30,7 +30,7 @@ Usage:
   truspec env [<name>] [--diff <a> <b>] [--strict] [--json]
   truspec docs [<dir>] [--out <file>] [--lang <target>]
   truspec lint [<dir>] [--strict] [--json] [--disable <rule>] [--list-rules]
-  truspec codegen <request> [--lang <target>] [--env <name>] [--list]
+  truspec codegen <request> [--lang <target>] [--env <name>] [--with-secrets] [--list]
   truspec import <postman|bruno|insomnia|curl|har> <path|-> [--out <dir>] [--filter <substr>]
   truspec mock <openapi> [--port <n>] [--delay <ms>] [--validate]
   truspec serve [<dir>] [--port <n>] [--insecure] [--proxy <url>] [--no-proxy <list>]
