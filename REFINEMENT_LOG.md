@@ -3636,3 +3636,51 @@ any entry whose file has since been renamed, deleted, or left behind on another 
 
 **Verification.** 1224 unit tests, **132 Playwright tests** (4 new) including the axe-core pass,
 typecheck 8/8.
+
+### 95 — the seam with no compiler
+
+**The desktop app was the last shipped artifact this campaign had never looked at.** It cannot be
+built here (no Rust toolchain), but building it is not where its risk lives. The risk is that it is
+**a Rust process spawning a bundled Node runtime on a bundled script**, and *five* artifacts have to
+agree for an installer to work:
+
+| Artifact | What it decides |
+|---|---|
+| `prepare-sidecar.mjs` | where the node binary and resources are staged |
+| `tauri.conf.json` | which staged paths get bundled, and where they land |
+| `sidecar.rs` | the resource names resolved at runtime, and the flags passed |
+| `cli-entry.ts` | which flags are accepted |
+| both ends | the JSON handshake printed on stdout |
+
+**They agree today** — I checked all five by hand, and that is the honest finding: no bug here.
+`--dir`, `--client-dir`, `--port` match; `server/cli-entry.cjs` and `client` are staged, bundled and
+resolved under the same names; `externalBin: ["binaries/node"]` matches `node-${target.triple}` and
+`sidecar("node")`; `struct Ready { url: String }` matches the `{"url":…,"port":…}` line.
+
+**What is missing is anything that keeps them agreeing.** Rename `--client-dir` in the TypeScript
+and *both languages still compile*. `tsc` does not read Rust; `cargo` does not read the TS. The app
+breaks for whoever installs the next release, and every test in the repo stays green. Of all the
+seams this campaign has crossed, this is the only one with **no compiler on either side of it**.
+
+So there is now a gate — six assertions driven off the artifacts themselves, including one that
+actually **starts the sidecar** and checks its stdout line carries every field the Rust `Ready`
+struct declares, and that it prints exactly one line (Rust parses each line as JSON and navigates
+on the first that fits).
+
+**Checked against real breaks**, one per language, rather than trusting it:
+
+```
+TS flag renamed        -> 2 failures
+Rust resource renamed  -> 1 failure
+externalBin renamed    -> 1 failure
+restored               -> 0 failures
+```
+
+The flag check also refuses to pass vacuously: it asserts it found flags in `sidecar.rs` at all
+before comparing them — a regex that silently matches nothing is the way this kind of test rots.
+That guard earned itself immediately: my first version of the accepted-flags regex dropped the
+first entry in the options object (it required a preceding comma), so the test failed loudly on
+`--dir` instead of quietly under-checking.
+
+**Verification.** 1230 unit tests (6 new), coverage 96.01% lines / 88.04% branches / 96.75%
+functions, typecheck 8/8.
