@@ -42,7 +42,7 @@ collections, environments, and folder config from.
 
 ## Tools
 
-The server exposes **11 tools** over the official MCP SDK. Tools that create or update
+The server exposes **23 tools** over the official MCP SDK. Tools that create or update
 files **validate against the schema before writing**, so an agent can't land a malformed
 `.tspec.yaml` in your repo.
 

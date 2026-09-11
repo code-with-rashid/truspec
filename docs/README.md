@@ -24,8 +24,8 @@ reference below.
 | Reference | What it covers |
 |---|---|
 | **[File format](./file-format.md)** | Every field of `*.tspec.yaml`, `folder.tspec.yaml`, and environment files — assertions, bodies, auth, capture, and variables. |
-| **[CLI](./cli.md)** | Every command and flag: `run`, `drift`, `coverage`, `gen`, `import`, `mock`, `serve` — with exit codes and output formats. |
-| **[Programmatic API](./api.md)** | Using `@truspec/core` from TypeScript: `format`, `runner`, `workspace`, `spec`, `importers`, `mock`. |
+| **[CLI](./cli.md)** | All 14 commands and every flag: `init`, `run`, `drift`, `coverage`, `contract`, `gen`, `codegen`, `lint`, `docs`, `env`, `import`, `export`, `mock`, `serve` — with exit codes and output formats. |
+| **[Programmatic API](./api.md)** | Using `@truspec/core` from TypeScript: `format`, `runner`, `workspace`, `spec`, `importers`, `exporters`, `codegen`, `lint`, `docs`, `mock`, and more. |
 
 ## Guides
 
@@ -33,11 +33,11 @@ reference below.
 |---|---|
 | **[Spec sync: drift & coverage](./spec-sync.md)** | The flagship feature — keep your collection and OpenAPI spec honest, gate CI on drift and coverage, scaffold from a spec, probe a live API. |
 | **[Mock server](./mocking.md)** | Run an offline mock of any OpenAPI spec, with latency and request validation. |
-| **[Importing](./importing.md)** | Migrate existing collections from Postman and Bruno. |
+| **[Importing](./importing.md)** | Migrate existing collections from Postman, Bruno, Insomnia, curl, or HAR — and export back out to Postman. |
 | **[Chaining, auth & variables](./file-format.md#chaining-with-capture)** | Log in, capture a token, and reuse it downstream — no scripting required. |
 | **[Scripting](./scripting.md)** | The advanced escape hatch: pre-request and post-response scripts and the `tr` API. |
 | **[CI/CD integration](./ci.md)** | Wire `truspec` into GitHub Actions and any other CI, with JUnit reports and masked secrets. |
-| **[AI agents (MCP)](./mcp.md)** | The first-party MCP server: 11 tools for Claude Code, Cursor, and other agents. |
+| **[AI agents (MCP)](./mcp.md)** | The first-party MCP server: 23 tools for Claude Code, Cursor, and other agents. |
 | **[Editors: Web UI & VS Code](./editors.md)** | The local web UI (`truspec serve`) and the VS Code extension. |
 | **[FAQ & troubleshooting](./faq.md)** | Common questions, error messages, and how to fix them. |
 
