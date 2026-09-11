@@ -30,7 +30,12 @@ describe("every package ships one version", () => {
    * CI but never run, so nothing else would notice the other three going stale.
    */
   it("stamps that same version through the Tauri build, which names the installers", () => {
-    const at = (...p: string[]): string => readFileSync(resolve(ROOT, "packages", "desktop", ...p), "utf8");
+    // Git for Windows checks these out with CRLF, so a pattern spanning a line break has to allow
+    // for it. Normalising on read is what the repo does elsewhere for exactly this reason; the
+    // alternative — `\r?\n` in every pattern — is one easy omission away from a green Windows run
+    // that checked nothing.
+    const at = (...p: string[]): string =>
+      readFileSync(resolve(ROOT, "packages", "desktop", ...p), "utf8").replace(/\r\n/g, "\n");
 
     const tauri = JSON.parse(at("src-tauri", "tauri.conf.json")) as { version: string };
     expect(tauri.version).toBe(version);
