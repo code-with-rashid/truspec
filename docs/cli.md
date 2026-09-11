@@ -511,9 +511,18 @@ truspec gen openapi.yaml --out ./api
 Inspect the workspace's environments without opening the files.
 
 ```
-truspec env [<name>] [--dir <collection>] [--json]
-truspec env --diff <a> <b> [--strict] [--json]
+truspec env [<name>] [--dir <collection>] [--json] [--output <file>]
+truspec env --diff <a> <b> [--strict] [--json] [--output <file>]
 ```
+
+| Argument / flag | Alias | Description |
+|---|---|---|
+| `<name>` | | Inspect one environment instead of listing them all. |
+| `--dir <collection>` | | Workspace directory to read environments from. Default `.`. |
+| `--diff <a> <b>` | | Compare two environments instead of inspecting one. |
+| `--strict` | | With `--diff`, exit 1 when either side declares a name the other does not. |
+| `--json` | | Machine-readable output. |
+| `--output <file>` | `-o` | Write the report to a file instead of stdout. |
 
 ```bash
 truspec env                               # every environment, with unresolved-secret warnings
@@ -703,11 +712,14 @@ snippet is identical wherever you ask for it.
 
 ## `import`
 
-Convert an existing Postman or Bruno collection — or a single `curl` command — into
-`.tspec.yaml` files. See the [Importing guide](./importing.md) for details and caveats.
+Convert an existing Postman, Bruno or Insomnia collection — or a `curl` command, or a browser
+HAR export — into `.tspec.yaml` files. See the [Importing guide](./importing.md) for per-format
+details, caveats, and the full HAR flag reference.
 
 ```
 truspec import <postman|bruno|insomnia|curl|har> <path> [--out <dir>] [--dry-run] [--name <base>]
+truspec import har <file> [--filter <substr>] [--base-url-var <name>]
+                          [--keep-noise-headers] [--include-options] [--include-assets]
 truspec import curl -            # read the command from stdin
 ```
 
@@ -725,10 +737,16 @@ equivalent (`-k`, `--proxy`, `-F` multipart) are reported as warnings rather tha
 
 | Argument / flag | Alias | Description |
 |---|---|---|
-| `<postman\|bruno>` | | **Required.** Source format. |
-| `<path>` | | **Required.** Postman collection JSON file, or a Bruno directory. |
+| `<postman\|bruno\|insomnia\|curl\|har>` | | **Required.** Source format. |
+| `<path>` | | **Required.** A collection file, a Bruno directory, a HAR file, or — for `curl` — the command itself (or `-` for stdin). |
 | `--out <dir>` | `-o` | Directory to write converted files into. |
 | `--dry-run` | | List what would be written without writing. |
+| `--name <base>` | | curl only: name the generated request instead of deriving one from the URL. |
+| `--filter <substr>` | | HAR only: import only entries whose URL contains this (case-insensitive). |
+| `--base-url-var <name>` | | HAR only: replace the recorded origin with `{{name}}`, so the collection is environment-portable. |
+| `--keep-noise-headers` | | HAR only: keep `sec-*`, `user-agent`, … (stripped by default). |
+| `--include-options` | | HAR only: keep `OPTIONS` preflights (skipped by default). |
+| `--include-assets` | | HAR only: keep static assets — documents, styles, scripts, images, fonts, media (skipped by default). |
 
 Without `--out` (or with `--dry-run`), the command prints the files it *would* write — a
 safe preview before committing to a destination.
