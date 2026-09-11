@@ -24,6 +24,8 @@ The API-client market runs from **local-and-minimal** (Bruno) to **cloud-and-eve
 | OpenAPI **coverage** report | ✗ | ✗ | ✓ |
 | OpenAPI **response contract** validation | ✗ | ✗ | ✓ |
 | Local **mock server** (no cloud) | cloud | ✗ | ✓ |
+| **Collection linter** (inline secrets, dead assertions) | ✗ | ✗ | ✓ |
+| **Committable Markdown docs** from the collection | cloud | ✗ | ✓ |
 | First-party **MCP server** for agents | bolted-on | community | ✓ |
 | Import from Postman + Bruno + Insomnia + curl + HAR | — | partial | ✓ |
 | Code generation (17 clients/langs) | ✓ | ✓ | ✓ |
@@ -53,6 +55,8 @@ spec:
   operation: "GET /pets/{id}"   # links back to your OpenAPI spec
 ```
 
+`truspec init` scaffolds exactly that — a request, an environment, and a `.gitignore` — in an empty folder.
+
 See the [blog](./examples/blog/API.md) and [petstore](./examples/petstore/API.md) example
 collections rendered by `truspec docs` — those files are regenerated and diffed in CI, so they are
 never out of date with the collections they describe.
@@ -70,17 +74,42 @@ truspec coverage examples/blog --spec examples/blog/openapi.yaml
 
 You should see `run` report **3 passing** requests against the mock, `drift` flag **`GET /users/{id}`** as untracked, and `coverage` show **75% (3/4)**. (Two examples ship in [`examples/`](./examples): `petstore` and a fuller `blog`.)
 
-Point the same commands at **your own** collection — a folder of `.tspec.yaml` files — plus your OpenAPI spec. Replace the `<…>` placeholders:
+## The commands
+
+Point these at **your own** collection — a folder of `.tspec.yaml` files — plus your OpenAPI spec. Replace the `<…>` placeholders:
+
+**Start a collection**
+
+- `truspec init [<dir>]` — scaffold a runnable collection (request + environment + `.gitignore`)
+- `truspec gen <openapi.yaml> --out <dir>` — scaffold a request stub per spec operation
+- `truspec import <postman|bruno|insomnia|curl|har> <path> --out <dir>` — migrate what you already have
+
+**Run it**
 
 - `truspec run <dir> --env <name>` — run requests + assertions; non-zero exit on failure
+- `truspec run <dir> --data <file>` — data-driven runs: one iteration per row of a CSV or JSON dataset
+- `truspec run <dir> --repeat <n>` — run the selection n times (load smoke, flake hunting)
+- `truspec run <dir> --watch` — re-run on file change while you edit
+- `truspec run <dir> --reporter <human|json|junit|html>` — human by default, machine formats for CI
+
+**Keep it honest against the spec**
+
 - `truspec drift --spec <openapi.yaml> <dir> [--live <baseUrl>]` — fail CI on drift vs the spec (and a live API)
 - `truspec coverage --spec <openapi.yaml> <dir> --min 80` — gate on tested-operation coverage
 - `truspec contract --spec <openapi.yaml> <dir> --env <name>` — run + validate responses against the spec's schemas
-- `truspec gen <openapi.yaml> --out <dir>` — scaffold a request stub per operation
 - `truspec mock <openapi.yaml> --port 4000` — offline mock server from your spec
+
+**Work with it day to day**
+
+- `truspec lint <dir> --strict` — 13 static checks (inline secrets, dead assertions, undeclared vars, …)
+- `truspec docs <dir> --out API.md` — render the collection as committable Markdown
+- `truspec env [--diff <a> <b>]` — list, inspect, and diff environments (never prints secret values)
+- `truspec codegen <request> --lang <target>` — a runnable snippet in any of 17 clients/languages
 - `truspec export postman <dir>` — hand the collection to someone who works in Postman
-- `truspec import postman <file.json> --out <dir>` — migrate existing collections (or `truspec import bruno <dir>`)
 - `truspec serve <dir>` — open the local web UI
+
+The reporting commands — `run`, `drift`, `coverage`, `contract`, `lint`, `env` — all speak `--json`
+for machines, and every command exits non-zero on failure, so they drop straight into CI.
 
 **Chaining:** a request can `capture` a value for later requests in the same run (ordered by `order`) — e.g. log in, capture the token, use it downstream. No scripting required:
 
@@ -89,11 +118,22 @@ Point the same commands at **your own** collection — a folder of `.tspec.yaml`
 # 02-me.tspec.yaml    →  order: 2,  auth: { type: bearer, token: "{{token}}" }
 ```
 
-Every command speaks `--json` for machines, and exits non-zero on failure so it drops straight into CI.
+## The GUI
 
-## Download
+`truspec serve <dir>` opens a local web UI over the same engine — and it reads *and writes* the same
+plain-text files, so anything you do in it lands as a clean diff in your repo:
 
-Prefer a GUI over the CLI? **TruSpec Desktop** is a native app (built with Tauri) that wraps the same `truspec serve` web UI in an installable window — no Node install required.
+- **Edit requests visually** — URL, headers, query, body, auth, assertions, capture, scripts, tags, and options, with variable-aware inputs
+- **Manage the tree** — create, rename, duplicate, and delete requests and folders; edit folder defaults and environments
+- **Run and inspect** — single requests or the whole collection, with response body, timings, assertion results, and script logs
+- **Flow view** — visualize and run request chains as a graph, so a capture-and-reuse sequence is something you can see
+- **Import and export** — pull in Postman/Bruno/Insomnia/curl/HAR, push back out to Postman, or copy a request as a snippet
+- **Drift, coverage, and the mock server** — the spec-sync loop and a mock with a live request log, without leaving the UI
+- **Keyboard-first** — a command palette (and a shortcuts reference) for everything above
+
+### Download the desktop app
+
+Prefer a GUI over the CLI, without a Node install? **TruSpec Desktop** is a native app (built with Tauri) that wraps the same UI in an installable window.
 
 Grab the installer for your OS from **[the latest release](https://github.com/code-with-rashid/truspec/releases/latest)**:
 
@@ -129,22 +169,50 @@ Or add it to your MCP client config:
 }
 ```
 
-Tools exposed: `truspec_list_collections`, `truspec_run_request`, `truspec_run_collection`, `truspec_create_request`, `truspec_update_request`, `truspec_drift`, `truspec_coverage`, `truspec_contract`, `truspec_scaffold_from_spec`, `truspec_mock_start`, `truspec_mock_stop`, `truspec_lint`, `truspec_docs`, `truspec_environments`, `truspec_import_curl`, `truspec_import_har`, `truspec_import_insomnia`, `truspec_codegen`, `truspec_codegen_targets`. Create/update operations validate against the schema before writing.
+**23 tools**, grouped by what an agent is trying to do:
+
+| | Tools |
+|---|---|
+| **Author** | `list_collections` · `read_request` · `create_request` · `update_request` · `delete_request` · `validate_request` · `format_reference` |
+| **Run** | `run_request` · `run_collection` · `environments` |
+| **Sync with the spec** | `drift` · `coverage` · `contract` · `scaffold_from_spec` |
+| **Mock** | `mock_start` · `mock_stop` |
+| **Inspect** | `lint` · `docs` |
+| **Generate** | `codegen` · `codegen_targets` |
+| **Import** | `import_curl` · `import_har` · `import_insomnia` |
+
+(Each is prefixed `truspec_` — e.g. `truspec_run_collection`.) Write operations validate against the
+schema before touching disk, and `format_reference` lets an agent look the format up rather than
+guess at it.
 
 ## How it fits together
 
 ```
-@truspec/core  — the engine (pure TS)
-  ├─ format      collection parse / serialize / validate (+ published JSON Schema)
-  ├─ runner      interpolation, auth, fetch, declarative assertions
+@truspec/core — the engine (pure TS; no platform deps in the browser-safe entry)
+  ├─ format      parse / serialize / validate  (+ the published JSON Schema)
+  ├─ runner      interpolation, auth, fetch, declarative assertions, scripts
   ├─ workspace   discovery, folder inheritance, env + secret resolution
-  ├─ spec        OpenAPI drift + coverage
-  ├─ importers   Postman v2.1 + Bruno → .tspec.yaml
-  └─ mock        local mock server generated from a spec
-truspec              — the CLI (run / drift / coverage / contract / gen / import / mock / serve)
+  ├─ spec        OpenAPI drift, coverage, response-contract validation
+  ├─ importers   Postman · Bruno · Insomnia · curl · HAR  →  .tspec.yaml
+  ├─ exporters   collection  →  Postman v2.1
+  ├─ codegen     request  →  a runnable snippet in 17 clients/languages
+  ├─ lint        13 static checks over a collection
+  ├─ docs        collection  →  deterministic Markdown
+  ├─ mock        local mock server generated from a spec
+  ├─ jsonpath    the JSONPath subset used by assertions and capture
+  └─ http        shared server lifecycle (a shutdown that always terminates)
+
+truspec              — the CLI (14 commands: init · run · drift · coverage · contract · gen ·
+                       codegen · lint · docs · env · import · export · mock · serve)
 @truspec/mcp-server  — the agent surface (23 MCP tools)
 @truspec/web         — the web UI + local server (truspec serve)
+@truspec/desktop     — the Tauri shell around that UI
+truspec-vscode       — the editor extension (CodeLens + results view)
 ```
+
+Each core module is a subpath import — `@truspec/core/runner`, `/spec`, `/lint`, and so on. The
+filesystem and server modules (`workspace`, `spec`, `importers`, `mock`, `http`) are deliberately
+kept out of the browser-safe main entry.
 
 ## Documentation
 
@@ -172,14 +240,35 @@ pnpm build
 pnpm gen:schema      # regenerate JSON Schema from the Zod source
 ```
 
-The CLI runs on Node ≥ 22. A Bun-compiled single binary for zero-install distribution is planned (it still needs the `serve` web-client assets embedded and version stamping wired into the compile step).
+CI runs the suite on Linux, macOS, and Windows, and additionally checks that the published JSON
+Schema is in sync with the Zod source, that the example collections pass `truspec lint --strict`,
+and that the committed example docs are byte-identical to a fresh `truspec docs` render.
 
 ## Status & roadmap
 
-**Shipped:** format + JSON Schema · runner (REST + GraphQL, auth, request chaining/capture, **pre-/post-request scripts**) · CLI (`run` [+ JUnit], `drift`, `coverage`, `contract`, `gen`, `import`, `mock`, `serve`) · OpenAPI drift (added/removed/**changed** + **`--live`** API probe) + coverage + **response contract validation** (`{ type: schema }` · `run --spec` · `contract`) · **local mock server** (latency + **request validation**) · `.env` + secrets (**masked in run output**) · Postman/Bruno import · MCP server (23 tools) · **web UI** (`truspec serve`, with a **Flow view** for visualizing + running request chains as a graph) · **installable desktop app** (Tauri; unsigned installers for Windows/macOS/Linux — see [Download](#download)) · **VS Code extension** (CodeLens + results view, pre-release).
-**Next:** publish to the Marketplace · **Bun single-binary** distribution · **in-UI request editing**.
+TruSpec is **alpha**: the file format is at schema version `0.1` and any breaking change bumps
+`SCHEMA_VERSION` and ships a migration.
 
-Deferred by design (not bloat): hosted dashboards, visual flow builders, exotic protocols, mandatory cloud sync.
+**Shipped**
+
+- **Format** — the Zod schema, a published JSON Schema, and validation on every write
+- **Runner** — REST + GraphQL, bearer / basic / API-key / OAuth2 auth, request chaining via `capture`, pre-/post-request scripts, retries, redirects, and TLS options (`--ca`, `--proxy`, `--insecure`)
+- **Spec sync** — drift (added / removed / changed, plus a `--live` API probe), coverage, and response-contract validation (`{ type: schema }`, `run --spec`, `contract`)
+- **Mock server** — local and offline, generated from a spec, with latency simulation and request validation
+- **CLI** — 14 commands, `--json` everywhere, and `human` / `json` / `junit` / `html` run reporters
+- **Secrets** — referenced by name, resolved from the OS env or a project `.env`, masked in run output, and never written into generated snippets
+- **Interop** — import from Postman / Bruno / Insomnia / curl / HAR; export back to Postman v2.1
+- **Agents** — a first-party MCP server with 23 tools
+- **GUI** — the web UI (`truspec serve`) with full request editing, a Flow view, and a command palette; an installable desktop app for Windows / macOS / Linux
+- **Editors** — a VS Code extension with CodeLens and a results view (pre-release)
+
+**Next**
+
+- Publish the VS Code extension to the Marketplace
+- A Bun-compiled single binary for zero-install distribution (it still needs the `serve` web-client assets embedded and version stamping wired into the compile step)
+- Signed and notarized desktop builds, so first launch stops warning
+
+**Deferred by design** (not bloat): hosted dashboards, visual flow builders, exotic protocols, mandatory cloud sync.
 
 ## License
 
